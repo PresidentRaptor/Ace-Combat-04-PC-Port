@@ -83,6 +83,11 @@ typedef struct ps2_vk_state {
        gs.frag looks each alpha up in the palette texture clut_tex - 1 */
     int index_rt;
     u32 clut_tex;
+    /* Mip level chosen per pixel (TEX1.LCM=0): K (12 bits), L << 12, this
+       draw's level << 14, MXL << 17, on (bit 20), blend with the next level
+       (bit 21, it is texture clut_tex - 1), nearest level (bit 22).  gs.frag
+       discards the pixels whose LOD belongs to another level's draw. */
+    u32 mip;
 } ps2_vk_state;
 
 enum { PS2_VK_POINTS = 0, PS2_VK_LINES = 1, PS2_VK_TRIANGLES = 2 };

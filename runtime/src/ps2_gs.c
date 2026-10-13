@@ -678,6 +678,66 @@ static void gs_prim_lod(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
     if (gs_dyn_lod > (int)mxl) gs_dyn_lod = (int)mxl;
 }
 
+/* Triangles get the GS's own per-pixel choice.  Q is affine in screen space,
+   so a triangle's LOD runs between its vertices' values; it is drawn once for
+   each level that range touches, and gs.frag works LOD out for every pixel,
+   keeps the pixels that belong to the level of that draw and, for MMIN 3/5,
+   blends in the next level (AC4's terrain asks for trilinear).  Every pixel is
+   still written once, with the triangle's own depth.  gs_dyn_mip is the
+   ps2_vk_state.mip word for the draw being made; 0 = not per pixel. */
+static u32 gs_dyn_mip;
+
+static int gs_tri_mip_range(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c,
+                            int *lo, int *hi) {
+    u64 t1 = tex1_reg();
+    u32 mxl = (u32)((t1 >> 2) & 7ull), mmin = (u32)((t1 >> 6) & 7ull);
+    u32 l = (u32)((t1 >> 19) & 3ull);
+    s32 k = (s32)((t1 >> 32) & 0xFFFull);
+    int blend, last;
+    float mn = 1e30f, mx = -1e30f, bias;
+    const gs_vtx *vv[3] = { a, b, c };
+    static int off = -1, no_blend, said;
+    if (off < 0) {
+        const char *e = getenv("PS2_NO_PIXEL_MIP");
+        off = ((e && *e && *e != '0') || getenv("PS2_NO_DYN_MIP")) ? 1 : 0;
+        if (off) ps2_log("GS: mip levels are not chosen per pixel (PS2_NO_PIXEL_MIP)");
+        e = getenv("PS2_NO_MIP_BLEND");
+        no_blend = (e && *e && *e != '0') ? 1 : 0;
+        if (no_blend) ps2_log("GS: no blending between mip levels, the nearest is "
+                              "used (PS2_NO_MIP_BLEND)");
+    }
+    gs_dyn_mip = 0;
+    if (off || !(gs_prim & PRIM_TME) || (gs_prim & PRIM_FST) || (t1 & 1ull)
+        || !mxl || mmin < 2u)
+        return 0;
+    blend = !no_blend && (mmin == 3u || mmin == 5u);
+    last = blend ? (int)mxl - 1 : (int)mxl;
+    bias = blend ? 0.0f : 0.5f;
+    if (!said) {
+        said = 1;
+        ps2_log("GS: mip level chosen per pixel%s (first: TEX1 %016llX)",
+                blend ? ", blended between levels" : "", (unsigned long long)t1);
+    }
+    if (k & 0x800) k -= 0x1000;
+    for (u32 i = 0; i < 3u; i++) {
+        float q = vv[i]->q, lod;
+        if (!(fabsf(q) > 1e-30f) || (q < 0.0f) != (a->q < 0.0f)) return 0;
+        lod = -log2f(fabsf(q)) * (float)(1u << l) + (float)k / 16.0f;
+        if (lod < mn) mn = lod;
+        if (lod > mx) mx = lod;
+    }
+    /* with slack, so the GPU's LOD never lands on a level with no draw */
+    *lo = (int)floorf(mn + bias - 1.0f / 64.0f);
+    *hi = (int)floorf(mx + bias + 1.0f / 64.0f);
+    if (*lo < 0) *lo = 0;
+    if (*lo > last) *lo = last;
+    if (*hi < *lo) *hi = *lo;
+    if (*hi > last) *hi = last;
+    gs_dyn_mip = ((u32)k & 0xFFFu) | (l << 12) | (mxl << 17) | (1u << 20)
+               | (blend ? 1u << 21 : 1u << 22);
+    return 1;
+}
+
 static u32 gs_tex_lod(void) {
     u64 t1 = tex1_reg();
     u32 mxl  = (u32)((t1 >> 2) & 7ull);
@@ -3068,6 +3128,7 @@ static struct {
     u32 prim, epoch_seq, frame, emitter, disp_base;
     u32 defer_w, defer_h;
     int dyn_lod;
+    u32 dyn_mip;
     u8 tex_hit, rt_tex_draw, rt_tex_missed, rt_ztex_draw;
     ps2_vk_state st;
 } fs_memo;
@@ -3093,7 +3154,7 @@ static void fill_state(ps2_vk_state *st) {
         && fs_memo.validation_seq == gs_validation_seq
         && fs_memo.frame == ps2_gs_frame_count && fs_memo.emitter == rn_gs_emitter
         && fs_memo.disp_base == gs_disp_base && fs_memo.defer == fill_defer_tex
-        && fs_memo.dyn_lod == gs_dyn_lod) {
+        && fs_memo.dyn_lod == gs_dyn_lod && fs_memo.dyn_mip == gs_dyn_mip) {
         *st = fs_memo.st;
         fill_state_count(st);
         texcache_hits += fs_memo.tex_hit;
@@ -3121,6 +3182,7 @@ static void fill_state(ps2_vk_state *st) {
     fs_memo.emitter = rn_gs_emitter;
     fs_memo.disp_base = gs_disp_base;
     fs_memo.dyn_lod = gs_dyn_lod;
+    fs_memo.dyn_mip = gs_dyn_mip;
     fs_memo.defer_w = fill_defer_w;
     fs_memo.defer_h = fill_defer_h;
     fs_memo.tex_hit = (u8)(texcache_hits + texcache_misses != h0);
@@ -3179,6 +3241,7 @@ static void fill_state_compute(ps2_vk_state *st) {
     fill_state_count(st);
     st->fst = (gs_prim & PRIM_FST) ? 1 : 0;
     st->tex_lod = gs_tex_lod();
+    st->mip = gs_dyn_mip;
     st->tex_point = ((tex1_reg() >> 5) & 1ull) ? 0 : 1;
     st->wms  = (u32)(cl & 3ull);
     st->wmt  = (u32)((cl >> 2) & 3ull);
@@ -3380,10 +3443,24 @@ static void fill_state_compute(ps2_vk_state *st) {
                 tex_index_mode = st->clut_rt != 0;
                 st->tex_index = current_texture(&st->tex_w, &st->tex_h);
                 tex_index_mode = 0;
+                if ((st->mip & (1u << 21)) && !st->clut_rt
+                    && st->tex_index != 0xFFFFFFFFu) {
+                    /* the next level, blended in per pixel by gs.frag */
+                    float w2, h2;
+                    u32 idx2;
+                    gs_dyn_lod++;
+                    idx2 = current_texture(&w2, &h2);
+                    gs_dyn_lod--;
+                    if (idx2 != 0xFFFFFFFFu && idx2 != st->tex_index)
+                        st->clut_tex = idx2 + 1u;
+                }
             }
             if (st->tex_index == 0xFFFFFFFFu) st->tme = 0;
         }
     }
+    if ((st->mip & (1u << 21))
+        && (!st->tme || st->tex_rt || st->index_rt || st->clut_rt || !st->clut_tex))
+        st->mip &= ~(1u << 21);
     {   static int off = -1;
         int zs;
         if (off < 0) {
@@ -3852,13 +3929,11 @@ static u32 sprite_round_axis(s32 p0, s32 p1, u32 t0, u32 t1) {
     return dt <= 0 || !(span & (span - 1u)) ? 1u : 2u;
 }
 
-static void vk_triangle(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
+static void vk_triangle_draw(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
     ps2_vk_state st;
     ps2_vk_vertex v[3];
     int iip = (gs_prim & PRIM_IIP) ? 1 : 0;
-    gs_prim_lod(a, b, c);
     fill_state(&st);
-    gs_dyn_lod = -1;
     vk_vertex(&v[0], a, iip, c, st.fst, st.tex_lod);
     vk_vertex(&v[1], b, iip, c, st.fst, st.tex_lod);
     vk_vertex(&v[2], c, iip, c, st.fst, st.tex_lod);
@@ -3868,6 +3943,23 @@ static void vk_triangle(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
         rn_census_prim(&st, RN_PRIM_TRI, v, 3, claimed);
         if (!claimed) ps2_vk_draw(PS2_VK_TRIANGLES, &st, v, 3);
     }
+}
+
+static void vk_triangle(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
+    int lo, hi;
+    if (gs_tri_mip_range(a, b, c, &lo, &hi)) {
+        u32 base = gs_dyn_mip;
+        for (int n = lo; n <= hi; n++) {
+            gs_dyn_lod = n;
+            gs_dyn_mip = base | ((u32)n << 14);
+            vk_triangle_draw(a, b, c);
+        }
+        gs_dyn_mip = 0;
+    } else {
+        gs_prim_lod(a, b, c);
+        vk_triangle_draw(a, b, c);
+    }
+    gs_dyn_lod = -1;
     gs_stat_prims++;
 }
 

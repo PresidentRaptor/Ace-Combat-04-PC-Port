@@ -10,7 +10,8 @@ layout(location = 0, index = 1) out vec4 out_blend;
 
 layout(set = 0, binding = 0) uniform sampler2D tex;
 layout(set = 1, binding = 0) uniform sampler2D dsttex;
-layout(set = 3, binding = 0) uniform sampler2D clutrt;   // render target holding a CLUT
+layout(set = 3, binding = 0) uniform sampler2D clutrt;   // render target holding a CLUT,
+                                                         // a palette, or the next mip level
 
 layout(push_constant) uniform PC {
     vec2  inv_size;
@@ -23,6 +24,8 @@ layout(push_constant) uniform PC {
     float point_size;
     float tex_scale;
     uint  clut_xy;
+    uint  mesh_block;
+    uint  mip;      // per-pixel mip level, see ps2_vk_state.mip
 } pc;
 
 const uint RUV_SPRITE = 1u << 29;
@@ -83,6 +86,34 @@ vec4 clut_rt_bilinear(vec2 tc, bool four) {
     b.y = int(gs_wrap(hi.y, (pc.flags.z >> 2) & 3u, float(pc.clamp_uv.z), float(pc.clamp_uv.w), pc.tex_size.y, true));
     return mix(mix(clut_rt_texel(a, four), clut_rt_texel(ivec2(b.x, a.y), four), w.x),
                mix(clut_rt_texel(ivec2(a.x, b.y), four), clut_rt_texel(b, four), w.x), w.y);
+}
+
+// The next mip level (bound as clutrt) at the same s/t, for the GS's blend
+// between levels: wrap and region clamp at that level's size, filtered
+// like the level the draw samples.
+vec4 sample_next_level(vec2 st, bool point, bool half_texel) {
+    vec2 size = max(floor(pc.tex_size * 0.5), vec2(1.0));
+    uvec4 cl = pc.clamp_uv >> 1u;
+    uint mu = pc.flags.z & 3u, mv = (pc.flags.z >> 2) & 3u;
+    ivec2 isz = textureSize(clutrt, 0);
+    vec2 tc = st * size;
+    if (point) {
+        ivec2 p = ivec2(floor(vec2(
+            gs_wrap(tc.x + 1.0 / 32.0, mu, float(cl.x), float(cl.y), size.x, true),
+            gs_wrap(tc.y + 1.0 / 32.0, mv, float(cl.z), float(cl.w), size.y, true))));
+        return texelFetch(clutrt, ((p % isz) + isz) % isz, 0);
+    }
+    if (half_texel) tc -= 0.5;
+    vec2 lo = floor(tc), hi = lo + 1.0, w = tc - lo;
+    ivec2 a, b;
+    a.x = int(gs_wrap(lo.x, mu, float(cl.x), float(cl.y), size.x, true));
+    b.x = int(gs_wrap(hi.x, mu, float(cl.x), float(cl.y), size.x, true));
+    a.y = int(gs_wrap(lo.y, mv, float(cl.z), float(cl.w), size.y, true));
+    b.y = int(gs_wrap(hi.y, mv, float(cl.z), float(cl.w), size.y, true));
+    a = ((a % isz) + isz) % isz;
+    b = ((b % isz) + isz) % isz;
+    return mix(mix(texelFetch(clutrt, a, 0), texelFetch(clutrt, ivec2(b.x, a.y), 0), w.x),
+               mix(texelFetch(clutrt, ivec2(a.x, b.y), 0), texelFetch(clutrt, b, 0), w.x), w.y);
 }
 
 int wrap_up(int k, uint mode, int lo, int hi, int size, int s) {
@@ -156,6 +187,21 @@ void main() {
         float ad = texelFetch(dsttex, ivec2(gl_FragCoord.xy), 0).a;
         if ((ad >= 1.0) != datm) discard;
     }
+    /* TEX1.LCM=0: the GS picks the level per pixel, LOD = (log2(1/|Q|) << L) + K.
+       The triangle is drawn once per level its LOD range touches; this draw
+       keeps the pixels of its own level (nearest), or of [level, level + 1)
+       and blends towards the next one (MMIN 3/5).  The two ends are open. */
+    float mip_w = 0.0;
+    if ((pc.mip & (1u << 20)) != 0u) {
+        float lod = -log2(max(abs(v_stq.z), 1e-30)) * float(1u << ((pc.mip >> 12) & 3u))
+                  + float(int(pc.mip << 20) >> 20) / 16.0;
+        float n = float((pc.mip >> 14) & 7u);
+        bool nearest = (pc.mip & (1u << 22)) != 0u;
+        float lo = nearest ? n - 0.5 : n;
+        float last = float((pc.mip >> 17) & 7u) - (nearest ? 0.0 : 1.0);
+        if ((n > 0.0 && lod < lo) || (n < last && lod >= lo + 1.0)) discard;
+        if ((pc.mip & (1u << 21)) != 0u) mip_w = clamp(lod - n, 0.0, 1.0);
+    }
 
     if (pc.flags.y != 0u) {
         vec2 tc;
@@ -223,6 +269,10 @@ void main() {
             else       t = sample_region_repeat(unwrapped_tc);
         } else {
             t = texture(tex, (tc + 0.5) / pc.img_size);
+        }
+        if (mip_w > 0.0) {
+            vec2 st = fst ? v_stq.xy / pc.tex_size : v_stq.xy / max(v_stq.z, 1e-9);
+            t = mix(t, sample_next_level(st, point, (f & (1u << 25)) != 0u), mip_w);
         }
         if ((pc.flags.y & 2u) != 0u) {
             /* PSMT8H read from a render target: the index is the pixel's alpha

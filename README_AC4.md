@@ -114,10 +114,20 @@ General fixes that AC4 exposed:
   and read level 0 otherwise. AC4's terrain (TEX0 0x2900, 512x512 PSMT8, MXL 3, MTBA,
   K -13.5) is a texture cache: near tiles own slots 0-63 by position, distant tiles get
   slots 64+ that alias the same squares and are uploaded only to levels 1-3 (0x2D00,
-  0x2E00, 0x2E40), so level 0 showed a near tile's texture on the distant island. The level
-  is now taken per primitive from the mean vertex LOD (rounded, clamped to MXL) and fed to
-  the existing fixed-level decode; it is part of the draw-state memo key.
-  `PS2_NO_DYN_MIP=1` turns it off. Real time at 6x stays at 60 fields/s.
+  0x2E00, 0x2E40), so level 0 showed a near tile's texture on the distant island.
+  Triangles get the level per pixel (`gs_tri_mip_range`, `gs_dyn_mip`, ps2_vk_state.mip):
+  Q is affine in screen space, so a triangle's LOD lies between its vertices' values. It is
+  drawn once for each level that range touches (with 1/64 slack), with that level decoded as
+  usual; gs.frag works LOD out per pixel from the interpolated Q, discards the pixels that
+  belong to another level's draw (the two ends open), and for MMIN 3/5 blends towards the
+  next level, decoded too and bound in set 3. AC4's terrain asks for MMIN 5 (trilinear).
+  Every pixel is still written once with the triangle's own depth; batching is unchanged
+  because the state depends only on the level. A per-triangle choice showed seams where
+  neighbouring tiles landed on different levels. Sprites, lines and points keep the
+  per-primitive mean (`gs_prim_lod`). `PS2_NO_MIP_BLEND=1` uses the nearest level per pixel,
+  `PS2_NO_PIXEL_MIP=1` goes back to one level per triangle, `PS2_NO_DYN_MIP=1` turns
+  both off. The native-resolution captures change by at most 4/255 (distant terrain only);
+  real time at 6x stays at 60 fields/s.
 - **PSMT8H indices from a render target** (`ps2_gs.c` `index_rt`/`clut_palette_texture`,
   gs.frag `flags.y` bit 1): in flight AC4 remaps the back buffer's alpha through a CLUT
   (TEX0 tbp 0, PSMT8H, FBMSK 00FFFFFF; entries `0x80 - i` below 128) and then blends its

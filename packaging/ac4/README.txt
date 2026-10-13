@@ -69,8 +69,9 @@ Fixed in this build
   game keeps distant terrain in the small mipmap levels of its terrain
   texture cache and lets the graphics chip pick the level by distance;
   that choice was missing, so the full-size level was read. The level is
-  now chosen for each triangle from its distance, and distant islands
-  show their real coastline and terrain.
+  now chosen for every pixel from its distance and blended between levels
+  the way the game asks, so distant islands show their real coastline and
+  terrain without seams between neighbouring patches of ground.
 - Haze in flight: the game turns each pixel's alpha into a haze strength
   through a lookup table before drawing its haze and sea-detail layer. That
   step read stale data, so the haze was the same everywhere and the sea

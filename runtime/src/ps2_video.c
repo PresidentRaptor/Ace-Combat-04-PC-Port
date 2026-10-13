@@ -55,8 +55,10 @@ typedef struct {
     u32 mvbase, mblock;
     u16 mcull;
     u16 clut_rt;      /* CLUT read from this render target (slot + 1), at clut_xy */
-    u16 clut_tex;     /* palette texture + 1 for indices read from tex_rt's alpha */
+    u16 clut_tex;     /* palette texture + 1 for indices read from tex_rt's alpha,
+                         or the next mip level + 1 (mip bit 21) */
     u32 clut_xy;
+    u32 mip;          /* ps2_vk_state.mip */
 } vk_draw;
 
 typedef struct {
@@ -440,7 +442,7 @@ typedef struct {
     float tex_scale;
     u32   clut_xy;
     u32   mesh_block;
-    u32   mesh_pad;
+    u32   mip;
 } gs_push;
 
 typedef struct { float map[4]; float bound[4]; float opts[4]; float grade[4]; } present_push;
@@ -3408,6 +3410,7 @@ static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
         }
         pc.tex_scale = d->tex_rt ? (float)rt_scale : 1.0f;
         pc.clut_xy = d->clut_xy;
+        pc.mip = d->mip;
         pc.flags[0] = d->frag_flags;
         pc.flags[1] = ((d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u)
                     | (d->clut_tex && d->tex_rt ? 2u : 0u);
@@ -3805,6 +3808,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         }
         pc.tex_scale = d->tex_rt ? (float)rt_scale : 1.0f;
         pc.clut_xy = d->clut_xy;
+        pc.mip = d->mip;
         pc.flags[0] = d->frag_flags;
         pc.flags[1] = ((d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u)
                     | (d->clut_tex && d->tex_rt ? 2u : 0u);
@@ -5110,7 +5114,7 @@ static void zclear_draw(int topology, const ps2_vk_state *st,
     s.abe = 0; s.ate = 0; s.fge = 0; s.date = 0; s.datm = 0;
     s.tme = 0; s.tex_rt = 0; s.tex_depth = 0; s.tex_self = 0;
     s.shuffle_rg = 0; s.clut_rt = 0; s.colclip = 0; s.zcopy = 0;
-    s.index_rt = 0; s.clut_tex = 0;
+    s.index_rt = 0; s.clut_tex = 0; s.mip = 0;
     while (k < n) {
         int c = n - k, j;
         if (c > 64) c = 64 - 64 % 6;   /* whole triangles, lines and points */
@@ -5369,7 +5373,8 @@ static void rec_one(int topology, const ps2_vk_state *st,
             && d->date == (u16)st->date
             && d->fogcol == st->fogcol
             && d->clut_rt == (u16)st->clut_rt && d->clut_xy == st->clut_xy
-            && d->clut_tex == (u16)(st->index_rt ? st->clut_tex : 0u)
+            && d->clut_tex == (u16)(st->index_rt || (st->mip & (1u << 21)) ? st->clut_tex : 0u)
+            && d->mip == st->mip
             && d->wrap == (st->wms | (st->wmt << 2))
             && d->minu == (u16)st->minu && d->maxu == (u16)st->maxu
             && d->minv == (u16)st->minv && d->maxv == (u16)st->maxv
@@ -5419,7 +5424,8 @@ static void rec_one(int topology, const ps2_vk_state *st,
     d->tex_rt = (u16)st->tex_rt;
     d->clut_rt = (u16)st->clut_rt;
     d->clut_xy = st->clut_xy;
-    d->clut_tex = (u16)(st->index_rt ? st->clut_tex : 0u);
+    d->clut_tex = (u16)(st->index_rt || (st->mip & (1u << 21)) ? st->clut_tex : 0u);
+    d->mip = st->mip;
     d->tex_self = (u16)st->tex_self;
     d->tex_depth = (u16)st->tex_depth;
     d->date = (u16)st->date;
