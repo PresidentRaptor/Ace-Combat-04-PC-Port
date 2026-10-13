@@ -16,7 +16,7 @@ There's no game code or assets in this repo. You bring your own copy of the game
 - The picture defaults to an undistorted 4:3 image in wide windows. AC4 does not yet have a verified game-specific 16:9 camera patch; AC5's patch is not applied.
 - A 4K graphics preset selects internal resolution automatically to cover the current display, up to 8x (GPU and memory permitting), and smooths enlarged screen-space map and HUD art. The PS2's original texture art remains native resolution; filtering improves sampling, not source detail.
 - The Windows executable uses the Ace Combat 04 ISAF insignia as its application icon.
-- Later missions have not been checked yet.
+- Later missions haven't been played yet. The title screen's demonstration flights, recorded in several of them (snowy mountains, a bridge, a low pass through a city, the cockpit view), render correctly.
 
 How AC4 differs from AC5 under the hood:
 

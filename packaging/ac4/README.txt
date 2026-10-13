@@ -102,8 +102,10 @@ Known limits
   holds full speed. On a slower CPU, PS2_ASYNC_GFX=1 runs it on its own
   thread (re-tested in Mission 01 without the stray triangles it used to
   show).
-- Only Mission 01 has been played through so far; later missions have not
-  been checked yet.
+- Only Mission 01 has been played through so far. The demonstration
+  flights the title screen plays (recorded in later missions: snowy
+  mountains, a bridge, a city) all look right, but the later missions
+  themselves have not been played yet.
 
 Rebuilding
 ----------

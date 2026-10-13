@@ -180,8 +180,10 @@ Verified start to finish: boot, memory card detection, opening FMV, title, menus
 with sound, Mission 01 briefing, and Mission 01 in flight with HUD, radio, music, voices and
 sound effects at full speed -- cockpit, HUD-only and external views, with the player's and
 the wingmen's aircraft textured and self-shadowed -- at native resolution and at internal
-resolution 6. Saving (pre-mission menu) and loading (title menu) are verified. Not yet exercised: later
-missions.
+resolution 6. Saving (pre-mission menu) and loading (title menu) are verified. Left at the title,
+the game cycles its DEMONSTRATION flights, recorded in later missions (snowy mountains with a radar
+dome, an F-14 in cloud, a bridge, a low pass between a city's towers, the cockpit view, a bomb
+camera over a base); ten minutes of them rendered correctly. Not yet played: later missions.
 
 `PS2_ASYNC_GFX=1` (graphics machine on its own thread) was re-tested after the VU pair fix:
 Mission 01 flight at full speed, 1,470 consecutive fields and 1,000 fields sampled every 6th
