@@ -3,6 +3,11 @@
 Drop a mod in here as a directory. It is picked up the next time the game
 starts — nothing to rebuild, nothing to repack.
 
+Press **F4** in game and open the **Mods** tab to see installed mods and choose
+which ones should load on the next launch. A mod's files and scripts cannot be
+unloaded safely during a mission, so the menu asks you to restart after changing
+its startup setting.
+
 ```
 mods/
   my_mod/

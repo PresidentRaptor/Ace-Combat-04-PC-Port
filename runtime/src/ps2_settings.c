@@ -133,10 +133,10 @@ typedef struct {
 } preset_def;
 
 static const preset_def presets[5] = {
-     { 1, PS2_TEXFILTER_GAME,  0,  0, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
-     { 2, PS2_TEXFILTER_GAME,  0,  4, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
-     { 3, PS2_TEXFILTER_GAME,  0,  8, 1, 0, PS2_SCALE_SHARP,    0.20f },
-     { 4, PS2_TEXFILTER_GAME,  0, 16, 1, 0, PS2_SCALE_SHARP,    0.20f },
+     { 1, PS2_TEXFILTER_GAME,  1,  0, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
+     { 2, PS2_TEXFILTER_GAME,  1,  4, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
+     { 3, PS2_TEXFILTER_GAME,  1,  8, 1, 0, PS2_SCALE_SHARP,    0.20f },
+     { 4, PS2_TEXFILTER_GAME,  1, 16, 1, 0, PS2_SCALE_SHARP,    0.20f },
      { 0, PS2_TEXFILTER_GAME,  1, 16, 1, 0, PS2_SCALE_SHARP,    0.20f },
 };
 

@@ -1,6 +1,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "ps2_ui.h"
 #include "ps2_game.h"
+#include "ps2_mod.h"
 #include "ps2_settings.h"
 
 #include "imgui.h"
@@ -85,6 +86,15 @@ bool slider_pct(const char *label, float *v, float lo, float hi) {
 void apply_style() {
     ImGui::StyleColorsDark();
     ImGuiStyle &s = ImGui::GetStyle();
+#ifdef PS2_GAME_AC4
+    s.WindowRounding = 1.0f;
+    s.ChildRounding = 0.0f;
+    s.FrameRounding = 0.0f;
+    s.PopupRounding = 0.0f;
+    s.GrabRounding = 0.0f;
+    s.TabRounding = 0.0f;
+    s.ScrollbarRounding = 0.0f;
+#else
     s.WindowRounding = 8.0f;
     s.ChildRounding = 6.0f;
     s.FrameRounding = 5.0f;
@@ -92,6 +102,7 @@ void apply_style() {
     s.GrabRounding = 5.0f;
     s.TabRounding = 5.0f;
     s.ScrollbarRounding = 6.0f;
+#endif
     s.WindowPadding = ImVec2(16.0f, 14.0f);
     s.FramePadding = ImVec2(9.0f, 5.0f);
     s.ItemSpacing = ImVec2(10.0f, 8.0f);
@@ -655,7 +666,7 @@ void tab_rendering() {
     static const char *const UIF[] = { "As the game asks (sharp pixels)", "Bilinear (smoother enlarged art)" };
     if (ImGui::Combo("UI texture filtering", &ps2_cfg.ui_smooth, UIF, 2)) gfx_changed(0);
     help("Smooths screen-space HUD, menu and map textures when enlarged. This can soften very "
-         "thin lines or text; the 4K preset enables it.");
+         "thin lines or text; graphics presets enable it, and it can be switched off here.");
 
     static const int AF_VALUES[] = { 0, 2, 4, 8, 16 };
     static const char *const AF[] = { "Off", "2x", "4x", "8x", "16x" };
@@ -863,6 +874,64 @@ void tab_analog() {
     }
 }
 
+void tab_mods() {
+    ImGui::TextColored(ACCENT, "MODIFICATION SYSTEM");
+    ImGui::Separator();
+    ImGui::TextWrapped("Choose which installed modifications should load the next time the game starts. "
+                       "Changes are saved to each mod's mod.toml file; active scripts and files stay "
+                       "loaded until you restart the game.");
+
+    const unsigned count = ps2_mod_count();
+    if (!count) {
+        ImGui::Spacing();
+        ImGui::BeginChild("##mods-empty", ImVec2(0.0f, ImGui::GetFontSize() * 8.0f), true);
+        ImGui::TextColored(ACCENT, "NO MODIFICATIONS DETECTED");
+        ImGui::Separator();
+        ImGui::TextWrapped("Place a mod folder inside the game's mods directory. A folder with a "
+                           "mod.toml manifest or a script.lua is listed here when the game starts.");
+        ImGui::EndChild();
+        return;
+    }
+
+    static bool restart_needed;
+    static bool write_failed;
+    ImGui::TextDisabled("%u installed modification%s", count, count == 1 ? "" : "s");
+    for (unsigned i = 0; i < count; i++) {
+        const char *id = ps2_mod_id_at(i);
+        if (!id) continue;
+        ImGui::PushID((int)i);
+        ImGui::BeginChild("##mod-card", ImVec2(0.0f, ImGui::GetFontSize() * 5.4f), true,
+                          ImGuiWindowFlags_NoScrollbar);
+        ImGui::TextColored(ACCENT, "%02u  /  MODIFICATION", i + 1);
+        ImGui::SameLine();
+        ImGui::TextUnformatted(id);
+        bool requested = ps2_mod_enabled_setting_at(i) != 0;
+        if (ImGui::Checkbox("Load on next launch", &requested)) {
+            if (ps2_mod_set_enabled_at(i, requested) == 0) {
+                restart_needed = true;
+                write_failed = false;
+            } else {
+                write_failed = true;
+            }
+        }
+        ImGui::SameLine();
+        if (ps2_mod_enabled_at(i))
+            ImGui::TextColored(ACCENT, "ACTIVE THIS SESSION");
+        else if (requested && restart_needed)
+            ImGui::TextColored(WARN, "QUEUED FOR NEXT LAUNCH");
+        else if (requested)
+            ImGui::TextColored(WARN, "NOT ACTIVE - CHECK REQUIREMENTS");
+        else
+            ImGui::TextDisabled("OFF");
+        ImGui::EndChild();
+        ImGui::PopID();
+    }
+    if (restart_needed)
+        ImGui::TextColored(WARN, "RESTART THE GAME TO APPLY MODIFICATION CHANGES.");
+    if (write_failed)
+        ImGui::TextColored(WARN, "Could not save mod.toml. Check that the mods folder is writable.");
+}
+
 void draw_fps() {
     ImGuiIO &io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(10.0f * g_dpi, 10.0f * g_dpi), ImGuiCond_Always);
@@ -884,18 +953,18 @@ void draw_menu() {
     ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
     ImGui::SetNextWindowPos(io.DisplaySize * 0.5f, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     bool open = true;
-    if (ImGui::Begin(PS2_GAME_SHORT " - Settings###ps2settings", &open, ImGuiWindowFlags_NoCollapse)) {
+    if (ImGui::Begin(PS2_GAME_SHORT " // System Menu###ps2settings", &open, ImGuiWindowFlags_NoCollapse)) {
         float footer = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2.0f;
         if (ImGui::BeginTabBar("tabs")) {
             static const char *const TABS[] = {
                 "Quick", "Display", "Rendering", "Post-processing",
-                "Keyboard", "Controller", "Analog & dead zones",
+                "Keyboard", "Controller", "Analog & dead zones", "Mods",
             };
             static void (*const PAGES[])() = {
                 tab_quick, tab_display, tab_rendering, tab_post,
-                tab_keyboard, tab_controller, tab_analog,
+                tab_keyboard, tab_controller, tab_analog, tab_mods,
             };
-            for (int i = 0; i < 7; i++) {
+            for (int i = 0; i < 8; i++) {
                 ImGuiTabItemFlags f = g_want_tab == i ? ImGuiTabItemFlags_SetSelected : 0;
                 if (ImGui::BeginTabItem(TABS[i], nullptr, f)) {
                     if (ImGui::BeginChild("page", ImVec2(0.0f, -footer))) PAGES[i]();

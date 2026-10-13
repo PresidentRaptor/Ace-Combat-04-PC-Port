@@ -8,6 +8,7 @@
 #include "ps2_vfs.h"
 
 #include <limits.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +26,7 @@ typedef struct {
     char name[96], version[32], author[64];
     int priority;
     int enabled;
+    int enabled_setting;
     int native;
     int abi;
     char game[32];
@@ -221,7 +223,7 @@ static void manifest_read(mod_info *m) {
                 ps2_log("mod: %s line %u: %s must be true or false, not '%s'; "
                         "left unchanged", path, lineno, key, val);
             else if (key[0] == 'e')
-                m->enabled = b;
+                m->enabled = m->enabled_setting = b;
             else
                 m->native = b;
         } else {
@@ -504,6 +506,7 @@ void ps2_mod_init(void) {
         snprintf(m->id, sizeof m->id, "%s", e->d_name);
         snprintf(m->dir, sizeof m->dir, "%s", sub);
         m->enabled = 1;
+        m->enabled_setting = 1;
         manifest_read(m);
     }
     closedir(d);
@@ -549,6 +552,99 @@ const char *ps2_mod_id_at(unsigned i) {
 const char *ps2_mod_dir_at(unsigned i) {
     return (i < ps2_mod_count() && mods[load_order[i]].enabled)
         ? mods[load_order[i]].dir : NULL;
+}
+
+int ps2_mod_enabled_at(unsigned i) {
+    return i < ps2_mod_count() && mods[load_order[i]].enabled;
+}
+
+int ps2_mod_enabled_setting_at(unsigned i) {
+    return i < ps2_mod_count() && mods[load_order[i]].enabled_setting;
+}
+
+static int manifest_is_section(const char *line) {
+    const char *p = skip_ws(line);
+    return *p == '[';
+}
+
+static int manifest_is_enabled(const char *line) {
+    const char *p = skip_ws(line);
+    return !strncmp(p, "enabled", 7)
+        && (p[7] == '=' || p[7] == ' ' || p[7] == '\t');
+}
+
+static int manifest_write_enabled(const mod_info *m, int enabled) {
+    char path[700], tmp[704], line[2048];
+    FILE *src = NULL, *dst;
+    int in_section = 0, wrote = 0, missing = 0, last_newline = 1, n;
+    n = snprintf(path, sizeof path, "%s/mod.toml", m->dir);
+    if (n < 0 || (size_t)n >= sizeof path) return -1;
+    n = snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof tmp) return -1;
+    src = fopen(path, "rb");
+    if (!src && errno != ENOENT) return -1;
+    if (!src) missing = 1;
+    dst = fopen(tmp, "wb");
+    if (!dst) { if (src) fclose(src); return -1; }
+    if (missing) {
+        if (fprintf(dst, "enabled = %s\n", enabled ? "true" : "false") < 0)
+            goto fail;
+        wrote = 1;
+    }
+    while (src && fgets(line, sizeof line, src)) {
+        size_t line_len = strlen(line);
+        last_newline = line_len > 0 && line[line_len - 1] == '\n';
+        if (!in_section && manifest_is_section(line)) {
+            if (!wrote) {
+                if (fprintf(dst, "enabled = %s\n", enabled ? "true" : "false") < 0)
+                    goto fail;
+                wrote = 1;
+            }
+            in_section = 1;
+        }
+        if (!in_section && manifest_is_enabled(line)) {
+            if (!wrote) {
+                if (fprintf(dst, "enabled = %s\n", enabled ? "true" : "false") < 0)
+                    goto fail;
+                wrote = 1;
+            }
+            continue;
+        }
+        if (fputs(line, dst) == EOF) goto fail;
+    }
+    if (src && ferror(src)) goto fail;
+    if (!wrote) {
+        if (!missing && !last_newline && fputc('\n', dst) == EOF) goto fail;
+        if (fprintf(dst, "enabled = %s\n", enabled ? "true" : "false") < 0)
+            goto fail;
+    }
+    if (src) { fclose(src); src = NULL; }
+    if (fflush(dst) != 0) goto fail;
+    if (fclose(dst) != 0) { dst = NULL; goto fail_closed; }
+    dst = NULL;
+#ifdef _WIN32
+    if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        goto fail_closed;
+#else
+    if (rename(tmp, path) != 0) goto fail_closed;
+#endif
+    return 0;
+fail:
+    if (src) fclose(src);
+    if (dst) fclose(dst);
+fail_closed:
+    remove(tmp);
+    return -1;
+}
+
+int ps2_mod_set_enabled_at(unsigned i, int enabled) {
+    mod_info *m;
+    if (i >= ps2_mod_count()) return -1;
+    m = &mods[load_order[i]];
+    enabled = enabled != 0;
+    if (manifest_write_enabled(m, enabled) != 0) return -1;
+    m->enabled_setting = enabled;
+    return 0;
 }
 
 static const ac5_api *api_of(mod_info *m) {

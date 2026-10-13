@@ -144,6 +144,12 @@ if(PS2_GAME STREQUAL "AC4")
   target_compile_definitions(${PS2_EXE} PRIVATE PS2_GAME_AC4=1)
 endif()
 
+if(WIN32 AND PS2_GAME STREQUAL "AC4")
+  enable_language(RC)
+  configure_file(runtime/ac4.rc.in "${CMAKE_CURRENT_BINARY_DIR}/ac4.rc" @ONLY)
+  target_sources(${PS2_EXE} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ac4.rc")
+endif()
+
 target_compile_options(${PS2_EXE} PRIVATE
     -fno-strict-aliasing
     -fwrapv
