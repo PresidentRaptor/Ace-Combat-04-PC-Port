@@ -245,7 +245,7 @@ void hle_scePad2GetState(ps2_ctx *ctx) {
 static int pad_autoplay;
 void ps2_pad_autoplay(int on) { pad_autoplay = on; }
 
-#define PAD_SCRIPT_MAX 32
+#define PAD_SCRIPT_MAX 128
 static struct { u64 field; u16 mask; } pad_script[PAD_SCRIPT_MAX];
 static unsigned pad_script_n;
 static int pad_script_parsed;
@@ -312,6 +312,39 @@ static u16 pad_buttons(int port, const ps2_pad_state *st) {
     return buttons;
 }
 
+/* debugging: PS2_PAD_STICK="from-to:AXIS=v,..." holds an analog axis (LX, LY,
+   RX, RY; 0..255, 128 centred) on port 0 for that field range. */
+static void pad_script_sticks(u8 *rx, u8 *ry, u8 *lx, u8 *ly) {
+    static int parsed;
+    static struct { u64 from, to; int axis; u8 v; } st[16];
+    static unsigned n;
+    u64 now;
+    if (!parsed) {
+        const char *e = getenv("PS2_PAD_STICK"), *p = e;
+        parsed = 1;
+        while (p && *p && n < 16) {
+            char *end;
+            u64 a = strtoull(p, &end, 0), b;
+            if (*end != '-') break;
+            b = strtoull(end + 1, &end, 0);
+            if (*end != ':' || !end[1] || !end[2] || end[3] != '=') break;
+            st[n].from = a; st[n].to = b;
+            st[n].axis = (end[1] == 'R' ? 0 : 2) + (end[2] == 'Y' ? 1 : 0);
+            st[n].v = (u8)strtoul(end + 4, &end, 0);
+            n++;
+            p = *end ? end + 1 : end;
+        }
+    }
+    if (!n) return;
+    now = ps2_kernel_vblank_count();
+    for (unsigned i = 0; i < n; i++)
+        if (now >= st[i].from && now < st[i].to) {
+            u8 *t = st[i].axis == 0 ? rx : st[i].axis == 1 ? ry
+                  : st[i].axis == 2 ? lx : ly;
+            *t = st[i].v;
+        }
+}
+
 static int port_of(int socket) {
     if (socket >= 0 && socket < MAX_SOCKETS && sockets[socket].used) {
         int p = sockets[socket].port;
@@ -357,6 +390,7 @@ void hle_scePad2Read(ps2_ctx *ctx) {
     d[3] = st->ry;
     d[4] = st->lx;
     d[5] = st->ly;
+    if (port_of((int)ps2_arg(ctx, 0)) == 0) pad_script_sticks(&d[2], &d[3], &d[4], &d[5]);
     d[6]  = (buttons >> PAD_RIGHT)    & 1 ? 255 : 0;
     d[7]  = (buttons >> PAD_LEFT)     & 1 ? 255 : 0;
     d[8]  = (buttons >> PAD_UP)       & 1 ? 255 : 0;
@@ -545,4 +579,211 @@ void ps2_pad_latch(void);
 void ps2_pad_report(void) {
     ps2_log("pad: %llu libpad2 reads, %llu DBCMAN device reports",
             (unsigned long long)pad_reads, (unsigned long long)dbc_calls);
+}
+
+/* ---- libpad (the original, SDK 2.x) ----
+   Older games (AC4) link libpad rather than libpad2.  It reads a DMA area
+   that PADMAN.IRX refreshes every field, and steps a per-port state machine
+   through padman RPCs.  Both are replaced: the pad is always a stable
+   DualShock 2 in analog mode, and scePadRead fills the buffer directly. */
+
+#define LP_STATE_STABLE   6
+#define LP_REQ_COMPLETE   0
+#define LP_ID_DIGITAL     4
+#define LP_ID_ANALOG      7
+
+static struct { int open, mode_offs, press; u8 req; } lp_port[PS2_PAD_PORTS];
+static u64 lp_reads;
+static u8 lp_align[PS2_PAD_PORTS][6];     /* actuator of each SetActDirect byte */
+static u32 lp_rumble[PS2_PAD_PORTS];      /* small | large << 8 */
+static u64 lp_act_calls, lp_act_on;
+
+static int lp_port_of(ps2_ctx *ctx) {
+    u32 p = ps2_arg(ctx, 0);
+    return p < PS2_PAD_PORTS ? (int)p : -1;
+}
+
+void hle_scePadInit(ps2_ctx *ctx) {
+    memset(lp_port, 0, sizeof(lp_port));
+    for (int i = 0; i < PS2_PAD_PORTS; i++) lp_port[i].mode_offs = 1;
+    memset(lp_align, 0xFF, sizeof lp_align);
+    memset(lp_rumble, 0, sizeof lp_rumble);
+    HRET(1);
+}
+
+void hle_scePadEnd(ps2_ctx *ctx) { HRET(1); }
+
+void hle_scePadPortOpen(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    if (p < 0 || ps2_arg(ctx, 1) != 0) { HRET(0); return; }
+    lp_port[p].open = 1;
+    HRET(1);
+}
+
+void hle_scePadPortClose(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    if (p >= 0) lp_port[p].open = 0;
+    if (p >= 0) __atomic_store_n(&lp_rumble[p], 0u, __ATOMIC_RELAXED);
+    HRET(1);
+}
+
+void hle_scePadGetState(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    if (p < 0 || !lp_port[p].open) { HRET(0); return; }
+    HRET(ps2_pad_host[p].connected ? LP_STATE_STABLE : 0);
+}
+
+void hle_scePadGetReqState(ps2_ctx *ctx) { HRET(LP_REQ_COMPLETE); }
+void hle_scePadSetReqState(ps2_ctx *ctx) { HRET(1); }
+
+void hle_scePadRead(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    u32 buf = ps2_arg(ctx, 2);
+    u8 d[32];
+    u16 buttons;
+    const ps2_pad_state *st;
+    if (p < 0 || !lp_port[p].open || !buf) { HRET(0); return; }
+    st = &ps2_pad_host[p];
+    lp_reads++;
+    buttons = pad_buttons(p, st);
+    memset(d, 0, sizeof d);
+    d[0] = 0;
+    d[1] = lp_port[p].mode_offs == 0 ? 0x41 : lp_port[p].press ? 0x79 : 0x73;
+    d[2] = (u8)~buttons;
+    d[3] = (u8)(~buttons >> 8);
+    d[4] = st->rx;
+    d[5] = st->ry;
+    d[6] = st->lx;
+    d[7] = st->ly;
+    if (p == 0) pad_script_sticks(&d[4], &d[5], &d[6], &d[7]);
+    d[8]  = (buttons >> PAD_RIGHT)    & 1 ? 255 : 0;
+    d[9]  = (buttons >> PAD_LEFT)     & 1 ? 255 : 0;
+    d[10] = (buttons >> PAD_UP)       & 1 ? 255 : 0;
+    d[11] = (buttons >> PAD_DOWN)     & 1 ? 255 : 0;
+    d[12] = (buttons >> PAD_TRIANGLE) & 1 ? 255 : 0;
+    d[13] = (buttons >> PAD_CIRCLE)   & 1 ? 255 : 0;
+    d[14] = (buttons >> PAD_CROSS)    & 1 ? 255 : 0;
+    d[15] = (buttons >> PAD_SQUARE)   & 1 ? 255 : 0;
+    d[16] = (buttons >> PAD_L1)       & 1 ? 255 : 0;
+    d[17] = (buttons >> PAD_R1)       & 1 ? 255 : 0;
+    d[18] = (buttons >> PAD_L2) & 1 ? ((st->buttons >> PAD_L2) & 1 ? st->l2 : 255) : 0;
+    d[19] = (buttons >> PAD_R2) & 1 ? ((st->buttons >> PAD_R2) & 1 ? st->r2 : 255) : 0;
+    ps2_put_mem(buf, d, sizeof d);
+    HRET(32);
+}
+
+/* scePadInfoMode(port, slot, term, offs) */
+void hle_scePadInfoMode(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    int term = (int)ps2_arg(ctx, 2), offs = (int)ps2_arg(ctx, 3);
+    static const int table[2] = { LP_ID_DIGITAL, LP_ID_ANALOG };
+    if (p < 0) { HRET(0); return; }
+    switch (term) {
+    case 1: /* current id */
+    case 2: /* current extended id */
+        HRET(table[lp_port[p].mode_offs & 1]); return;
+    case 3: /* current offset into the table */
+        HRET(lp_port[p].mode_offs); return;
+    case 4: /* the table */
+        if (offs == -1) { HRET(2); return; }
+        HRET(offs >= 0 && offs < 2 ? table[offs] : 0); return;
+    }
+    HRET(0);
+}
+
+/* scePadSetMainMode(port, slot, offs, lock) */
+void hle_scePadSetMainMode(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    if (p >= 0) lp_port[p].mode_offs = (int)ps2_arg(ctx, 2) & 1;
+    HRET(1);
+}
+
+/* scePadInfoAct(port, slot, actno, term): two motors, small then large */
+void hle_scePadInfoAct(ps2_ctx *ctx) {
+    int act = (int)ps2_arg(ctx, 2), term = (int)ps2_arg(ctx, 3);
+    if (PS2_ENV("PS2_TRACE_RUMBLE")) {
+        static unsigned n;
+        if (n++ < 32) ps2_log("pad: InfoAct act=%d term=%d", act, term);
+    }
+    if (act == -1) { HRET(2); return; }
+    if (act < 0 || act > 1) { HRET(-1); return; }
+    switch (term) {
+    case 1: HRET(0); return;            /* function */
+    case 2: HRET(act); return;          /* sub-function */
+    case 3: HRET(act ? 8 : 1); return;  /* data size in bits */
+    case 4: HRET(act ? 0x54 : 0x7F); return; /* current draw */
+    }
+    HRET(-1);
+}
+
+/* scePadInfoComb(port, slot, listno, offs): one combination of both motors */
+void hle_scePadInfoComb(ps2_ctx *ctx) {
+    int list = (int)ps2_arg(ctx, 2), offs = (int)ps2_arg(ctx, 3);
+    if (list == -1) { HRET(1); return; }
+    if (list != 0) { HRET(-1); return; }
+    if (offs == -1) { HRET(2); return; }
+    HRET(offs == 0 || offs == 1 ? offs : -1);
+}
+
+/* Vibration.  scePadSetActAlign maps the six bytes scePadSetActDirect later
+   sends onto the motors (0 = small on/off motor, 1 = large 0..255 motor,
+   0xFF = unused).  The levels are handed to the renderer thread, which owns
+   the SDL gamepad (ps2_pad_take_rumble). */
+void hle_scePadSetActAlign(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    u32 a = ps2_arg(ctx, 2);
+    if (p >= 0 && a)
+        for (int i = 0; i < 6; i++) lp_align[p][i] = ps2_r8(a + (u32)i);
+    if (p >= 0 && PS2_ENV("PS2_TRACE_RUMBLE"))
+        ps2_log("pad%d: actuator align %02X %02X %02X %02X %02X %02X", p,
+                lp_align[p][0], lp_align[p][1], lp_align[p][2], lp_align[p][3],
+                lp_align[p][4], lp_align[p][5]);
+    HRET(1);
+}
+
+void hle_scePadSetActDirect(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    u32 a = ps2_arg(ctx, 2);
+    lp_act_calls++;
+    if (p >= 0 && a) {
+        u32 small = 0, large = 0;
+        for (int i = 0; i < 6; i++) {
+            u8 v = ps2_r8(a + (u32)i);
+            if (lp_align[p][i] == 0) small = v ? 1u : 0u;
+            else if (lp_align[p][i] == 1) large = v;
+        }
+        if (PS2_ENV("PS2_TRACE_RUMBLE")
+            && __atomic_load_n(&lp_rumble[p], __ATOMIC_RELAXED) != (small | (large << 8)))
+            ps2_log("pad%d: motors small=%u large=%u (field %llu)", p, small, large,
+                    (unsigned long long)ps2_kernel_vblank_count());
+        if (small | large) lp_act_on++;
+        __atomic_store_n(&lp_rumble[p], small | (large << 8), __ATOMIC_RELAXED);
+    }
+    HRET(1);
+}
+
+/* the motor levels the game last asked for: small (0/1) | large << 8 */
+u32 ps2_pad_take_rumble(int port) {
+    return port >= 0 && port < PS2_PAD_PORTS
+         ? __atomic_load_n(&lp_rumble[port], __ATOMIC_RELAXED) : 0u;
+}
+void hle_scePadInfoPressMode(ps2_ctx *ctx) { HRET(1); }
+
+void hle_scePadEnterPressMode(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    if (p >= 0) lp_port[p].press = 1;
+    HRET(1);
+}
+
+void hle_scePadExitPressMode(ps2_ctx *ctx) {
+    int p = lp_port_of(ctx);
+    if (p >= 0) lp_port[p].press = 0;
+    HRET(1);
+}
+
+void ps2_libpad_report(void) {
+    if (lp_reads)
+        ps2_log("pad: %llu libpad reads, %llu vibration updates (%llu with a motor on)",
+                (unsigned long long)lp_reads, (unsigned long long)lp_act_calls,
+                (unsigned long long)lp_act_on);
 }

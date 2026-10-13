@@ -588,7 +588,24 @@ static void emit_rgb(const s16 *y, const s16 *cb, const s16 *cr,
     }
 }
 
+static void ipu_stats(const char *what, const s16 *y, const s16 *cb, const s16 *cr) {
+    static int on = -1;
+    static u64 n[2];
+    static double sy[2], sc[2], sr[2];
+    int k = what[0] == 'c';
+    if (on < 0) on = getenv("PS2_IPU_STATS") ? 1 : 0;
+    if (!on) return;
+    for (int i = 0; i < 256; i++) sy[k] += y[i];
+    for (int i = 0; i < 64; i++) { sc[k] += cb[i]; sr[k] += cr[i]; }
+    if (++n[k] % 4000 == 0) {
+        ps2_log("ipu-stats: %s avg y=%.1f cb=%.1f cr=%.1f over 4000 mb", what,
+                sy[k] / (4000.0 * 256), sc[k] / (4000.0 * 64), sr[k] / (4000.0 * 64));
+        sy[k] = sc[k] = sr[k] = 0;
+    }
+}
+
 static void emit_raw16(const s16 *y, const s16 *cb, const s16 *cr) {
+    ipu_stats("bdec", y, cb, cr);
     {   static int shown;
         if (!shown) {
             shown = 1;
@@ -748,6 +765,7 @@ static void cmd_csc(u32 opt) {
                         cb[0], cb[1], cb[2], cb[3], cr[0], cr[1], cr[2], cr[3]);
             }
         }
+        ipu_stats("csc", y, cb, cr);
         emit_rgb(y, cb, cr, ofm, dte, 0);
     }
     in_compact();

@@ -201,6 +201,10 @@ void ps2_finish(const char *why) {
     ps2_nufile_report();
     ps2_nusound_report();
     ps2_nusndstr_report();
+#ifdef PS2_GAME_AC4
+    ps2_ac4_report();
+    ps2_libpad_report();
+#endif
     ps2_spu2_report();
     ps2_audio_report();
     ps2_pad_report();
@@ -231,7 +235,10 @@ void ps2_finish(const char *why) {
     ps2_dump_trace("run summary");
     if (video_active) {
         ps2_video_shutdown();
-        ps2_vk_screenshot("ps2_frame.ppm");
+        /* the last frame for test runs (bounded by --vblanks) -- at internal
+           resolution 6 it is ~25 MB, so a normal session does not write it */
+        if (max_vblanks || PS2_ENV("PS2_EXIT_SHOT"))
+            ps2_vk_screenshot("ps2_frame.ppm");
     } else {
         dump_framebuffer("ps2_framebuffer.ppm");
     }
@@ -607,6 +614,9 @@ int main(int argc, char **argv) {
     ps2_cdvd_init();
     ps2_cdvd_rpc_register();
     ps2_iop_services_register();
+#ifdef PS2_GAME_AC4
+    ps2_ac4_services_register();
+#endif
     ps2_pad_init();
     ps2_kernel_init();
     ps2_pad_autoplay(want_autoplay);
@@ -626,6 +636,10 @@ int main(int argc, char **argv) {
         extern void ps2_hook_selftest_attach(void);
         ps2_hook_selftest_attach();
     }
+    if (getenv("PS2_TRACE_TEXCACHE")) {
+        extern void ps2_hook_texcache_attach(long n);
+        ps2_hook_texcache_attach(strtol(getenv("PS2_TRACE_TEXCACHE"), NULL, 0));
+    }
     if (load_image(dir) != 0) return 1;
     ps2_mod_init();
     if (disc && ps2_vfs_open(disc) != 0)
@@ -641,13 +655,16 @@ int main(int argc, char **argv) {
         ps2_sif_hle_init();
         ps2_cdvd_rpc_register();
         ps2_iop_services_register();
+#ifdef PS2_GAME_AC4
+    ps2_ac4_services_register();
+#endif
         bad  = nufile_selftest("\\BIN\\DATA.TBL;1");
         bad += nufile_selftest("\\SYSTEM.CNF;1");
         return bad ? 1 : 0;
     }
     ps2_settings_load();
     ps2_video_hidden(want_hidden);
-    if (want_video && ps2_video_init("Ace Combat 5 - The Unsung War", 640, 448) != 0) {
+    if (want_video && ps2_video_init(PS2_GAME_TITLE, 640, 448) != 0) {
         ps2_log("warning: no video output; running headless");
         want_video = 0;
     }
@@ -716,6 +733,10 @@ int main(int argc, char **argv) {
     ps2_nufile_report();
     ps2_nusound_report();
     ps2_nusndstr_report();
+#ifdef PS2_GAME_AC4
+    ps2_ac4_report();
+    ps2_libpad_report();
+#endif
     ps2_spu2_report();
         ps2_pad_report();
         ps2_video_report();

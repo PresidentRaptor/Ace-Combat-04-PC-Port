@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "ps2_runtime.h"
+#include "ps2_hle.h"
 
 void ps2_spu2_mix(s16 *out, u32 n);
 void ps2_spu2_init(void);
@@ -67,6 +68,10 @@ static void SDLCALL audio_cb(void *userdata, SDL_AudioStream *stream,
         frames = want_bytes / (int)(AUDIO_CHANNELS * sizeof(s16));
         if (frames <= 0) break;
         ps2_spu2_mix(buf, (u32)frames);
+#ifdef PS2_GAME_AC4
+        ps2_ac4_vag_mix(buf, (u32)frames);
+        ps2_ac4_snd_mix(buf, (u32)frames);
+#endif
         bytes = frames * (int)(AUDIO_CHANNELS * sizeof(s16));
         SDL_PutAudioStreamData(stream, buf, bytes);
         wav_put(buf, bytes);
@@ -96,9 +101,9 @@ void ps2_audio_start(void) {
         ps2_log("audio: SDL_OpenAudioDeviceStream: %s", SDL_GetError());
         return;
     }
-    SDL_ResumeAudioStreamDevice(audio_stream);
     wav_open();
     audio_started = 1;
+    SDL_ResumeAudioStreamDevice(audio_stream);
     ps2_log("audio: %u Hz %u-channel s16 device open, SPU2 mixer attached",
             AUDIO_RATE, AUDIO_CHANNELS);
 }

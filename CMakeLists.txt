@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ps2recomp_ac5 C CXX)
+project(ps2recomp_ac C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -15,6 +15,10 @@ set(CMAKE_C_FLAGS_RELEASE "-O2")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
 option(PS2_DIAG "compile the entry histogram and the guest-store watch in" OFF)
+
+set(PS2_GAME "AC4" CACHE STRING "game the runtime is built for: AC4 or AC5")
+set_property(CACHE PS2_GAME PROPERTY STRINGS AC4 AC5)
+string(TOLOWER "${PS2_GAME}" PS2_EXE)
 
 find_package(Threads REQUIRED)
 
@@ -58,6 +62,7 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_hle_cdvd.c
     runtime/src/ps2_hle_pad.c
     runtime/src/ps2_hle_iop.c
+    runtime/src/ps2_hle_ac4.c
     runtime/src/ps2_video.c
     runtime/src/ps2_state.c
     runtime/src/ps2_capture.c
@@ -112,14 +117,14 @@ set(IMGUI_SOURCES
 set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
 list(APPEND RUNTIME_SOURCES ${IMGUI_SOURCES})
 
-add_executable(ac5 ${RUNTIME_SOURCES} ${GENERATED_SOURCES})
-target_include_directories(ac5 PRIVATE runtime/include "${GEN_DIR}"
+add_executable(${PS2_EXE} ${RUNTIME_SOURCES} ${GENERATED_SOURCES})
+target_include_directories(${PS2_EXE} PRIVATE runtime/include "${GEN_DIR}"
                                        ${IMGUI_DIR} ${IMGUI_DIR}/backends
                                        ${SDL3_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
-target_link_directories(ac5 PRIVATE ${SDL3_LIBRARY_DIRS})
-target_link_libraries(ac5 PRIVATE Threads::Threads m
+target_link_directories(${PS2_EXE} PRIVATE ${SDL3_LIBRARY_DIRS})
+target_link_libraries(${PS2_EXE} PRIVATE Threads::Threads m
                                   ${SDL3_LIBRARIES} Vulkan::Vulkan lua54)
-target_link_options(ac5 PRIVATE -static-libstdc++ -static-libgcc)
+target_link_options(${PS2_EXE} PRIVATE -static-libstdc++ -static-libgcc)
 
 option(PS2_HOOK_ENTRIES "patchable entry sleds in generated code, for mod hooks" ON)
 set(GEN_COMPILE_OPTIONS "${GEN_OPT}")
@@ -133,10 +138,13 @@ set(HOT_SOURCES runtime/src/ps2_vu.c runtime/src/ps2_gs.c runtime/src/ps2_hw.c)
 set_source_files_properties(${HOT_SOURCES} PROPERTIES COMPILE_OPTIONS "-O3")
 
 if(PS2_DIAG)
-  target_compile_definitions(ac5 PRIVATE PS2_DIAG=1)
+  target_compile_definitions(${PS2_EXE} PRIVATE PS2_DIAG=1)
+endif()
+if(PS2_GAME STREQUAL "AC4")
+  target_compile_definitions(${PS2_EXE} PRIVATE PS2_GAME_AC4=1)
 endif()
 
-target_compile_options(ac5 PRIVATE
+target_compile_options(${PS2_EXE} PRIVATE
     -fno-strict-aliasing
     -fwrapv
     -Wall -Wextra
@@ -169,6 +177,9 @@ target_link_options(gsreplay PRIVATE -static-libstdc++ -static-libgcc)
 if(PS2_DIAG)
   target_compile_definitions(gsreplay PRIVATE PS2_DIAG=1)
 endif()
+if(PS2_GAME STREQUAL "AC4")
+  target_compile_definitions(gsreplay PRIVATE PS2_GAME_AC4=1)
+endif()
 
 target_compile_options(gsreplay PRIVATE
     -fno-strict-aliasing -fwrapv
@@ -195,7 +206,7 @@ foreach(SH gs.vert gs.frag gs_zcopy.frag colclip.frag present.vert present.frag
   list(APPEND SPV_FILES "${SHADER_OUT}/${SH}.spv")
 endforeach()
 add_custom_target(shaders ALL DEPENDS ${SPV_FILES})
-add_dependencies(ac5 shaders)
+add_dependencies(${PS2_EXE} shaders)
 add_dependencies(gsreplay shaders)
 
 include(CheckCSourceCompiles)

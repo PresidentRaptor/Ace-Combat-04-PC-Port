@@ -233,6 +233,9 @@ static int iop_free(u32 address) {
     return 0;
 }
 
+/* For native IOP services that need IOP RAM of their own (module .bss). */
+u32 ps2_iop_alloc(u32 size) { return iop_alloc(0, size, 0); }
+
 void hle_sceSifAllocIopHeap(ps2_ctx *ctx) {
     HRET(iop_alloc(0, ps2_arg(ctx, 0), 0));
 }

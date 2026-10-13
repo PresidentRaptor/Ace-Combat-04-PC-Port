@@ -183,6 +183,7 @@ void ps2_settings_defaults(ps2_settings *s) {
     s->present_mode = PS2_PRESENT_MAILBOX;
     s->ui_scale = 1.0f;
     s->block_input_in_menu = 1;
+    s->vibration = 1;
     ps2_settings_default_bindings(s, 1, 1);
     s->deadzone = 0.0f;
     s->axis_scale = 1.33f;
@@ -221,12 +222,17 @@ static void sanitize(ps2_settings *s) {
     s->aspect_custom = clampf(s->aspect_custom, 0.5f, 4.0f);
     s->integer_scale = s->integer_scale != 0;
     s->widescreen = s->widescreen != 0;
+#ifdef PS2_GAME_AC4
+    /* The camera constants below belong to SLUS-20851, not SLUS-20152. */
+    s->widescreen = 0;
+#endif
     s->hud_layout = clampi(s->hud_layout, 0, 1);
     s->present_mode = clampi(s->present_mode, 0, 3);
     s->fps_limit = clampi(s->fps_limit, 0, 1000);
     s->show_fps = s->show_fps != 0;
     s->ui_scale = clampf(s->ui_scale, 0.5f, 3.0f);
     s->block_input_in_menu = s->block_input_in_menu != 0;
+    s->vibration = s->vibration != 0;
     for (int a = 0; a < PS2_ACT_COUNT; a++)
         for (int k = 0; k < PS2_BIND_SLOTS; k++) {
             if (s->key[a][k] < 0 || s->key[a][k] >= SDL_SCANCODE_COUNT) s->key[a][k] = 0;
@@ -279,6 +285,7 @@ static const cfg_field fields[] = {
     FI("display", "show_fps", show_fps, "1 on"),
     FF("display", "menu_scale", ui_scale, "0.5..3"),
     FI("input", "block_game_input_in_menu", block_input_in_menu, "1 on"),
+    FI("input", "vibration", vibration, "1 rumble the controller when the game asks"),
     FF("analog", "deadzone", deadzone, "PCSX2 Analog Deadzone, both sticks, 0..1"),
     FF("analog", "axis_scale", axis_scale, "PCSX2 Analog Sensitivity, 0.01..2 (default 1.33)"),
     FF("analog", "button_deadzone", button_deadzone, "PCSX2 Button/Trigger Deadzone, 0..1"),
@@ -296,7 +303,7 @@ const char *ps2_settings_path(void) {
         const char *e = getenv("PS2_SETTINGS_FILE");
         const char *base = SDL_GetBasePath();
         if (e && *e) snprintf(cfg_path, sizeof cfg_path, "%s", e);
-        else snprintf(cfg_path, sizeof cfg_path, "%sac5_settings.ini", base ? base : "");
+        else snprintf(cfg_path, sizeof cfg_path, "%s" PS2_GAME_PREFIX "settings.ini", base ? base : "");
     }
     return cfg_path;
 }
@@ -394,7 +401,7 @@ void ps2_settings_save(void) {
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
     f = fopen(tmp, "w");
     if (!f) { ps2_log("settings: cannot write %s", tmp); return; }
-    fprintf(f, "# Ace Combat 5 recompiled -- settings.\n"
+    fprintf(f, "# " PS2_GAME_SHORT " recompiled -- settings.\n"
                "# Written by the in-game menu (F4).  Hand edits are kept as long as\n"
                "# each line stays key = value; unknown keys are ignored.\n");
     for (size_t i = 0; i < sizeof fields / sizeof fields[0]; i++) {
@@ -433,11 +440,16 @@ void ps2_settings_touch(int dirty) {
 
 int ps2_settings_take_dirty(void) { return atomic_exchange(&cfg_dirty, 0); }
 
+#ifndef PS2_GAME_AC4
 static const u32 ws_addr[2]  = { 0x00440828u, 0x0044082Cu };
 static const u32 ws_orig[2]  = { 0x440315C2u, 0x441013D7u };
 static const u32 ws_patch[2] = { 0x43D638F3u, 0x43EB7385u };
+#endif
 
 void ps2_settings_apply_game_patches(void) {
+#ifdef PS2_GAME_AC4
+    return;
+#else
     static int logged = -1;
     if (!ps2_ram) return;
     for (int i = 0; i < 2; i++) {
@@ -452,6 +464,7 @@ void ps2_settings_apply_game_patches(void) {
         logged = ps2_cfg.widescreen;
         ps2_log("settings: widescreen patch %s", logged ? "on" : "off");
     }
+#endif
 }
 
 float ps2_pad_axis_value(int raw, int positive) {

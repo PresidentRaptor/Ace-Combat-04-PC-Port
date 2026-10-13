@@ -392,9 +392,9 @@ static void requirements_resolve(void) {
             snprintf(why, sizeof why, "it needs mod ABI %d, and this runtime "
                      "has %d", m->abi, AC5_ABI_VERSION);
             switch_off(m, why);
-        } else if (m->game[0] && strcmp(m->game, "SLUS-20851")) {
+        } else if (m->game[0] && strcmp(m->game, PS2_GAME_SERIAL)) {
             char why[200];
-            snprintf(why, sizeof why, "it is for %s, and this is SLUS-20851",
+            snprintf(why, sizeof why, "it is for %s, and this is " PS2_GAME_SERIAL,
                      m->game);
             switch_off(m, why);
         } else if (requires_each(m, NULL, NULL) < 0) {

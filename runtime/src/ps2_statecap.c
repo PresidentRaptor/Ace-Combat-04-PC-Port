@@ -1,4 +1,5 @@
 #include "ps2_statecap.h"
+u64 ps2_kernel_vblank_count(void);
 #include "ps2_capture.h"
 #include "ps2_hle.h"
 #include <stdio.h>
@@ -290,9 +291,16 @@ void ps2_statecap_request(const char *why) {
 
 static void *marker_thread(void *p) {
     (void)p;
+    u64 snap_at = 0;
+    {   const char *e = getenv("PS2_SNAP_AT");
+        if (e) snap_at = strtoull(e, NULL, 0); }
     for (;;) {
         FILE *f;
         snap_sleep_ms(200);
+        if (snap_at && ps2_kernel_vblank_count() >= snap_at) {
+            snap_at = 0;
+            ps2_statecap_request("PS2_SNAP_AT");
+        }
         f = fopen("snap.on", "rb");
         if (f) {
             char b[96];

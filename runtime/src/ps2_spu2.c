@@ -206,6 +206,14 @@ void ps2_spu2_stream_volume(u32 i, u32 l, u32 r) {
     spu2_v[i].voll = spu2_vol_decode((u16)l);
     spu2_v[i].volr = spu2_vol_decode((u16)r);
 }
+void ps2_spu2_voice_volume(u32 i, s16 *l, s16 *r) {
+    *l = *r = 0;
+    if (i >= SPU2_VOICES) return;
+    SDL_LockSpinlock(&spu2_lock);
+    *l = spu2_v[i].voll;
+    *r = spu2_v[i].volr;
+    SDL_UnlockSpinlock(&spu2_lock);
+}
 void ps2_spu2_key_on_mask(u32 core0, u32 core1) {
     u32 b;
     for (b = 0; b < 24u; b++) {

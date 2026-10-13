@@ -9,6 +9,7 @@ layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec3 v_stq;
 layout(location = 2) out float v_fog;
 layout(location = 3) flat out uint v_round_uv;
+layout(location = 4) flat out uvec2 v_clamp;
 
 out gl_PerVertex {
     vec4 gl_Position;
@@ -64,6 +65,7 @@ void main() {
     float fog = clamp(k.fog0 + w * k.fog1, 0.0, 255.0);
     v_fog = fog / 255.0;
     v_round_uv = 0u;
+    v_clamp = uvec2(0u);
     gl_PointSize = pc.point_size;
 
     if (k.prog == 5u) {

@@ -2,6 +2,7 @@
 #define PS2_RUNTIME_H
 
 #include <stdint.h>
+#include "ps2_game.h"
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>

@@ -354,6 +354,7 @@ static void usage(const char *argv0) {
 "  --loop N        replay N times, 0 = until the window is closed\n"
 "  --fields N      stop each pass after N fields\n"
 "  --bench         time every pass and print the phase profile\n"
+"  --hidden        render through Vulkan without showing a window\n"
 "  --novideo       run headless -- but NOT the fast path and NOT what you\n"
 "                  want for a measurement: with no Vulkan device, vertex_kick\n"
 "                  falls through to the software rasteriser, which is a\n"
@@ -388,7 +389,8 @@ int main(int argc, char **argv) {
     ps2_wall_seconds();
 
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--novideo")) want_video = 0;
+        if (!strcmp(argv[i], "--hidden")) ps2_video_hidden(1);
+        else if (!strcmp(argv[i], "--novideo")) want_video = 0;
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
         else if (!strcmp(argv[i], "--verbose")) ps2_verbose = 1;
         else if (!strcmp(argv[i], "--loud")) quiet = 0;
@@ -597,6 +599,9 @@ int main(int argc, char **argv) {
             fprintf(stderr, "[REPLAY] framebuffer written to %s (%ux%u)\n",
                     shot, w, h);
         }
+    }
+    {   extern void ps2_vu_census_dump(void);
+        ps2_vu_census_dump();   /* PS2_VU_CENSUS=1: out/vu_programs for tools/vurecomp */
     }
     fprintf(stderr, "[REPLAY] done; see %s\n", want_video ? shot : "(no video)");
     if (want_video) ps2_video_shutdown();

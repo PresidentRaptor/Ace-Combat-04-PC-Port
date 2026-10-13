@@ -13,9 +13,15 @@ typedef struct ps2_vk_vertex {
     float s, t, q;
     float fog;
     u32 round_uv;
+    /* With PS2_VK_RUV_CLAMP: the texel range a bilinear sprite samples at
+       native resolution (first and last pixel centre), as signed 12.4 lo|hi<<16
+       per axis.  Upscaled sub-pixels are kept inside it, so a sprite never
+       picks up the texels beyond its edge that native rendering never reads. */
+    u32 clamp_u, clamp_v;
 } ps2_vk_vertex;
 
 #define PS2_VK_RUV_SPRITE (1u << 29)
+#define PS2_VK_RUV_CLAMP  (1u << 30)
 
 typedef struct ps2_vk_state {
     u32 fb_w, fb_h;
@@ -62,6 +68,17 @@ typedef struct ps2_vk_state {
     int colclip;
     u32 emitter;
     int native_region;
+    /* CLUT in a GPU-drawn render target: slot + 1, its pixel position
+       (x | y << 16), and whether the texture is 4-bit */
+    u32 clut_rt;
+    u32 clut_xy;
+    int clut_four;
+    /* An untextured draw into the VRAM another target uses as its Z buffer
+       (AC4 clears its depth that way): that target's slot + 1, and the Z
+       width the colour bits stand for (24 or 32).  The renderer repeats the
+       draw as a depth write there. */
+    u32 zclear_rt;
+    u32 zclear_bits;
 } ps2_vk_state;
 
 enum { PS2_VK_POINTS = 0, PS2_VK_LINES = 1, PS2_VK_TRIANGLES = 2 };

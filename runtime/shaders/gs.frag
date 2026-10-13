@@ -3,12 +3,14 @@ layout(location = 0) in vec4 v_color;
 layout(location = 1) in vec3 v_stq;
 layout(location = 2) in float v_fog;
 layout(location = 3) flat in uint v_round_uv;
+layout(location = 4) flat in uvec2 v_clamp;
 
 layout(location = 0, index = 0) out vec4 out_color;
 layout(location = 0, index = 1) out vec4 out_blend;
 
 layout(set = 0, binding = 0) uniform sampler2D tex;
 layout(set = 1, binding = 0) uniform sampler2D dsttex;
+layout(set = 3, binding = 0) uniform sampler2D clutrt;   // render target holding a CLUT
 
 layout(push_constant) uniform PC {
     vec2  inv_size;
@@ -20,10 +22,11 @@ layout(push_constant) uniform PC {
     float scale;
     float point_size;
     float tex_scale;
-    float pad0;
+    uint  clut_xy;
 } pc;
 
 const uint RUV_SPRITE = 1u << 29;
+const uint RUV_CLAMP  = 1u << 30;
 
 float gs_wrap(float t, uint mode, float lo, float hi, float size, bool own) {
     if (mode == 0u) return own ? mod(t, max(size, 1.0)) : t;
@@ -50,6 +53,36 @@ vec4 sample_region_repeat(vec2 tc) {
     b = ((b % size) + size) % size;
     return mix(mix(texelFetch(tex, a, 0), texelFetch(tex, ivec2(b.x, a.y), 0), w.x),
                mix(texelFetch(tex, ivec2(a.x, b.y), 0), texelFetch(tex, b, 0), w.x), w.y);
+}
+
+// CLUT entry `e` read from the render target the GPU drew it into (CSM1, PSMCT32):
+// 4-bit textures use an 8x2 block per 16 entries, 8-bit ones 16x16 with the
+// GS's bit 3/4 swap.
+vec4 clut_rt_entry(uint e, bool four) {
+    uint cx, cy;
+    if (four) { cx = e & 7u; cy = e >> 3; }
+    else {
+        uint p = (e & ~0x18u) | ((e & 8u) << 1) | ((e & 16u) >> 1);
+        cx = p & 15u; cy = p >> 4;
+    }
+    int s = max(int(pc.scale + 0.5), 1);
+    ivec2 at = ivec2(int(pc.clut_xy & 0xFFFFu) + int(cx), int(pc.clut_xy >> 16) + int(cy));
+    return texelFetch(clutrt, at * s + s / 2, 0);
+}
+vec4 clut_rt_texel(ivec2 p, bool four) {
+    ivec2 size = textureSize(tex, 0);
+    p = ((p % size) + size) % size;
+    return clut_rt_entry(uint(texelFetch(tex, p, 0).r * 255.0 + 0.5), four);
+}
+vec4 clut_rt_bilinear(vec2 tc, bool four) {
+    vec2 lo = floor(tc), hi = lo + 1.0, w = fract(tc);
+    ivec2 a, b;
+    a.x = int(gs_wrap(lo.x, pc.flags.z & 3u, float(pc.clamp_uv.x), float(pc.clamp_uv.y), pc.tex_size.x, true));
+    b.x = int(gs_wrap(hi.x, pc.flags.z & 3u, float(pc.clamp_uv.x), float(pc.clamp_uv.y), pc.tex_size.x, true));
+    a.y = int(gs_wrap(lo.y, (pc.flags.z >> 2) & 3u, float(pc.clamp_uv.z), float(pc.clamp_uv.w), pc.tex_size.y, true));
+    b.y = int(gs_wrap(hi.y, (pc.flags.z >> 2) & 3u, float(pc.clamp_uv.z), float(pc.clamp_uv.w), pc.tex_size.y, true));
+    return mix(mix(clut_rt_texel(a, four), clut_rt_texel(ivec2(b.x, a.y), four), w.x),
+               mix(clut_rt_texel(ivec2(a.x, b.y), four), clut_rt_texel(b, four), w.x), w.y);
 }
 
 int wrap_up(int k, uint mode, int lo, int hi, int size, int s) {
@@ -148,6 +181,15 @@ void main() {
             tc.y = sprite_round(tc.y, (ruv >> 2) & 3u,
                 int((ruv >> 16) & 4095u) - 2048, pix.y);
         }
+        if (!point && pc.scale > 1.0 && (v_round_uv & RUV_CLAMP) != 0u) {
+            /* keep upscaled sub-pixels inside the texels the sprite samples
+               at native resolution, so its edges do not bleed */
+            vec2 lo = vec2(float(int(v_clamp.x << 16) >> 16),
+                           float(int(v_clamp.y << 16) >> 16)) / 16.0;
+            vec2 hi = vec2(float(int(v_clamp.x) >> 16),
+                           float(int(v_clamp.y) >> 16)) / 16.0;
+            tc = clamp(tc, lo, hi);
+        }
         if (!point && (f & (1u << 25)) != 0u) tc -= 0.5;
         vec2 unwrapped_tc = tc;
         bool own = any(notEqual(pc.img_size, pc.tex_size));
@@ -158,7 +200,11 @@ void main() {
                        float(pc.clamp_uv.z), float(pc.clamp_uv.w),
                        pc.tex_size.y, own);
         vec4 t;
-        if (point) {
+        if ((f & (1u << 30)) != 0u) {
+            bool four = (f & (1u << 31)) != 0u;
+            if (point) t = clut_rt_texel(ivec2(floor(tc + 1.0 / 32.0)), four);
+            else       t = clut_rt_bilinear(unwrapped_tc, four);
+        } else if (point) {
             ivec2 size = textureSize(tex, 0);
             ivec2 p = ivec2(floor(tc + (ruv == 0u ? 1.0 / 32.0 : 0.0)));
             if (rt_up) {

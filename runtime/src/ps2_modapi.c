@@ -688,7 +688,7 @@ const ac5_api *ps2_modapi_for(const char *mod_id, int priority,
     m->config_get = config_get;
 
     m->api.abi_version = AC5_ABI_VERSION;
-    m->api.game_id = "SLUS-20851";
+    m->api.game_id = PS2_GAME_SERIAL;
     m->api.mod_id = m->id;
     m->api.priority = priority;
     m->api.log = api_log;

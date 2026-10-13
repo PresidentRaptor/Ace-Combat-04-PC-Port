@@ -728,6 +728,30 @@ static void dma_from_peripheral(int ch, u32 madr, u32 qwc) {
     }
 }
 
+/* Interleave mode (MOD 2) exists only on the scratchpad channels: the main
+   memory side moves TQWC quadwords, then skips SQWC, while the scratchpad
+   side stays contiguous.  MPEG decoders use it to scatter macroblock rows
+   into a frame. */
+static void dma_spr_interleave(int ch) {
+    u32 tqwc = (d_sqwc >> 16) & 0xFFu, sqwc = d_sqwc & 0xFFu;
+    u32 madr = dma[ch].madr, sadr = dma[ch].sadr & (PS2_SPR_SIZE - 1u);
+    u32 run = 0;
+    if (!tqwc) tqwc = 1;
+    for (u32 i = 0; i < dma[ch].qwc; i++) {
+        u8 *mem = dma_host_ptr(madr);
+        u8 *spr = ps2_spr + (sadr & (PS2_SPR_SIZE - 16u));
+        if (mem) {
+            if (ch == 8) memcpy(mem, spr, 16);
+            else         memcpy(spr, mem, 16);
+        }
+        madr += 16;
+        sadr += 16;
+        if (++run == tqwc) { run = 0; madr += sqwc * 16u; }
+    }
+    dma[ch].madr = madr;
+    dma[ch].sadr = sadr & (PS2_SPR_SIZE - 1u);
+}
+
 static void dma_run_chain(int ch) {
     u32 tte = (dma[ch].chcr >> 6) & 1u;
     u32 tie = (dma[ch].chcr >> 7) & 1u;
@@ -763,7 +787,8 @@ static void dma_run_chain(int ch) {
                             a == dma[ch].tadr ? "   <-- the tag" : "");
                 }
                 ps2_dump_trace("implausible DMAtag");
-                if (said == 1u) ps2_state_dump_numbered("badtag");
+                if (said == 1u && PS2_ENV("PS2_DUMP_BADTAG"))
+                    ps2_state_dump_numbered("badtag");
             }
         }
         if ((ch == 1 || ch == 2) && (qwc || (tte && ch == 1)))
@@ -893,6 +918,8 @@ static void dma_ipu_advance(void) {
             u32 id, irq, addr;
             if (!tagq) break;
             tag  = tagq->ud[0];
+            /* CHCR.TAG keeps the upper half of the last tag read */
+            dma[4].chcr = (dma[4].chcr & 0xFFFFu) | ((u32)tag & 0xFFFF0000u);
             dma[4].qwc = (u32)(tag & 0xFFFFu);
             id   = (u32)((tag >> 28) & 7u);
             irq  = (u32)((tag >> 31) & 1u);
@@ -1017,7 +1044,11 @@ static void dma_start(int ch) {
     u32 mod = (chcr >> 2) & 3u;
     u32 dir = chcr & 1u;
     if (ch == 4) {
-        ipu_tag_end = 0;
+        /* A chain resumed mid-transfer (QWC left over) carries on from the
+           tag in CHCR.TAG: after a REFE or END tag the DMAC stops once QWC
+           runs out instead of reading TADR, which may hold a stale tag. */
+        u32 tag_id = (chcr >> 28) & 7u;
+        ipu_tag_end = mod == 1u && dma[4].qwc && (tag_id == 0u || tag_id == 7u);
         ipu_pull_left = 8u;
         dma_ipu_advance();
         ipu_pull_left = 0u;
@@ -1046,6 +1077,8 @@ static void dma_start(int ch) {
         }
         if (mod == 1) {
             dma_run_chain(ch);
+        } else if (mod == 2 && (ch == 8 || ch == 9)) {
+            dma_spr_interleave(ch);
         } else if (to_peripheral) {
             dma_to_peripheral(ch, dma[ch].madr, dma[ch].qwc);
         } else {
@@ -1188,12 +1221,16 @@ static void hw_write32(u32 a, u32 v) {
             if (ch == 4) ch4_log_push(v);
             if (ch == 4) {
                 static unsigned seen;
-                if (seen < 12u) {
+                if (seen < 12u || PS2_ENV("PS2_TRACE_DMA4")) {
                     seen++;
                     ps2_log("dma4: CHCR write #%u = %08X  mod=%u str=%u "
                             "madr=%08X qwc=%u tadr=%08X", seen, v,
                             (v >> 2) & 3u, (v >> 8) & 1u,
                             dma[4].madr, dma[4].qwc, dma[4].tadr);
+                    if ((v & 0x100u) && ((v >> 2) & 3u) == 1u) {
+                        const ps2_reg128 *t = guest_qw(dma[4].tadr);
+                        if (t) ps2_log("dma4:   first tag %08X %08X", t->uw[0], t->uw[1]);
+                    }
                 }
             }
             if (v & 0x100u) dma_start(ch);

@@ -499,6 +499,53 @@ static int selftest_hook(ps2_ctx *ctx, void *user) {
     return 0;
 }
 
+/* PS2_TRACE_TEXCACHE=N: AC4's terrain texture cache (sub_0013B2F8 builds the
+   tile uploads): its slot counter and first slots before and after the
+   first N calls. */
+static u32 tc_obj;
+static long tc_left;
+static void tc_dump(const char *when, u32 o) {
+    u32 cnt = ps2_r32(o + 288u), p292 = ps2_r32(o + 292u), p296 = ps2_r32(o + 296u);
+    u32 p300 = ps2_r32(o + 300u), p280 = ps2_r32(o + 280u);
+    char b[256];
+    int n = 0;
+    for (u32 k = 0; k < 8u && p292; k++)
+        n += snprintf(b + n, sizeof b - (size_t)n, " %04X/%04X",
+                      ps2_r16(p292 + k * 2u), p296 ? ps2_r16(p296 + k * 2u) : 0u);
+    b[n] = 0;
+    ps2_log("texcache %s obj=%08X cnt=%u +280=%08X +292=%08X +296=%08X +300=%08X |%s",
+            when, o, cnt, p280, p292, p296, p300, b);
+}
+static int tc_before(ps2_ctx *ctx, void *user) {
+    (void)user;
+    tc_obj = ctx->r[4].uw[0];
+    if (tc_left > 0) tc_dump("before", tc_obj);
+    return 0;
+}
+static int tc_after(ps2_ctx *ctx, void *user) {
+    (void)ctx; (void)user;
+    if (tc_left > 0) {
+        u32 o = tc_obj, cnt = ps2_r32(o + 288u), p292 = ps2_r32(o + 292u);
+        u32 p296 = ps2_r32(o + 296u), p300 = ps2_r32(o + 300u), p280 = ps2_r32(o + 280u);
+        tc_dump("after ", o);
+        for (u32 k = 0; k < cnt && k < 128u; k++) {
+            u32 e = ps2_r16(p292 + k * 2u), id = ps2_r16(p296 + k * 2u);
+            ps2_log("texcache   [%3u] entry=%04X slot=%u id=%u  tab300[id]=%04X tab280[id]=%02X",
+                    k, e, e & 1023u, id, id < 1024u ? ps2_r16(p300 + id * 2u) : 0xFFFFu,
+                    id < 1024u ? ps2_r8(p280 + id) : 0xFFu);
+        }
+        tc_left--;
+    }
+    return 0;
+}
+void ps2_hook_texcache_attach(long n);
+void ps2_hook_texcache_attach(long n) {
+    tc_left = n;
+    if (ps2_hook_before(0x0013B2F8u, tc_before, NULL, 0, "texcache-trace") > 0
+        && ps2_hook_after(0x0013B2F8u, tc_after, NULL, 0, "texcache-trace") > 0)
+        ps2_log("hook: texture-cache trace on 0013B2F8 (%ld calls)", n);
+}
+
 void ps2_hook_selftest_attach(void);
 void ps2_hook_selftest_attach(void) {
     if (ps2_hook_before(0x0011DB30u, selftest_hook, NULL, 0,

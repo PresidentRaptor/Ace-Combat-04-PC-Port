@@ -1,0 +1,772 @@
+{
+ "0x002616E8": {
+  "name": "sceGsResetGraph",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00261888": {
+  "name": "sceGsResetPath",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00261B60": {
+  "name": "sceGsPutDispEnv",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00261C20": {
+  "name": "sceGsSyncV",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00262338": {
+  "name": "memclr",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00262370": {
+  "name": "sceDmaGetChan",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00262398": {
+  "name": "sceDmaReset",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00262488": {
+  "name": "sceDmaPutEnv",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00263050": {
+  "name": "sceVu0InversMatrix",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00263258": {
+  "name": "_sceVu0ecossin",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002632D0": {
+  "name": "sceVu0TransMatrix",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00263420": {
+  "name": "sceVu0RotMatrixY",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002634C8": {
+  "name": "sceVu0RotMatrix",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00263540": {
+  "name": "sceVu0CameraMatrix",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002635F0": {
+  "name": "sceVu0NormalLightMatrix",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002636B0": {
+  "name": "sceVu0LightColorMatrix",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00263718": {
+  "name": "sceVu0ViewScreenMatrix",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264560": {
+  "name": "VSync2",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002645C0": {
+  "name": "write",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264640": {
+  "name": "read",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002646F8": {
+  "name": "sbrk",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002647B0": {
+  "name": "fstat",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002647D0": {
+  "name": "kill",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264A88": {
+  "name": "kCopy",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264AD0": {
+  "name": "InitAlarm",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264BA8": {
+  "name": "QueueInit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264BD0": {
+  "name": "QueuePeekWriteDone",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264C10": {
+  "name": "QueuePeekReadDone",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264C50": {
+  "name": "sceTtyHandler",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264DE8": {
+  "name": "sceTtyWrite",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00264F38": {
+  "name": "sceTtyRead",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265008": {
+  "name": "sceTtyInit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002650C8": {
+  "name": "kputchar",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265100": {
+  "name": "deci2Putchar",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002651B0": {
+  "name": "serialPutchar",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002651E8": {
+  "name": "ftoi",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265278": {
+  "name": "printfloat",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002653E0": {
+  "name": "_sceSnprintf",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265464": {
+  "name": "sceVsnprintf",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002654FC": {
+  "name": "kprintf",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002659E0": {
+  "name": "sceSifMInitRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265A40": {
+  "name": "sceSifInitRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265BE0": {
+  "name": "sceSifExitRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265C08": {
+  "name": "_sceRpcGetPacket",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265CB0": {
+  "name": "_sceRpcFreePacket",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265CD0": {
+  "name": "_sceRpcGetFPacket",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265D00": {
+  "name": "_sceRpcGetFPacket2",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265E58": {
+  "name": "sceSifGetOtherData",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00265FB0": {
+  "name": "_search_svdata",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002660B0": {
+  "name": "sceSifBindRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002661F0": {
+  "name": "_request_call",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266280": {
+  "name": "sceSifCallRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266470": {
+  "name": "sceSifCheckStatRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002664B0": {
+  "name": "sceSifSetRpcQueue",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266548": {
+  "name": "sceSifRegisterRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266618": {
+  "name": "sceSifRemoveRpc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002666B0": {
+  "name": "sceSifRemoveRpcQueue",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266740": {
+  "name": "sceSifGetNextRequest",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266798": {
+  "name": "sceSifExecRequest",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266960": {
+  "name": "sceSifRpcLoop",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266A00": {
+  "name": "new_iob",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266A88": {
+  "name": "get_iob",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266EB8": {
+  "name": "_sceFsSemInit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266F08": {
+  "name": "_sceFsWaitS",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00266F48": {
+  "name": "sceFsInit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002670E8": {
+  "name": "_fs_version",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00267178": {
+  "name": "sceFsReset",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002671B0": {
+  "name": "sceFsSetIopBuf",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002683F0": {
+  "name": "sceRemove",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002685C0": {
+  "name": "sceRmdir",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00268850": {
+  "name": "sceFormat",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00268970": {
+  "name": "sceDelDrv",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00268990": {
+  "name": "sceDopen",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002692C0": {
+  "name": "sceChdir",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002696E8": {
+  "name": "sceUmount",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00269F18": {
+  "name": "sceSifInitIopHeap",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00269FA0": {
+  "name": "sceSifAllocIopHeap",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A010": {
+  "name": "sceSifAllocSysMemory",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A090": {
+  "name": "sceSifFreeSysMemory",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A128": {
+  "name": "sceSifLoadIopHeap",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A218": {
+  "name": "_lf_bind",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A318": {
+  "name": "_lf_version",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A3A8": {
+  "name": "sceSifLoadFileReset",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A3E0": {
+  "name": "_sceSifLoadModuleBuffer",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A7F0": {
+  "name": "sceSifUnloadModule",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A880": {
+  "name": "sceSifSearchModuleByName",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A920": {
+  "name": "sceSifSearchModuleByAddress",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A9B0": {
+  "name": "sceSifLoadModuleBuffer",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026A9F0": {
+  "name": "_sceSifLoadModule",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026AC18": {
+  "name": "sceSifLoadModule",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026AC38": {
+  "name": "sceSifLoadStartModule",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026AC58": {
+  "name": "_sceSifLoadElfPart",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026AD60": {
+  "name": "sceSifLoadElfPart",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026AD80": {
+  "name": "sceSifLoadElf",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026ADA8": {
+  "name": "sceSifGetIopAddr",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026AE98": {
+  "name": "sceSifSetIopAddr",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026AF78": {
+  "name": "sceSifResetIop",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B0B8": {
+  "name": "sceSifIsAliveIop",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B118": {
+  "name": "sceSifRebootIop",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B228": {
+  "name": "DIntr",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B270": {
+  "name": "EIntr",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B2F8": {
+  "name": "topThread",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B3D0": {
+  "name": "InitThread",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B4A8": {
+  "name": "iWakeupThread",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B540": {
+  "name": "iRotateThreadReadyQueue",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B5C0": {
+  "name": "iSuspendThread",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B658": {
+  "name": "sceDeci2Open",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B6A0": {
+  "name": "sceDeci2Close",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B6C8": {
+  "name": "sceDeci2ReqSend",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B6F8": {
+  "name": "sceDeci2Poll",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B720": {
+  "name": "sceDeci2ExRecv",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B758": {
+  "name": "sceDeci2ExSend",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B7C0": {
+  "name": "sceDeci2ExLock",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B7E8": {
+  "name": "sceDeci2ExUnLock",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B810": {
+  "name": "kputs",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026B8B0": {
+  "name": "sceSifInitCmd",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026BB30": {
+  "name": "sceSifExitCmd",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026BBF0": {
+  "name": "_sceSifSendCmd",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026BD28": {
+  "name": "sceSifSendCmd",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026BD68": {
+  "name": "isceSifSendCmd",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026BED0": {
+  "name": "sceSifWriteBackDCache",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026D328": {
+  "name": "sceMcInit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026D688": {
+  "name": "sceMcOpen",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026D7C0": {
+  "name": "sceMcMkdir",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026E140": {
+  "name": "mceStorePwd",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026EBC8": {
+  "name": "_sceCd_cd_callback",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026EEA0": {
+  "name": "cmd_sem_init",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026EF38": {
+  "name": "cdvd_exit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026F068": {
+  "name": "PowerOffCB",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026F3D0": {
+  "name": "_sceCd_ncmd_prechk",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026F540": {
+  "name": "sceCdNcmdDiskReady",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026F5D8": {
+  "name": "sceCdSync",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026F678": {
+  "name": "sceCdSyncS",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026F6E8": {
+  "name": "_sceCd_scmd_prechk",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026F858": {
+  "name": "sceCdInit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026FB38": {
+  "name": "sceCdDiskReady_old",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026FD30": {
+  "name": "sceCdMmode",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026FDF8": {
+  "name": "sceCdRead",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0026FFD8": {
+  "name": "sceCdReadIOPm",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00270130": {
+  "name": "sceCdGetToc",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002703C0": {
+  "name": "sceCdSeek",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00270528": {
+  "name": "sceCdGetError",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002705C0": {
+  "name": "sceCdStatus",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00270678": {
+  "name": "sceCdBreak",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00270F58": {
+  "name": "_sceMpegAlalcReset",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00274CA8": {
+  "name": "_motionVector",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002774B8": {
+  "name": "setD3_CHCR",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00277520": {
+  "name": "setD4_CHCR",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00277588": {
+  "name": "sceIpuStopDMA",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00277670": {
+  "name": "sceIpuRestartDMA",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x00277890": {
+  "name": "sceIpuInit",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x0027D7C0": {
+  "name": "sceNetcnfifCheck",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002978B0": {
+  "name": "_sceSDC",
+  "lib": "ported from AC5",
+  "words": 0
+ },
+ "0x002979F0": {
+  "name": "_sceIDC",
+  "lib": "ported from AC5",
+  "words": 0
+ }
+}

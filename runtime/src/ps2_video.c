@@ -54,6 +54,8 @@ typedef struct {
     float nsun_z;
     u32 mvbase, mblock;
     u16 mcull;
+    u16 clut_rt;      /* CLUT read from this render target (slot + 1), at clut_xy */
+    u32 clut_xy;
 } vk_draw;
 
 typedef struct {
@@ -104,6 +106,21 @@ static void tex_index_add(u32 i) {
     else tex_head[b] = (s32)i;
     tex_tail[b] = (s32)i;
 }
+
+static void tex_index_remove(u32 i) {
+    u32 b = tex_bucket(textures[i].key);
+    s32 prev = -1;
+    for (s32 c = tex_head[b]; c >= 0; c = tex_next[c]) {
+        if ((u32)c == i) {
+            if (prev < 0) tex_head[b] = tex_next[c];
+            else tex_next[prev] = tex_next[c];
+            if (tex_tail[b] == c) tex_tail[b] = prev;
+            tex_next[c] = -1;
+            return;
+        }
+        prev = c;
+    }
+}
 static size_t tex_bytes;
 
 static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -123,6 +140,15 @@ static int want_fullscreen;
 static u32 present_x, present_y, present_w = 640, present_h = 448;
 static u32 present_rt;
 static int present_blank;
+/* What the game asked to show with the published field, and with the last
+   field it ended (req_*).  The renderer takes pub_* together with the field's
+   draws: reading the live values instead let a field be shown with the next
+   field's display buffer -- AC4 flips between two -- a stale or half-drawn
+   picture for one refresh. */
+static u32 pub_present_x, pub_present_y, pub_present_w = 640, pub_present_h = 448;
+static u32 pub_present_rt;
+static int pub_present_blank;
+static u32 req_x, req_y, req_w = 640, req_h = 448, req_rt;
 static u32 debug_solid;
 static u64 trace_frame;
 
@@ -234,7 +260,7 @@ typedef struct {
     VkBuffer sbuf;
     VkDeviceMemory smem;
     void *sptr;
-    size_t soff;
+    size_t soff, staging_capacity;
     VkBuffer ovbuf;
     VkDeviceMemory ovmem;
     void *ovptr;
@@ -259,6 +285,12 @@ static VkFormat swap_format;
 static VkExtent2D swap_extent;
 static VkImage swap_images[8];
 static VkImageView swap_views[8];
+/* "Rendering done" for each swapchain image.  A semaphore per frame in flight
+   can be signalled again while the presentation engine has not yet waited on
+   it (MAILBOX, a busy GPU), and the image then reaches the screen before it is
+   drawn -- showing whatever that image held from an earlier present.  An image
+   cannot be acquired again before its last present has consumed the wait. */
+static VkSemaphore swap_rendered[8];
 static u32 swap_count;
 static VkCommandPool cmdpool;
 static vk_frame frames[FRAMES_IN_FLIGHT];
@@ -405,7 +437,7 @@ typedef struct {
     float scale;
     float point_size;
     float tex_scale;
-    float pad;
+    u32   clut_xy;
     u32   mesh_block;
     u32   mesh_pad;
 } gs_push;
@@ -727,7 +759,7 @@ static VkPipeline get_pipeline_ex(u32 topology, u32 blend, u32 depth, u32 mesh, 
             | ((u64)(mesh & 3u) << 48) | ((u64)(cull & 1u) << 50);
     VkPipelineShaderStageCreateInfo stages[2];
     VkVertexInputBindingDescription bind;
-    VkVertexInputAttributeDescription attrs[5];
+    VkVertexInputAttributeDescription attrs[6];
     VkPipelineVertexInputStateCreateInfo vin;
     VkPipelineInputAssemblyStateCreateInfo ia;
     VkPipelineViewportStateCreateInfo vp;
@@ -774,12 +806,15 @@ static VkPipeline get_pipeline_ex(u32 topology, u32 blend, u32 depth, u32 mesh, 
     attrs[3].format = VK_FORMAT_R32_SFLOAT; attrs[3].offset = 40;
     attrs[4].location = 4; attrs[4].binding = 0;
     attrs[4].format = VK_FORMAT_R32_UINT; attrs[4].offset = 44;
+    attrs[5].location = 5; attrs[5].binding = 0;
+    attrs[5].format = VK_FORMAT_R32G32_UINT;
+    attrs[5].offset = (u32)offsetof(ps2_vk_vertex, clamp_u);
 
     memset(&vin, 0, sizeof(vin));
     vin.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vin.vertexBindingDescriptionCount = 1;
     vin.pVertexBindingDescriptions = &bind;
-    vin.vertexAttributeDescriptionCount = 5;
+    vin.vertexAttributeDescriptionCount = 6;
     vin.pVertexAttributeDescriptions = attrs;
     if (mesh) {
         if (!mesh_vs || ((mesh & 2u) && !mesh_fs)) return VK_NULL_HANDLE;
@@ -915,7 +950,7 @@ static const char *pipe_cache_prefix(char *buf, size_t cap) {
     if (e && *e == '0' && !e[1]) return NULL;
     if (e && *e) { snprintf(buf, cap, "%s", e); return buf; }
     base = SDL_GetBasePath();
-    snprintf(buf, cap, "%sac5_pipelines", base ? base : "");
+    snprintf(buf, cap, "%s" PS2_GAME_PREFIX "pipelines", base ? base : "");
     return buf;
 }
 
@@ -1674,9 +1709,10 @@ static int vk_init(void) {
         mc.pBindings = &mb;
         VKCHK(vkCreateDescriptorSetLayout(dev, &mc, NULL, &mesh_slayout));
     }
-    {   VkDescriptorSetLayout sl[3];
+    {   VkDescriptorSetLayout sl[4];
         sl[0] = deslayout; sl[1] = deslayout; sl[2] = mesh_slayout;
-        plc.setLayoutCount = 3;
+        sl[3] = deslayout;   /* render target holding a CLUT (gs.frag clutrt) */
+        plc.setLayoutCount = 4;
         plc.pSetLayouts = sl;
         plc.pushConstantRangeCount = 1;
         plc.pPushConstantRanges = &pcr;
@@ -1768,6 +1804,9 @@ static int vk_init(void) {
         si.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         VKCHK(vkCreateSemaphore(dev, &si, NULL, &frames[i].acquired));
         VKCHK(vkCreateSemaphore(dev, &si, NULL, &frames[i].rendered));
+        if (i == 0)
+            for (u32 k = 0; k < 8u; k++)
+                VKCHK(vkCreateSemaphore(dev, &si, NULL, &swap_rendered[k]));
         memset(&fi, 0, sizeof(fi));
         fi.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
@@ -1792,6 +1831,7 @@ static int vk_init(void) {
                         | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                         &frames[i].sbuf, &frames[i].smem, &frames[i].sptr) != 0)
             return -1;
+        frames[i].staging_capacity = 16u << 20;
         if (make_buffer((VkDeviceSize)OV_MAX_VERTS * sizeof(ps2_vk_vertex),
                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
@@ -2233,7 +2273,7 @@ static void upload_texture_mips(VkCommandBuffer cmd, vk_frame *fr, vk_texture *t
     size_t bytes = (size_t)t->w * t->h * 4u;
     u32 gen = __atomic_load_n(&t->generation, __ATOMIC_ACQUIRE);
     VkBufferImageCopy region;
-    if (fr->soff + bytes > (16u << 20)) return;
+    if (fr->soff + bytes > fr->staging_capacity) return;
     if (!t->image) {
         if (make_tex_image(t, t->levels) != 0) return;
         t->set = alloc_set_s(t->view, sampler_mip);
@@ -2308,7 +2348,7 @@ static void upload_texture(VkCommandBuffer cmd, vk_frame *fr, vk_texture *t) {
     VkBufferImageCopy region;
     u32 gen = __atomic_load_n(&t->generation, __ATOMIC_ACQUIRE);
     if (t->levels > 1u) { upload_texture_mips(cmd, fr, t); return; }
-    if (fr->soff + bytes > (16u << 20)) {
+    if (fr->soff + bytes > fr->staging_capacity) {
         static int said;
         if (!said) {
             said = 1;
@@ -2925,8 +2965,9 @@ static void ov_bbox(const vk_draw *d, s32 *x0, s32 *y0, s32 *x1, s32 *y1) {
     *y0 = by0 < 0.0f ? 0 : (s32)by0 / OV_CELL;
     *x1 = bx1 < 0.0f ? -1 : (s32)bx1 / OV_CELL;
     *y1 = by1 < 0.0f ? -1 : (s32)by1 / OV_CELL;
-    if (*x1 >= OV_CW) *x1 = OV_CW - 1;
-    if (*y1 >= OV_CH) *y1 = OV_CH - 1;
+    /* signed compare: -1 marks an empty box and must stay -1 */
+    if (*x1 >= (s32)OV_CW) *x1 = (s32)OV_CW - 1;
+    if (*y1 >= (s32)OV_CH) *y1 = (s32)OV_CH - 1;
 }
 
 static int ov_colourless(const vk_draw *d) {
@@ -3328,6 +3369,8 @@ static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
         sets[1] = white_set;
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gs_layout,
                                 0, 2, sets, 0, NULL);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gs_layout,
+                                3, 1, &white_set, 0, NULL);
         bc[0] = bc[1] = bc[2] = bc[3] = (float)d->fix / 128.0f;
         vkCmdSetBlendConstants(cmd, bc);
         {
@@ -3363,6 +3406,7 @@ static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
             pc.img_size[0] = pc.img_size[1] = 1.0f;
         }
         pc.tex_scale = d->tex_rt ? (float)rt_scale : 1.0f;
+        pc.clut_xy = d->clut_xy;
         pc.flags[0] = d->frag_flags;
         pc.flags[1] = (d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u;
         pc.flags[2] = d->wrap;
@@ -3392,6 +3436,42 @@ static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
     stat_ov_frames++;
 }
 
+/* Called after this frame's fence, before any upload uses its staging buffer.
+   A fixed 16 MB arena loses textures on AC4's movie/menu transitions. */
+static void reserve_texture_staging(vk_frame *fr) {
+    u8 seen[VK_MAX_TEXTURES] = {0};
+    size_t need = 0;
+    for (u32 i = 0; i < rep_ndraws; i++) {
+        u32 ti = rep_draws[i].tex;
+        if (ti >= ntextures || seen[ti]) continue;
+        seen[ti] = 1;
+        vk_texture *t = &textures[ti];
+        if (t->rgba && t->uploaded_gen != (int)t->generation)
+            need += ((size_t)t->w * t->h * 4u + 255u) & ~(size_t)255u;
+    }
+    if (need <= fr->staging_capacity) return;
+    size_t capacity = (need + (16u << 20) - 1u) & ~((size_t)(16u << 20) - 1u);
+    VkBuffer buf = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    void *ptr = NULL;
+    if (make_buffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    &buf, &mem, &ptr) != 0) {
+        if (buf) vkDestroyBuffer(dev, buf, NULL);
+        if (mem) vkFreeMemory(dev, mem, NULL);
+        ps2_log("vk: cannot grow texture staging to %zu bytes", capacity);
+        return;
+    }
+    vkUnmapMemory(dev, fr->smem);
+    vkDestroyBuffer(dev, fr->sbuf, NULL);
+    vkFreeMemory(dev, fr->smem, NULL);
+    fr->sbuf = buf;
+    fr->smem = mem;
+    fr->sptr = ptr;
+    fr->staging_capacity = capacity;
+    ps2_log("vk: texture staging grew to %zu MB", capacity >> 20);
+}
+
 static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
     VkViewport vp;
     u32 i;
@@ -3401,6 +3481,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
     int clip_open = 0;
     VkPipeline bound_pipe = VK_NULL_HANDLE;
     VkDescriptorSet bound_sets[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDescriptorSet bound_clut = VK_NULL_HANDLE;
     VkRect2D bound_sc = {{0, 0}, {0, 0}};
     gs_push bound_pc;
     int have_sc = 0, have_pc = 0;
@@ -3429,6 +3510,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
             rep_ndraws = keep;
         }
     }
+    reserve_texture_staging(fr);
     for (i = 0; i < rep_ndraws; i++) {
         u16 ti = rep_draws[i].tex;
         if (ti != 0xFFFF && ti < ntextures) {
@@ -3450,9 +3532,63 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
 
     vb = 0;
 
+    {   /* debugging: PS2_TRACE_AT_FIELD=N traces the first frame from field N */
+        static u64 at[16];
+        static int nat = -1, next;
+        if (nat < 0) {
+            const char *e = getenv("PS2_TRACE_AT_FIELD");
+            nat = 0;
+            while (e && *e && nat < 16) {
+                char *end;
+                at[nat++] = strtoull(e, &end, 0);
+                e = *end ? end + 1 : end;
+            }
+        }
+        if (next < nat && ps2_kernel_vblank_count() >= at[next]) {
+            trace_frame = stat_frames;
+            ps2_log("vk: tracing the draws of frame %llu (field %llu)",
+                    (unsigned long long)stat_frames,
+                    (unsigned long long)ps2_kernel_vblank_count());
+            next++;
+        }
+    }
     for (i = 0; i < rep_ndraws; i++) {
         vk_draw *d = &rep_draws[i];
         VkPipeline pipe;
+        {   /* debugging: PS2_SKIP_DRAWS=3,17,... drops those draws of every frame */
+            static int nskip = -1;
+            static u32 skip[32];
+            if (nskip < 0) {
+                const char *e = getenv("PS2_SKIP_DRAWS");
+                nskip = 0;
+                while (e && *e && nskip < 32) {
+                    char *end;
+                    skip[nskip++] = (u32)strtoul(e, &end, 0);
+                    e = *end ? end + 1 : end;
+                }
+            }
+            int k, drop = 0;
+            for (k = 0; k < nskip; k++) if (skip[k] == i) drop = 1;
+            if (drop) continue;
+        }
+        {   /* debugging: PS2_SKIP_KEY=blend[:flags[:texrt]] (hex, -1 = any) drops
+               matching draws */
+            static int have = -1;
+            static long sb = -1, sf = -1, st = -1;
+            if (have < 0) {
+                const char *e = getenv("PS2_SKIP_KEY");
+                have = e && *e;
+                if (have) {
+                    char *end;
+                    sb = strtol(e, &end, 16);
+                    if (*end == ':') sf = strtol(end + 1, &end, 16);
+                    if (*end == ':') st = strtol(end + 1, &end, 16);
+                }
+            }
+            if (have && (sb < 0 || (u32)sb == d->blend)
+                && (sf < 0 || (u32)sf == d->frag_flags)
+                && (st < 0 || (u32)st == d->tex_rt)) continue;
+        }
         VkDescriptorSet set = white_set;
         VkRect2D sc;
         gs_push pc;
@@ -3491,6 +3627,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
             cur_zrt = -1;
             bound_pipe = VK_NULL_HANDLE;
             bound_sets[0] = bound_sets[1] = VK_NULL_HANDLE;
+            bound_clut = VK_NULL_HANDLE;
             mset_ok = 0;
             have_sc = 0;
             have_pc = 0;
@@ -3505,6 +3642,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
             clip_open = 0;
             bound_pipe = VK_NULL_HANDLE;
             bound_sets[0] = bound_sets[1] = VK_NULL_HANDLE;
+            bound_clut = VK_NULL_HANDLE;
             mset_ok = 0;
             have_sc = 0;
             have_pc = 0;
@@ -3626,6 +3764,17 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
                     bound_sets[0] = sets[0]; bound_sets[1] = sets[1];
                 }
             }
+            {   VkDescriptorSet cset = white_set;
+                if (d->clut_rt && d->clut_rt <= RT_SLOTS
+                    && rts[d->clut_rt - 1].created
+                    && rts[d->clut_rt - 1].layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+                    cset = rts[d->clut_rt - 1].set;
+                if (bound_clut != cset) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            gs_layout, 3, 1, &cset, 0, NULL);
+                    bound_clut = cset;
+                }
+            }
         }
 
         memset(&pc, 0, sizeof(pc));
@@ -3645,6 +3794,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
             pc.img_size[0] = pc.img_size[1] = 1.0f;
         }
         pc.tex_scale = d->tex_rt ? (float)rt_scale : 1.0f;
+        pc.clut_xy = d->clut_xy;
         pc.flags[0] = d->frag_flags;
         pc.flags[1] = (d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u;
         pc.flags[2] = d->wrap;
@@ -3667,10 +3817,16 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         if (trace_frame && stat_frames == trace_frame) {
             float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
             float vr = 0.0f, vg = 0.0f, vb = 0.0f, va = 0.0f;
+            float f0 = 1e9f, f1 = -1e9f, ts = 0.0f, tt = 0.0f, tq = 0.0f;
+            double z0 = 1e30, z1 = -1e30;
             u32 k;
             if (rep_verts && d->count && d->native != PS2_VK_NATIVE_MESH) {
                 for (k = 0; k < d->count; k++) {
                     const ps2_vk_vertex *v = &rep_verts[d->first + k];
+                    if (v->fog < f0) f0 = v->fog;
+                    if (v->fog > f1) f1 = v->fog;
+                    if (v->z < z0) z0 = v->z;
+                    if (v->z > z1) z1 = v->z;
                     if (v->x < x0) x0 = v->x;
                     if (v->x > x1) x1 = v->x;
                     if (v->y < y0) y0 = v->y;
@@ -3678,17 +3834,36 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
                 }
                 vr = rep_verts[d->first].r; vg = rep_verts[d->first].g;
                 vb = rep_verts[d->first].b; va = rep_verts[d->first].a;
+                ts = rep_verts[d->first].s; tt = rep_verts[d->first].t;
+                tq = rep_verts[d->first].q;
             }
             ps2_log("  draw %3u: seq=%u em=%u rt%u tex=%d n=%u x[%.1f..%.1f] "
                     "y[%.1f..%.1f] rgba(%.0f,%.0f,%.0f,%.0f) blend=%03X fix=%u "
-                    "set=%s topo=%u flags=%08X wrap=%X texrt=%u zrt=%u depth=%03X", i, d->seq,
+                    "set=%s topo=%u flags=%08X wrap=%X texrt=%u zrt=%u depth=%03X "
+                    "fog[%.3f..%.3f] fogcol=%06X stq(%.3f,%.3f,%.3f) z[%.6g..%.6g]", i, d->seq,
                     (unsigned)d->emitter, d->rt,
                     (int)(s16)d->tex, d->count,
                     x0, x1, y0, y1, vr, vg, vb, va, d->blend, d->fix,
                     set == white_set ? "white"
                         : (d->tex_rt && set == rts[d->tex_rt - 1].set ? "RT"
                                                                       : "tex"),
-                    d->topology, d->frag_flags, d->wrap, d->tex_rt, zrt, dkey);
+                    d->topology, d->frag_flags, d->wrap, d->tex_rt, zrt, dkey,
+                    f0, f1, (unsigned)(d->fogcol & 0xFFFFFFu), ts, tt, tq, z0, z1);
+            {   /* PS2_TRACE_VERTS=<draw>: every vertex of that traced draw */
+                static long tv = -2;
+                if (tv == -2) {
+                    const char *e = getenv("PS2_TRACE_VERTS");
+                    tv = e ? strtol(e, NULL, 0) : -1;
+                }
+                if (tv == (long)i && rep_verts && d->native != PS2_VK_NATIVE_MESH)
+                    for (u32 k = 0; k < d->count; k++) {
+                        const ps2_vk_vertex *v = &rep_verts[d->first + k];
+                        ps2_log("    v%-3u xyz(%.2f,%.2f,%.7g) stq(%.5g,%.5g,%.5g) "
+                                "rgba(%.0f,%.0f,%.0f,%.0f) fog %.3f ruv %08X", k,
+                                v->x, v->y, v->z, v->s, v->t, v->q,
+                                v->r, v->g, v->b, v->a, v->fog, v->round_uv);
+                    }
+            }
         }
         if (d->native == PS2_VK_NATIVE_MESH) {
             VkDeviceSize zero = 0;
@@ -3722,6 +3897,141 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
     if (rendering_open) { vkCmdEndRendering(cmd); rendering_open = 0; }
     if (ov_on > 0 && present_rt == 0u) ov_promote();
     stat_verts += rep_nverts;
+}
+
+/* PS2_TRACE_STALE: every presented picture is shrunk to a thumbnail on the
+   GPU and read back; a picture that differs from the one before it but
+   matches one shown several presents earlier is logged -- an old frame
+   coming back on screen. */
+#define STALE_W 64u
+#define STALE_H 56u
+#define STALE_RING 96u
+static int stale_on = -1;
+static VkImage stale_img[FRAMES_IN_FLIGHT];
+static VkDeviceMemory stale_imem[FRAMES_IN_FLIGHT];
+static VkImageView stale_view[FRAMES_IN_FLIGHT];
+static VkBuffer stale_buf[FRAMES_IN_FLIGHT];
+static VkDeviceMemory stale_bmem[FRAMES_IN_FLIGHT];
+static void *stale_ptr[FRAMES_IN_FLIGHT];
+static u64 stale_pending[FRAMES_IN_FLIGHT];   /* stat_frames + 1 when recorded */
+static u32 stale_slot[FRAMES_IN_FLIGHT];
+
+static int stale_enabled(void) {
+    if (stale_on < 0) {
+        u32 i;
+        stale_on = PS2_ENV("PS2_TRACE_STALE") ? 1 : 0;
+        for (i = 0; stale_on && i < FRAMES_IN_FLIGHT; i++) {
+            if (make_image(STALE_W, STALE_H, VK_FORMAT_R8G8B8A8_UNORM,
+                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                           | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                           VK_IMAGE_ASPECT_COLOR_BIT, &stale_img[i],
+                           &stale_imem[i], &stale_view[i]) != 0
+                || make_buffer(STALE_W * STALE_H * 4u,
+                               VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                               | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                               &stale_buf[i], &stale_bmem[i], &stale_ptr[i]) != 0)
+                stale_on = 0;
+        }
+        if (stale_on) ps2_log("stale: presented pictures are compared with the "
+                              "last %u (PS2_TRACE_STALE)", STALE_RING);
+    }
+    return stale_on;
+}
+
+static void stale_record(VkCommandBuffer cmd, vk_target *shown, u32 fi) {
+    VkImageBlit b;
+    VkBufferImageCopy r;
+    if (!stale_enabled() || fi >= FRAMES_IN_FLIGHT || !shown->created) return;
+    barrier(cmd, shown->color, VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+    barrier(cmd, stale_img[fi], VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    memset(&b, 0, sizeof b);
+    b.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    b.srcSubresource.layerCount = 1;
+    b.dstSubresource = b.srcSubresource;
+    b.srcOffsets[0].x = (s32)(present_x * rt_scale);
+    b.srcOffsets[0].y = (s32)(present_y * rt_scale);
+    b.srcOffsets[1].x = (s32)((present_x + present_w) * rt_scale);
+    b.srcOffsets[1].y = (s32)((present_y + present_h) * rt_scale);
+    if (b.srcOffsets[1].x > (s32)(rt_w * rt_scale)) b.srcOffsets[1].x = (s32)(rt_w * rt_scale);
+    if (b.srcOffsets[1].y > (s32)(rt_h * rt_scale)) b.srcOffsets[1].y = (s32)(rt_h * rt_scale);
+    b.srcOffsets[1].z = 1;
+    b.dstOffsets[1].x = (s32)STALE_W;
+    b.dstOffsets[1].y = (s32)STALE_H;
+    b.dstOffsets[1].z = 1;
+    vkCmdBlitImage(cmd, shown->color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   stale_img[fi], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b,
+                   VK_FILTER_LINEAR);
+    barrier(cmd, shown->color, VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    barrier(cmd, stale_img[fi], VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+    memset(&r, 0, sizeof r);
+    r.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    r.imageSubresource.layerCount = 1;
+    r.imageExtent.width = STALE_W;
+    r.imageExtent.height = STALE_H;
+    r.imageExtent.depth = 1;
+    vkCmdCopyImageToBuffer(cmd, stale_img[fi], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           stale_buf[fi], 1, &r);
+    stale_pending[fi] = stat_frames + 1u;
+    stale_slot[fi] = (u32)(shown - rts);
+}
+
+static void stale_check(u32 fi) {
+    static float ring[STALE_RING][STALE_W * STALE_H];
+    static u64 ring_frame[STALE_RING];
+    static u32 ring_n, ring_pos;
+    float cur[STALE_W * STALE_H];
+    const u8 *p;
+    u32 i, k, last;
+    float dprev = 0.0f, best = 1e9f;
+    u64 best_frame = 0;
+    if (fi >= FRAMES_IN_FLIGHT || !stale_pending[fi]) return;
+    p = (const u8 *)stale_ptr[fi];
+    for (i = 0; i < STALE_W * STALE_H; i++)
+        cur[i] = (float)p[i * 4] + (float)p[i * 4 + 1] + (float)p[i * 4 + 2];
+    if (ring_n) {
+        last = (ring_pos + STALE_RING - 1u) % STALE_RING;
+        for (i = 0; i < STALE_W * STALE_H; i++) dprev += fabsf(cur[i] - ring[last][i]);
+        dprev /= (float)(STALE_W * STALE_H * 3u);
+        for (k = 2; k <= ring_n && dprev > 2.0f; k++) {
+            u32 s = (ring_pos + STALE_RING - k) % STALE_RING;
+            float d = 0.0f;
+            for (i = 0; i < STALE_W * STALE_H; i++) d += fabsf(cur[i] - ring[s][i]);
+            d /= (float)(STALE_W * STALE_H * 3u);
+            if (d < best) { best = d; best_frame = ring_frame[s]; }
+        }
+        if (dprev > 2.0f && best < 0.25f) {
+            static u32 said;
+            if (said++ < 500u)
+                ps2_log("stale: present %llu (slot %u) repeats present %llu, "
+                        "%llu presents back (differs from the one before by %.1f, "
+                        "from that one by %.2f)",
+                        (unsigned long long)(stale_pending[fi] - 1u), stale_slot[fi],
+                        (unsigned long long)best_frame,
+                        (unsigned long long)(stale_pending[fi] - 1u - best_frame),
+                        dprev, best);
+        }
+    }
+    memcpy(ring[ring_pos], cur, sizeof cur);
+    ring_frame[ring_pos] = stale_pending[fi] - 1u;
+    ring_pos = (ring_pos + 1u) % STALE_RING;
+    if (ring_n < STALE_RING) ring_n++;
+    stale_pending[fi] = 0;
 }
 
 static void present_frame(VkCommandBuffer cmd, u32 image_index) {
@@ -3786,9 +4096,12 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
                 VK_ACCESS_2_SHADER_READ_BIT);
         shown->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
+    if (stale_on != 0 && !present_blank) stale_record(cmd, shown, frame_index);
+    /* ordered after the acquire semaphore, which the submit waits for at
+       colour-attachment output: until then the image may still be on screen */
     barrier(cmd, swap_images[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
@@ -3988,6 +4301,7 @@ static void draw_and_present(void) {
     if (timing) { u64 now=vk_mono_ns(); times[VS_FENCE]=now-mark; mark=now; }
     if (r != VK_SUCCESS) goto finished;
     gpu_speed_collect(fr);
+    if (stale_on > 0) stale_check(frame_index);
     if (show) {
         if (swap_dirty) {
             swap_dirty = 0;
@@ -3996,7 +4310,11 @@ static void draw_and_present(void) {
         }
         r = vkAcquireNextImageKHR(dev, swapchain, VK_WAIT_NS, fr->acquired,
                                   VK_NULL_HANDLE, &image_index);
-        if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) {
+        if (r == VK_SUBOPTIMAL_KHR) {
+            /* the image is ours and the semaphore will be signalled: use it,
+               and rebuild the swapchain before the next acquire */
+            swap_dirty = 1;
+        } else if (r == VK_ERROR_OUT_OF_DATE_KHR) {
             vkDeviceWaitIdle(dev);
             if (create_swapchain() != 0) goto finished;
             r = vkAcquireNextImageKHR(dev, swapchain, VK_WAIT_NS, fr->acquired,
@@ -4035,7 +4353,7 @@ static void draw_and_present(void) {
     si.commandBufferCount = 1;
     si.pCommandBuffers = &fr->cmd;
     si.signalSemaphoreCount = show ? 1u : 0u;
-    si.pSignalSemaphores = &fr->rendered;
+    si.pSignalSemaphores = &swap_rendered[image_index & 7u];
     VkResult submit_result = vkQueueSubmit(queue, 1, &si, fr->fence);
     fr->timing_pending = fr->timing_queries && submit_result == VK_SUCCESS;
     if (timing) { u64 now=vk_mono_ns(); times[VS_SUBMIT]=now-mark; mark=now; }
@@ -4046,7 +4364,7 @@ static void draw_and_present(void) {
     memset(&pi, 0, sizeof(pi));
     pi.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     pi.waitSemaphoreCount = 1;
-    pi.pWaitSemaphores = &fr->rendered;
+    pi.pWaitSemaphores = &swap_rendered[image_index & 7u];
     pi.swapchainCount = 1;
     pi.pSwapchains = &swapchain;
     pi.pImageIndices = &image_index;
@@ -4123,6 +4441,27 @@ void ps2_video_select_gamepad(SDL_JoystickID id) {
     ps2_log("pad: %s selected", SDL_GetGamepadName(gamepad));
 }
 
+/* The game's vibration (libpad scePadSetActDirect) on the selected controller:
+   the large motor drives the low-frequency rumble and the small on/off motor
+   the high-frequency one.  An SDL rumble runs for a set time, so a running
+   effect is renewed; it stops while the settings menu holds the controls. */
+u32 ps2_pad_take_rumble(int port);
+static void apply_rumble(void) {
+    static u32 last;
+    static Uint64 last_ms;
+    static SDL_Gamepad *last_pad;
+    u32 r = ps2_cfg.vibration && !ps2_ui_blocks_game_input() && !window_hidden
+          ? ps2_pad_take_rumble(0) : 0u;
+    Uint64 now = SDL_GetTicks();
+    if (!gamepad) { last = 0; last_pad = NULL; return; }
+    if (r == last && gamepad == last_pad && (!r || now - last_ms < 1000u)) return;
+    SDL_RumbleGamepad(gamepad, (Uint16)(((r >> 8) & 0xFFu) * 257u),
+                      (r & 1u) ? 0xFFFFu : 0u, r ? 2000u : 0u);
+    last = r;
+    last_ms = now;
+    last_pad = gamepad;
+}
+
 static void poll_input(void) {
     const bool *keys = window_hidden ? NULL : SDL_GetKeyboardState(NULL);
     ps2_pad_state st;
@@ -4130,6 +4469,7 @@ static void poll_input(void) {
     float value[PS2_ACT_COUNT];
     float dz = ps2_cfg.deadzone;
     int env = pad_deadzone_env();
+    apply_rumble();
     memset(&st, 0, sizeof(st));
     st.connected = 1;
     st.lx = st.ly = st.rx = st.ry = PS2_PAD_ANALOG_NEUTRAL;
@@ -4616,6 +4956,12 @@ static void *renderer_main(void *arg) {
         rep_nverts = pub_nverts;
         rep_ndraws = pub_ndraws;
         rep_mesh   = pub_mesh;
+        present_x = pub_present_x;
+        present_y = pub_present_y;
+        present_w = pub_present_w;
+        present_h = pub_present_h;
+        present_rt = pub_present_rt;
+        present_blank = pub_present_blank;
         frame_requested = 0;
         pthread_cond_broadcast(&list_cv);
         pthread_mutex_unlock(&list_lock);
@@ -4645,6 +4991,8 @@ int ps2_video_init(const char *title, int width, int height) {
     snprintf(window_title, sizeof(window_title), "%s", title ? title : "ps2recomp");
     present_w = (u32)(width > 0 ? width : 640);
     present_h = (u32)(height > 0 ? height : 448);
+    pub_present_w = req_w = present_w;
+    pub_present_h = req_h = present_h;
 
     {   int s;
         for (s = 0; s < LIST_SLOTS; s++) {
@@ -4718,11 +5066,44 @@ int ps2_vk_closed(void) {
 static void ps2_vk_draw_inner(int topology, const ps2_vk_state *st,
                               const ps2_vk_vertex *v, int n);
 static u16 rec_native_mark;
+/* The depth half of a colour draw into another target's Z buffer: the same
+   primitives into that target with colour masked, ZTST always and Z taken
+   from the colour bits as the PS2 stores them (R low byte, then G, B, A). */
+static void zclear_draw(int topology, const ps2_vk_state *st,
+                        const ps2_vk_vertex *v, int n) {
+    ps2_vk_state s = *st;
+    ps2_vk_vertex tmp[64];
+    double m = st->zclear_bits == 32u ? 4294967295.0 : 16777215.0;
+    int k = 0;
+    s.rt = s.zrt = st->zclear_rt - 1u;
+    s.zclear_rt = 0;
+    s.fb_mask = 0xFFFFFFFFu;
+    s.fb_psm = 0u;
+    s.zte = 1; s.ztst = 1u; s.zwrite = 1;
+    s.abe = 0; s.ate = 0; s.fge = 0; s.date = 0; s.datm = 0;
+    s.tme = 0; s.tex_rt = 0; s.tex_depth = 0; s.tex_self = 0;
+    s.shuffle_rg = 0; s.clut_rt = 0; s.colclip = 0; s.zcopy = 0;
+    while (k < n) {
+        int c = n - k, j;
+        if (c > 64) c = 64 - 64 % 6;   /* whole triangles, lines and points */
+        for (j = 0; j < c; j++) {
+            const ps2_vk_vertex *a = &v[k + j];
+            double z = (double)a->r + (double)a->g * 256.0 + (double)a->b * 65536.0;
+            if (st->zclear_bits == 32u) z += (double)a->a * 16777216.0;
+            tmp[j] = *a;
+            tmp[j].z = (float)(z / m > 1.0 ? 1.0 : z / m);
+        }
+        ps2_vk_draw_inner(topology, &s, tmp, c);
+        k += c;
+    }
+}
+
 void ps2_vk_draw(int topology, const ps2_vk_state *st,
                  const ps2_vk_vertex *v, int n) {
     if (ps2_vk_before_record) ps2_vk_before_record();
     PS2_PHASE_BEGIN(PS2_PH_VKDRAW);
     ps2_vk_draw_inner(topology, st, v, n);
+    if (st->zclear_rt) zclear_draw(topology, st, v, n);
     PS2_PHASE_END(PS2_PH_VKDRAW);
 }
 void ps2_vk_draw_2d(int topology, const ps2_vk_state *st,
@@ -4887,6 +5268,8 @@ static void ps2_vk_draw_inner(int topology, const ps2_vk_state *st,
     }
     if (st->shuffle_rg) flags |= (st->shuffle_alpha & 7u) << 26;
     if (tex_point_for(st) == 2) flags |= 1u << 29;
+    if (st->clut_rt && st->tme && !st->tex_rt)
+        flags |= (1u << 30) | (st->clut_four ? 1u << 31 : 0u);
     {   static int lock = -1;
         if (lock < 0) {
             const char *e = getenv("PS2_LOCK_ALPHA");
@@ -4954,6 +5337,7 @@ static void rec_one(int topology, const ps2_vk_state *st,
             && d->tex_w == st->tex_w && d->tex_h == st->tex_h
             && d->date == (u16)st->date
             && d->fogcol == st->fogcol
+            && d->clut_rt == (u16)st->clut_rt && d->clut_xy == st->clut_xy
             && d->wrap == (st->wms | (st->wmt << 2))
             && d->minu == (u16)st->minu && d->maxu == (u16)st->maxu
             && d->minv == (u16)st->minv && d->maxv == (u16)st->maxv
@@ -5001,6 +5385,8 @@ static void rec_one(int topology, const ps2_vk_state *st,
     d->emitter = (u16)st->emitter;
     d->native = rec_native_mark;
     d->tex_rt = (u16)st->tex_rt;
+    d->clut_rt = (u16)st->clut_rt;
+    d->clut_xy = st->clut_xy;
     d->tex_self = (u16)st->tex_self;
     d->tex_depth = (u16)st->tex_depth;
     d->date = (u16)st->date;
@@ -5168,8 +5554,28 @@ u32 ps2_vk_texture(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h) {
             && (u32)(tex_rec_seq - textures[i].rec_seq) > 2u)
             spare = i;
     }
+    /* GS VRAM addresses are reused across scenes. Keep the allocation and
+       descriptors of a cold, same-shaped texture even when its key changes.
+       The three display-list slots must no longer reference it. Native mip
+       chains and single-level GS textures are separate allocation classes. */
+    if (spare == 0xFFFFFFFFu) {
+        u32 oldest = 2u;
+        for (i = 0; i < ntextures; i++) {
+            u32 age = tex_rec_seq - textures[i].rec_seq;
+            if (textures[i].rgba && textures[i].w == w && textures[i].h == h
+                && ((textures[i].key ^ key) & (1ull << 63)) == 0 && age > oldest) {
+                spare = i;
+                oldest = age;
+            }
+        }
+    }
     if (spare != 0xFFFFFFFFu) {
         i = spare;
+        if (textures[i].key != key) {
+            tex_index_remove(i);
+            textures[i].key = key;
+            tex_index_add(i);
+        }
         memcpy(textures[i].rgba_alt, rgba, bytes);
         {   u8 *now_live = textures[i].rgba_alt;
             textures[i].rgba_alt = textures[i].rgba;
@@ -5236,12 +5642,15 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
 
     {
         static long shot_every = -1;
-        static u64 shot_calls;
+        static u64 shot_calls, shot_from;
         if (shot_every < 0) {
             const char *e = getenv("PS2_SHOT_EVERY");
             shot_every = e ? strtol(e, NULL, 0) : 0;
+            e = getenv("PS2_SHOT_FROM");   /* first present to shoot */
+            shot_from = e ? strtoull(e, NULL, 0) : 0;
         }
-        if (shot_every > 0 && (shot_calls % (u64)shot_every) == 0) {
+        if (shot_every > 0 && shot_calls >= shot_from
+            && (shot_calls % (u64)shot_every) == 0) {
             char nm[64];
             snprintf(nm, sizeof nm, "out/shot_%06llu.ppm",
                      (unsigned long long)shot_calls);
@@ -5254,6 +5663,32 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
     if (frame_requested && renderer_running > 0 && ps2_vk_lockstep) {
         while (frame_requested && renderer_running > 0 && !window_closed)
             pthread_cond_wait(&list_cv, &list_lock);
+    }
+    {   /* A field the renderer has not started yet would be replaced -- its draws
+           never run.  Games that carry render targets from one field into the
+           next (AC4's frame copy, glow and haze buffers) then show one field
+           built on stale targets: a flash.  Wait for the renderer instead, as
+           the PS2 never skips drawing; the wait is bounded so a renderer stuck
+           on the window (minimised, dragged) cannot freeze the game. */
+        static int no_drop = -1;
+        if (no_drop < 0) {
+            const char *e = getenv("PS2_DROP_FIELDS");
+#ifdef PS2_GAME_AC4
+            no_drop = !(e && *e && *e != '0');
+#else
+            no_drop = e && *e == '0';
+#endif
+            if (no_drop) ps2_log("vk: fields are waited for rather than dropped "
+                                 "(PS2_DROP_FIELDS=1 drops them)");
+        }
+        if (no_drop && frame_requested && renderer_running > 0) {
+            struct timespec dl;
+            clock_gettime(CLOCK_REALTIME, &dl);
+            dl.tv_nsec += 100L * 1000L * 1000L;
+            if (dl.tv_nsec >= 1000000000L) { dl.tv_sec++; dl.tv_nsec -= 1000000000L; }
+            while (frame_requested && renderer_running > 0 && !window_closed)
+                if (pthread_cond_timedwait(&list_cv, &list_lock, &dl) != 0) break;
+        }
     }
     replace = frame_requested && renderer_running > 0;
     if (replace) {
@@ -5285,6 +5720,30 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
         p_kick = ps2_gs_vtx_draw; p_adc = ps2_gs_vtx_adc;
         p_prim = ps2_gs_prim_seq;
     }
+    if (PS2_ENV("PS2_TRACE_REPEAT") && rec_nverts > 2000u) {
+        /* A field whose vertex stream matches an older field's exactly: the
+           game (or the DMA path) submitted an old frame again. */
+        enum { RING = 256 };
+        static u64 ring_h[RING], ring_f[RING];
+        static u32 ring_n[RING], ring_pos;
+        static u64 field_no;
+        const u64 *w = (const u64 *)rec_verts;
+        size_t nw = (size_t)rec_nverts * sizeof(ps2_vk_vertex) / 8u, k;
+        u64 h = 0x9E3779B97F4A7C15ull;
+        u32 r;
+        for (k = 0; k < nw; k++) h = (h ^ w[k]) * 0xFF51AFD7ED558CCDull;
+        h ^= h >> 29;
+        field_no = ps2_kernel_vblank_count();
+        for (r = 0; r < RING; r++)
+            if (ring_h[r] == h && ring_n[r] == rec_nverts && ring_f[r] + 1u < field_no)
+                ps2_log("repeat: field %llu (%u verts, %u draws) has the same "
+                        "vertex stream as field %llu, %llu fields earlier",
+                        (unsigned long long)field_no, rec_nverts, rec_ndraws,
+                        (unsigned long long)ring_f[r],
+                        (unsigned long long)(field_no - ring_f[r]));
+        ring_h[ring_pos] = h; ring_n[ring_pos] = rec_nverts; ring_f[ring_pos] = field_no;
+        ring_pos = (ring_pos + 1u) % RING;
+    }
     pub_verts  = rec_verts;
     pub_draws  = rec_draws;
     pub_nverts = rec_nverts;
@@ -5300,14 +5759,19 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
     rec_ndraws = 0;
     rec_mesh   = &slot_mesh[rec_slot];
     rec_mesh->nrecs = rec_mesh->nidx = rec_mesh->nblocks = 0;
-    if (disp_w) present_w = disp_w;
-    if (disp_h) present_h = disp_h;
-    present_x = disp_x;
-    present_y = disp_y;
-    present_blank = rt == PS2_VK_PRESENT_BLANK;
-    present_rt = rt < RT_SLOTS ? rt : 0;
+    if (disp_w) req_w = disp_w;
+    if (disp_h) req_h = disp_h;
+    req_x = disp_x;
+    req_y = disp_y;
+    req_rt = rt < RT_SLOTS ? rt : 0;
+    pub_present_x = req_x;
+    pub_present_y = req_y;
+    pub_present_w = req_w;
+    pub_present_h = req_h;
+    pub_present_blank = rt == PS2_VK_PRESENT_BLANK;
+    pub_present_rt = req_rt;
     if (env_show_rt == -1) env_show_rt = env_flag("PS2_SHOW_RT");
-    if (env_show_rt >= 0) { present_rt = (u32)env_show_rt % RT_SLOTS; present_blank = 0; }
+    if (env_show_rt >= 0) { pub_present_rt = (u32)env_show_rt % RT_SLOTS; pub_present_blank = 0; }
     if (!replace) tex_rec_seq++;
     frame_requested = 1;
     frame_done = 0;
@@ -5327,8 +5791,7 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
 
 int ps2_video_frame(void) {
     if (!vk_ready) return 0;
-    return ps2_vk_present(present_x, present_y, present_w, present_h,
-                          present_rt);
+    return ps2_vk_present(req_x, req_y, req_w, req_h, req_rt);
 }
 
 void ps2_vk_stats(u64 *f, u64 *d, u64 *v, u64 *t) {

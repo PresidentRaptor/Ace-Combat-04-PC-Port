@@ -324,11 +324,60 @@ def _step(out, pc):
     out.append("    if (PS2_UNLIKELY(vu->p_ready) && guard >= vu->p_ready) vu_p_commit(vu);")
 
 
+def _lower_vf_dest(pair):
+    """VF register a lower instruction writes (LQ/LQI/LQD/MOVE/MR32/MFIR/MFP/
+    RNEXT/RGET), or -1. Mirrors vu_lower_vf_dest() in ps2_vu.c."""
+    if pair.lower is None:
+        return -1
+    ins = pair.lo_word
+    op, ft = (ins >> 25) & 0x7F, (ins >> 16) & 31
+    if not ((ins >> 21) & 0xF) or not ft:
+        return -1
+    if op == 0x00:
+        return ft
+    if op == 0x40 and (ins & 0x7FF) in (0x37C, 0x37E, 0x33C, 0x33D, 0x3FD,
+                                        0x67C, 0x43C, 0x43D):
+        return ft
+    return -1
+
+
+def _upper_vf_dest(pair):
+    ins = pair.up_word
+    f = ins & 63
+    if (f & 60) == 60:
+        sub = (ins & 3) | ((ins >> 4) & 124)
+        if 0x10 <= sub <= 0x17 or sub == 0x1D:
+            return (ins >> 16) & 31 if (ins >> 21) & 15 else -1
+        return -1
+    return (ins >> 6) & 31 if f <= 0x2F and (((ins >> 21) & 15) or f == 0x2E) else -1
+
+
 def _emit_pair(code, pc, out):
     pair = code[pc]
     _step(out, pc)
-    emit_lower(pair, out)
-    emit_upper(pair, out)
+    # Both halves of a pair read their sources in the same cycle: an upper
+    # instruction must see the old value of a VF register its lower partner
+    # loads (AC4 relies on "MULAx ACC,VF22,VF09x | LQ VF22"). If both write
+    # the register, the upper result wins.
+    lvf = _lower_vf_dest(pair)
+    if lvf > 0 and lvf == _upper_vf_dest(pair):
+        emit_upper(pair, out)
+        return
+    if lvf > 0 and pair.upper.name != "NOP":
+        up = pair.up_word
+        if lvf not in ((up >> 11) & 31, (up >> 16) & 31):
+            lvf = -1
+    else:
+        lvf = -1
+    if lvf > 0:
+        out.append("    { ps2_vf old_vf = vu->vf[%d], loaded_vf;" % lvf)
+        emit_lower(pair, out)
+        out.append("    loaded_vf = vu->vf[%d]; vu->vf[%d] = old_vf;" % (lvf, lvf))
+        emit_upper(pair, out)
+        out.append("    vu->vf[%d] = loaded_vf; }" % lvf)
+    else:
+        emit_lower(pair, out)
+        emit_upper(pair, out)
     if pair.ibit:
         out.append("    { u32 t = 0x%08Xu; memcpy(&vu->i, &t, 4); }" % pair.lo_word)
 

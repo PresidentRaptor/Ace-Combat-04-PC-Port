@@ -1,0 +1,90 @@
+{
+ "0x0026F0D0": {
+  "name": "sceCdSearchFile",
+  "src": "libcdvd; binds SIDs 80000597..80000599 (search)"
+ },
+ "0x00270490": {
+  "name": "sceCdGetDiskType",
+  "src": "libcdvd scmd; called between sceCdInit and sceCdMmode at boot"
+ },
+ "0x0026C0B0": {
+  "name": "scePadInit",
+  "src": "libpad 2300; binds padman SIDs 80000100/80000101, version check"
+ },
+ "0x0026C310": {
+  "name": "scePadPortOpen",
+  "src": "libpad; 'pad port is already open', 64-byte alignment check"
+ },
+ "0x0026A108": {
+  "name": "sceSifFreeIopHeap",
+  "src": "tail of sceSifFreeSysMemory"
+ },
+ "0x0026A9D0": {
+  "name": "sceSifLoadStartModuleBuffer",
+  "src": "wrapper over _sceSifLoadModuleBuffer after sceSifLoadModuleBuffer"
+ },
+ "0x0026EB70": {
+  "name": "sceCdCallback",
+  "src": "libcdvd; waits sceCdSync(1), swaps the callback global under DIntr"
+ },
+ "0x0026C290": {
+  "name": "scePadEnd",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026C4F8": {
+  "name": "scePadPortClose",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026C660": {
+  "name": "scePadRead",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026C6E0": {
+  "name": "scePadGetState",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026C790": {
+  "name": "scePadSetReqState",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026C7F8": {
+  "name": "scePadGetReqState",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026C880": {
+  "name": "scePadInfoAct",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026C9A0": {
+  "name": "scePadInfoComb",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026CAC0": {
+  "name": "scePadInfoMode",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026CBF8": {
+  "name": "scePadSetMainMode",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026CCB0": {
+  "name": "scePadSetActDirect",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026CD68": {
+  "name": "scePadSetActAlign",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026CFA8": {
+  "name": "scePadInfoPressMode",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026D008": {
+  "name": "scePadEnterPressMode",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ },
+ "0x0026D060": {
+  "name": "scePadExitPressMode",
+  "src": "libpad 2300; identified from the DMA-area fields it reads and its game call sites"
+ }
+}

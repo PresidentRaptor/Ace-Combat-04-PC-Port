@@ -279,6 +279,10 @@ void rn_vp_kick(ps2_vu *vu, u32 addr) {
 
 void rn_vp_init(void) {
     const char *e = getenv("PS2_RN_VP");
+#ifdef PS2_GAME_AC4
+    /* the native programs are AC5's VU1 microcode; AC4 has its own */
+    if (!e || !*e) e = "0";
+#endif
     if (e && *e == '0') {
         ps2_log("rn: native VU1 programs off (PS2_RN_VP=0)");
         return;

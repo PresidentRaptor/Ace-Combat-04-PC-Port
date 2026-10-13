@@ -83,6 +83,11 @@ static int no_deinterlace;
 static u64 gs_reg_hist[0x64];
 
 static u32 trx_x, trx_y, trx_left;
+/* Set while a texture is decoded to raw CLUT indices (its palette lives in a
+   render target the GPU drew; gs.frag looks the colours up there). */
+static int tex_index_mode;
+static u8  trx24_buf[16];   /* PSMCT24 upload bytes awaiting a whole pixel */
+static u32 trx24_n;
 
 #define GS_PAGE_BYTES 8192u
 #define GS_VRAM_PAGES (GS_VRAM_SIZE / GS_PAGE_BYTES)
@@ -254,7 +259,7 @@ static int gs_shadow_build(u32 tbp, u32 tbw, u32 lo, u32 hi) {
                 if (gs_owner_is_self(gs_shadow[i - 1u].owner,
                                      gs_shadow[i - 1u].owner_bw,
                                      tbp, tbw, hi)) {
-                    s = gs_shadow[i - 1u].data - (size_t)p * GS_PAGE_BYTES;
+                    s = gs_shadow[i - 1u].data;
                     redir++;
                     if (ps2_diag_armed) {
                         if (memcmp(gs_shadow[i - 1u].data,
@@ -634,6 +639,45 @@ u64 ps2_gs_cur_frame(void) { return frame_reg(); }
 u64 ps2_gs_cur_zbuf(void) { return zbuf_reg(); }
 u64 ps2_gs_cur_test(void) { return test_reg(); }
 
+/* The mip level of the primitive being drawn when TEX1.LCM is 0 -- the GS
+   then works LOD out per pixel from Q: (log2(1/|Q|) << L) + K.  Here it is
+   taken once per primitive from its vertices (a level the texture cache can
+   decode), or -1 when the primitive does not mipmap that way.  AC4's terrain
+   keeps distant tiles only in the small levels of its texture cache; read
+   from level 0 they showed the near tile that shares the slot -- big wrong
+   squares on islands in the distance. */
+static int gs_dyn_lod = -1;
+
+static void gs_prim_lod(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
+    u64 t1 = tex1_reg();
+    u32 mxl = (u32)((t1 >> 2) & 7ull), mmin = (u32)((t1 >> 6) & 7ull), n = 0;
+    float sum = 0.0f, lod;
+    s32 k;
+    const gs_vtx *vv[3] = { a, b, c };
+    static int off = -1;
+    gs_dyn_lod = -1;
+    if (off < 0) {
+        const char *e = getenv("PS2_NO_DYN_MIP");
+        off = (e && *e && *e != '0') ? 1 : 0;
+        if (off) ps2_log("GS: per-primitive mip levels off (PS2_NO_DYN_MIP)");
+    }
+    if (off || !(gs_prim & PRIM_TME) || (t1 & 1ull) || !mxl || mmin < 2u) return;
+    k = (s32)((t1 >> 32) & 0xFFFull);
+    if (k & 0x800) k -= 0x1000;
+    for (u32 i = 0; i < 3u; i++) {
+        float q;
+        if (!vv[i]) continue;
+        q = fabsf(vv[i]->q);
+        if (!(q > 1e-30f)) q = 1e-30f;
+        sum += -log2f(q) * (float)(1u << ((t1 >> 19) & 3ull)) + (float)k / 16.0f;
+        n++;
+    }
+    if (!n) return;
+    lod = sum / (float)n;
+    gs_dyn_lod = lod <= 0.0f ? 0 : (int)(lod + 0.5f);
+    if (gs_dyn_lod > (int)mxl) gs_dyn_lod = (int)mxl;
+}
+
 static u32 gs_tex_lod(void) {
     u64 t1 = tex1_reg();
     u32 mxl  = (u32)((t1 >> 2) & 7ull);
@@ -646,7 +690,8 @@ static u32 gs_tex_lod(void) {
         if (off) ps2_log("GS: mipmap level selection disabled (PS2_NO_MIP)");
     }
     if (off) return 0u;
-    if (!mxl || mmin < 2u || !(t1 & 1ull)) return 0u;
+    if (!mxl || mmin < 2u) return 0u;
+    if (!(t1 & 1ull)) return gs_dyn_lod > 0 ? (u32)gs_dyn_lod : 0u;
     k = (s32)((t1 >> 32) & 0xFFFull);
     if (k & 0x800) k -= 0x1000;
     if (k < 0) return 0u;
@@ -1383,6 +1428,24 @@ static void trx_begin(void) {
                 (u32)((rg >> 32) & 0xFFFull));
     trx_sum = 2166136261u;
     trx_geom_sync();
+    {   /* debugging: PS2_TRACE_TRX_RANGE=lo:hi logs host->local transfers whose
+           DBP (bytes) falls in [lo, hi) */
+        static int parsed;
+        static u32 lo, hi;
+        if (!parsed) {
+            const char *e = getenv("PS2_TRACE_TRX_RANGE");
+            parsed = 1;
+            if (e) { char *end; lo = (u32)strtoul(e, &end, 0);
+                     hi = *end == ':' ? (u32)strtoul(end + 1, NULL, 0) : lo + 1u; }
+        }
+        u32 dbp = (u32)((bbc >> 32) & 0x3FFFull) * 256u;
+        if (hi && dbp >= lo && dbp < hi)
+            ps2_log("trx: frame %u dbp=%u dbw=%u psm=%u %ux%u at (%u,%u)",
+                    ps2_gs_frame_count, dbp, (u32)((bbc >> 48) & 0x3Full) * 64u,
+                    (u32)((bbc >> 56) & 0x3Full), (u32)(rg & 0xFFFull),
+                    (u32)((rg >> 32) & 0xFFFull), (u32)((pos >> 32) & 0x7FFull),
+                    (u32)((pos >> 48) & 0x7FFull));
+    }
     gs_vram_epoch++;
     gs_dirty_rect((u32)((bbc >> 32) & 0x3FFFull) * 256u,
                   (u32)((bbc >> 48) & 0x3Full) * 64u,
@@ -1431,6 +1494,7 @@ static void trx_begin(void) {
     trx_x = (u32)((pos >> 32) & 0x7FFull);
     trx_y = (u32)((pos >> 48) & 0x7FFull);
     trx_left = (u32)(rg & 0xFFFull) * (u32)((rg >> 32) & 0xFFFull);
+    trx24_n = 0;
 }
 
 static u32 trx_pixels_per_qw(u32 psm) {
@@ -1488,7 +1552,32 @@ static void trx_data(u64 qw) {
     trx_data_inner(qw);
     PS2_PHASE_END(PS2_PH_TRX);
 }
+/* PSMCT24/PSMZ24 uploads are packed: 3 bytes a pixel, so 16 pixels arrive in
+   3 quadwords (AC4 sends its font CLUTs this way to keep the alpha bytes).
+   The bytes are regrouped into pixel pairs for the 32-bit writer below, which
+   leaves the upper byte of each word alone. */
+static void trx_data_px(u64 qw);
 static void trx_data_inner(u64 qw) {
+    u32 dpsm = (u32)((gs_reg[GS_BITBLTBUF] >> 56) & 0x3Full);
+    u32 k;
+    if (PS2_LIKELY(dpsm != PSM_CT24 && dpsm != PSM_Z24) || !trx_left) {
+        trx24_n = 0;
+        trx_data_px(qw);
+        return;
+    }
+    for (k = 0; k < 8u; k++) trx24_buf[trx24_n++] = (u8)(qw >> (k * 8u));
+    while (trx_left && (trx24_n >= 6u || (trx24_n >= 3u && trx_left == 1u))) {
+        u32 used = trx24_n >= 6u ? 6u : 3u;
+        u64 p0 = (u64)trx24_buf[0] | ((u64)trx24_buf[1] << 8) | ((u64)trx24_buf[2] << 16);
+        u64 p1 = used == 6u ? ((u64)trx24_buf[3] | ((u64)trx24_buf[4] << 8)
+                               | ((u64)trx24_buf[5] << 16)) : 0u;
+        trx24_n -= used;
+        memmove(trx24_buf, trx24_buf + used, trx24_n);
+        trx_data_px(p0 | (p1 << 32));
+    }
+    if (!trx_left) trx24_n = 0;
+}
+static void trx_data_px(u64 qw) {
     if (uprec_cur >= 0) uprec_feed(qw);
     if (trxc_cur >= 0 && trxc[trxc_cur].got < 4) {
         trxc[trxc_cur].first[trxc[trxc_cur].got++] = (u32)qw;
@@ -2020,6 +2109,7 @@ static u32 current_texture_inner(float *out_w, float *out_h) {
     u32 need, hash = 2166136261u, y, x;
     u64 key, clut = gs_reg[GS_TEXCLUT];
     if (!gs_vram) return 0xFFFFFFFFu;
+    if (tex_index_mode) clut ^= 1ull << 63;   /* indices, not colours: own cache entry */
     if (!tex_nocache()) {
         u32 idx;
         if (texcache_find(t0, clut, lod, &idx, out_w, out_h)) return idx;
@@ -2051,6 +2141,11 @@ static u32 current_texture_inner(float *out_w, float *out_h) {
                 u32 a = (c >> 24) & 0xFFu;
                 a = a >= 128u ? 255u : a * 2u;
                 pal[e] = (c & 0x00FFFFFFu) | (a << 24);
+                if (tex_index_mode) {
+                    /* the CLUT entry number (T4: CSA*16 + index) in every channel */
+                    u32 ent = n == 16u ? ((u32)((t0 >> 56) & 0x1Full) * 16u + e) & 255u : e;
+                    pal[e] = ent * 0x010101u | 0xFF000000u;
+                }
             }
             for (e = 0; e < (psm == PSM_T4 || psm == PSM_T4HL
                              || psm == PSM_T4HH ? 16u : 256u); e++)
@@ -2078,9 +2173,13 @@ static u32 current_texture_inner(float *out_w, float *out_h) {
                 u32 xb = x & g.bwmask;
                 u32 run = g.bw - xb;
                 u32 k;
+                u32 source_offset = 0;
                 if (redirect) {
                     u32 pg = (u32)(blkbit >> 16);
                     src = pg < GS_VRAM_PAGES ? gs_pagebase[pg] : gs_vram;
+                    source_offset = pg < GS_VRAM_PAGES
+                                  ? (u32)(blkbit >> 3) - pg * GS_PAGE_BYTES
+                                  : (u32)(blkbit >> 3);
                     if (src != gs_vram) gs_shadow_runs++;
                 }
                 if (run > tw - x) run = tw - x;
@@ -2089,7 +2188,7 @@ static u32 current_texture_inner(float *out_w, float *out_h) {
                     u32 *dst = (u32 *)(row + x * 4u);
                     const u16 *offsets = off_row + xb;
                     if (base <= GS_VRAM_SIZE - 256u) {
-                        const u8 *block = src + base;
+                        const u8 *block = src + (src != gs_vram ? source_offset : base);
                         if (psm == PSM_T8) {
                             for (k = 0; k + 4u <= run; k += 4u) {
                                 const u32 r0 = block[offsets[k] >> 3];
@@ -2144,7 +2243,8 @@ static u32 current_texture_inner(float *out_w, float *out_h) {
                 for (k = 0; k < run; k++) {
                     u64 bit = blkbit + off_row[xb + k];
                     u32 off = (u32)(bit >> 3), raw, out;
-                    u32 soff = off;
+                    u32 soff = src != gs_vram
+                             ? off - (u32)(blkbit >> 16) * GS_PAGE_BYTES : off;
                     switch (bits) {
                     case 4:
                         raw = off < GS_VRAM_SIZE
@@ -2339,6 +2439,40 @@ static u32 current_texture_inner(float *out_w, float *out_h) {
     }
     {
         u32 idx = ps2_vk_texture(key, hash, tex_scratch, tw, th);
+        /* Allocation failure is transient. Never memoize the invalid handle:
+           a later field may have freed an old display-list reference. */
+        if (idx == 0xFFFFFFFFu) return idx;
+        {   /* PS2_DUMP_TEX_IDX=<n>: write each decode that lands in Vulkan slot n */
+            static int want = -2;
+            static unsigned nd;
+            if (want == -2) {
+                const char *e = getenv("PS2_DUMP_TEX_IDX");
+                want = e ? (int)strtol(e, NULL, 0) : -1;
+            }
+            if (want >= 0 && idx == (u32)want && nd < 16) {
+                char nm[128];
+                FILE *fp;
+                u32 e, amin = 255, amax = 0;
+                snprintf(nm, sizeof nm, "ps2_texidx_%u_%u.pam", idx, nd++);
+                fp = fopen(nm, "wb");
+                if (fp) {
+                    fprintf(fp, "P7\nWIDTH %u\nHEIGHT %u\nDEPTH 4\nMAXVAL 255\n"
+                                "TUPLTYPE RGB_ALPHA\nENDHDR\n", tw, th);
+                    fwrite(tex_scratch, 4, (size_t)tw * th, fp);
+                    fclose(fp);
+                }
+                for (e = 0; e < tw * th; e++) {
+                    if (tex_scratch[e * 4 + 3] < amin) amin = tex_scratch[e * 4 + 3];
+                    if (tex_scratch[e * 4 + 3] > amax) amax = tex_scratch[e * 4 + 3];
+                }
+                ps2_log("tex idx %u: %s tbp=%u tbw=%u psm=%u %ux%u cbp=%u cpsm=%u "
+                        "csm=%u csa=%u cld=%u texclut=%llX alpha %u..%u", idx, nm,
+                        tbp, tbw, psm, tw, th, (u32)((t0 >> 37) & 0x3FFFull) * 256u,
+                        (u32)((t0 >> 51) & 0xFull), (u32)((t0 >> 55) & 1ull),
+                        (u32)((t0 >> 56) & 0x1Full), (u32)((t0 >> 61) & 7ull),
+                        (unsigned long long)clut, amin, amax);
+            }
+        }
         u32 slot = texcache_next++ % TEXCACHE_N;
         gs_geom g;
         u32 cbp = (u32)((t0 >> 37) & 0x3FFFull) * 256u;
@@ -2400,6 +2534,8 @@ static u32 gs_rt_base[GS_RT_SLOTS];
 static u32 gs_rt_n;
 static u32 gs_rt_epoch[GS_RT_SLOTS];
 static u32 gs_rt_pages[GS_RT_SLOTS];
+static u32 gs_rt_fbw[GS_RT_SLOTS];      /* buffer width (pixels) of the last draw */
+static u8  gs_rt_psm[GS_RT_SLOTS];      /* frame format of the last draw */
 static u32 gs_rt_zbase[GS_RT_SLOTS];
 static u32 gs_rt_zepoch[GS_RT_SLOTS];
 static u8 gs_rt_zframe[GS_RT_SLOTS];
@@ -2526,6 +2662,31 @@ static int rt_find_z(u32 base) {
 static int psm_is_z(u32 psm) {
     return psm == PSM_Z32 || psm == PSM_Z24
         || psm == PSM_Z16 || psm == PSM_Z16S;
+}
+
+/* Pixel position, inside render target `slot`, of the PSMCT32 block at `addr`. */
+static int rt_addr_xy(int slot, u32 addr, u32 *xy) {
+    static const u8 blk32[4][8] = {
+        { 0, 1, 4, 5, 16, 17, 20, 21 }, { 2, 3, 6, 7, 18, 19, 22, 23 },
+        { 8, 9, 12, 13, 24, 25, 28, 29 }, { 10, 11, 14, 15, 26, 27, 30, 31 } };
+    u32 w = gs_rt_fbw[slot], off, ppr, page, blk, bx, by, x, y;
+    /* the block layout below is PSMCT32's (PSMCT24 shares it) */
+    if (gs_rt_psm[slot] != PSM_CT32 && gs_rt_psm[slot] != PSM_CT24) return 0;
+    if (!w || addr < gs_rt_base[slot]) return 0;
+    off = addr - gs_rt_base[slot];
+    ppr = w / 64u ? w / 64u : 1u;
+    page = off / GS_PAGE_BYTES;
+    blk = (off % GS_PAGE_BYTES) / 256u;
+    for (by = 0; by < 4u; by++)
+        for (bx = 0; bx < 8u; bx++)
+            if (blk32[by][bx] == blk) goto found;
+    return 0;
+found:
+    x = (page % ppr) * 64u + bx * 8u;
+    y = (page / ppr) * 32u + by * 8u;
+    if (x > 0xFFFFu || y > 0xFFFFu) return 0;
+    *xy = x | (y << 16);
+    return 1;
 }
 
 static int psm_is_indexed(u32 psm) {
@@ -2860,6 +3021,7 @@ static struct {
     u64 ver, validation_seq;
     u32 prim, epoch_seq, frame, emitter, disp_base;
     u32 defer_w, defer_h;
+    int dyn_lod;
     u8 tex_hit, rt_tex_draw, rt_tex_missed, rt_ztex_draw;
     ps2_vk_state st;
 } fs_memo;
@@ -2884,7 +3046,8 @@ static void fill_state(ps2_vk_state *st) {
         && fs_memo.prim == gs_prim && fs_memo.epoch_seq == gs_epoch_seq
         && fs_memo.validation_seq == gs_validation_seq
         && fs_memo.frame == ps2_gs_frame_count && fs_memo.emitter == rn_gs_emitter
-        && fs_memo.disp_base == gs_disp_base && fs_memo.defer == fill_defer_tex) {
+        && fs_memo.disp_base == gs_disp_base && fs_memo.defer == fill_defer_tex
+        && fs_memo.dyn_lod == gs_dyn_lod) {
         *st = fs_memo.st;
         fill_state_count(st);
         texcache_hits += fs_memo.tex_hit;
@@ -2911,6 +3074,7 @@ static void fill_state(ps2_vk_state *st) {
     fs_memo.frame = ps2_gs_frame_count;
     fs_memo.emitter = rn_gs_emitter;
     fs_memo.disp_base = gs_disp_base;
+    fs_memo.dyn_lod = gs_dyn_lod;
     fs_memo.defer_w = fill_defer_w;
     fs_memo.defer_h = fill_defer_h;
     fs_memo.tex_hit = (u8)(texcache_hits + texcache_misses != h0);
@@ -2993,6 +3157,8 @@ static void fill_state_compute(ps2_vk_state *st) {
     u32 rt_epoch_before = st->rt < GS_RT_SLOTS ? gs_rt_epoch[st->rt] : 0u;
     if (st->rt < GS_RT_SLOTS) {
         gs_rt_epoch[st->rt] = gs_epoch_seq;
+        gs_rt_fbw[st->rt] = st->fb_w;
+        gs_rt_psm[st->rt] = (u8)st->fb_psm;
         {   gs_geom fg;
             u32 pages;
             gs_psm_geom(st->fb_psm, &fg);
@@ -3008,9 +3174,10 @@ static void fill_state_compute(ps2_vk_state *st) {
     st->tex_rt = 0;
     if (st->tme) {
         u32 tbp = (u32)(t0 & 0x3FFFull) * 256u;
+        u32 tpsm = (u32)((t0 >> 20) & 0x3Full);
         int slot = rt_find(tbp);
         int use_rt = 0;
-        if (slot >= 0 && !psm_is_indexed((u32)((t0 >> 20) & 0x3Full))) {
+        if (slot >= 0 && !psm_is_indexed(tpsm)) {
             gs_geom g;
             u32 tbw = (u32)((t0 >> 14) & 0x3Full) * 64u;
             u32 tw  = 1u << ((t0 >> 26) & 0xFull);
@@ -3044,7 +3211,25 @@ static void fill_state_compute(ps2_vk_state *st) {
                 }
                 if (no_rt && (no_rt == 1u || no_rt == tbp)) use_rt = 0;
             }
-            if (!use_rt) gs_rt_tex_missed++;
+            if (!use_rt) {
+                gs_rt_tex_missed++;
+                if (PS2_ENV("PS2_TRACE_RT_MISS")) {
+                    static u32 said;
+                    u32 p, pm = 0, em = 0, lo = tbp / GS_PAGE_BYTES;
+                    u32 hp = (hi - 1u) / GS_PAGE_BYTES;
+                    for (p = lo; p <= hp && p < GS_VRAM_PAGES; p++)
+                        if (gs_page_epoch[p] > em) { em = gs_page_epoch[p]; pm = p; }
+                    if (said++ < 2000u)
+                        ps2_log("rt-miss: field %u tbp=%u (slot %d, epoch %u) into "
+                                "rt%u fbp=%u | newest write page %u (+%u) epoch %u "
+                                "owner %X psm %u bw %u | hi=%u",
+                                ps2_gs_frame_count, tbp, slot, gs_rt_epoch[slot],
+                                st->rt, st->rt < GS_RT_SLOTS ? gs_rt_base[st->rt] : 0u,
+                                pm, pm - lo, em, gs_page_owner[pm],
+                                (u32)gs_page_owner_psm[pm], (u32)gs_page_owner_bw[pm],
+                                hi);
+                }
+            }
         }
         if (psm_is_z((u32)((t0 >> 20) & 0x3Full))) {
             int zslot = rt_find_z(tbp);
@@ -3065,13 +3250,37 @@ static void fill_state_compute(ps2_vk_state *st) {
                 if (probe < 0) probe = getenv("PS2_CLUT_RT") != NULL;
                 if (probe) clut_rt_probe(t0, st->rt);
             }
+            st->clut_rt = 0;
+            {   /* A CLUT the GPU drew (AC4 renders its sun halo palette every
+                   field): VRAM never sees it, so decode the indices and let
+                   gs.frag read the colours from the render target. */
+                static int off = -1;
+                u32 tpsm = (u32)((t0 >> 20) & 0x3Full);
+                u32 cbp = (u32)((t0 >> 37) & 0x3FFFull) * 256u;
+                int cs;
+                if (off < 0) {
+                    const char *e = getenv("PS2_NO_CLUT_RT");
+                    off = (e && *e && *e != '0') ? 1 : 0;
+                }
+                if (!off && !fill_defer_tex && psm_is_indexed(tpsm)
+                    && ((t0 >> 51) & 0xFull) == PSM_CT32 && !((t0 >> 55) & 1ull)
+                    && (cs = rt_covering(cbp)) >= 0 && (u32)cs != st->rt
+                    && gs_range_epoch(cbp, cbp + 1u) <= gs_rt_epoch[cs]
+                    && rt_addr_xy(cs, cbp, &st->clut_xy)) {
+                    st->clut_rt = (u32)cs + 1u;
+                    st->clut_four = tpsm == PSM_T4 || tpsm == PSM_T4HL || tpsm == PSM_T4HH;
+                    fill_no_memo = 1;
+                }
+            }
             if (fill_defer_tex) {
                 u32 idx;
                 st->tex_index = texture_peek(&st->tex_w, &st->tex_h, &idx,
                                              &fill_defer_w, &fill_defer_h)
                               ? idx : GS_TEX_DEFERRED;
             } else {
+                tex_index_mode = st->clut_rt != 0;
                 st->tex_index = current_texture(&st->tex_w, &st->tex_h);
+                tex_index_mode = 0;
             }
             if (st->tex_index == 0xFFFFFFFFu) st->tme = 0;
         }
@@ -3092,7 +3301,81 @@ static void fill_state_compute(ps2_vk_state *st) {
         zs = off ? -1 : rt_find(zb_base());
         if (zs >= 0 && (u32)zs != st->rt && gs_rt_zframe[zs]) st->zrt = (u32)zs;
     }
+    st->zclear_rt = 0;
+    st->zclear_bits = 0;
+    {   /* A plain colour draw into memory that another target's draws use as
+           their Z buffer writes depth on the PS2 -- AC4 clears its Z buffer
+           with a black sprite into it as PSMCT32 (alpha masked).  Here each
+           target has its own depth image, so without this the hangar kept
+           the depth of earlier frames and dropped parts of the floor and the
+           aircraft. */
+        static int off = -1;
+        u32 fpsm = st->fb_psm, fb = fb_base(), bits = 0, i;
+        int x = -1;
+        if (off < 0) {
+            const char *e = getenv("PS2_NO_ZCLEAR");
+            off = (e && *e && *e != '0') ? 1 : 0;
+            if (off) ps2_log("GS: colour draws into Z buffers stay colour-only "
+                             "(PS2_NO_ZCLEAR)");
+        }
+        if (fpsm == PSM_CT24 || fpsm == 0x31u) bits = 24;
+        else if (fpsm == PSM_CT32 || fpsm == 0x30u)
+            bits = (st->fb_mask >> 24) == 0xFFu ? 24 : 32;
+        if (!off && !st->tme && bits && (st->fb_mask & 0x00FFFFFFu) == 0u
+            && st->rt < GS_RT_SLOTS && !gs_rt_zframe[st->rt]) {
+            for (i = 0; i < gs_rt_n; i++) {
+                if (i == st->rt || !gs_rt_zepoch[i] || gs_rt_zbase[i] != fb) continue;
+                if (x < 0 || gs_rt_zepoch[i] > gs_rt_zepoch[x]) x = (int)i;
+            }
+            if (x >= 0) {
+                st->zclear_rt = (u32)x + 1u;
+                st->zclear_bits = bits;
+            }
+        }
+    }
     st->emitter = rn_gs_emitter;
+    {   /* debugging: PS2_TRACE_GSREGS=N logs every distinct GS draw state of the
+           N-th field after the first draw (pair it with PS2_GS_STATE_MEMO=0) */
+        static int want = -2;
+        static u32 base, last_h, nlog;
+        if (want == -2) {
+            const char *e = getenv("PS2_TRACE_GSREGS");
+            want = e ? (int)strtol(e, NULL, 0) : -1;
+            base = ps2_gs_frame_count;
+        }
+        if (want >= 0 && ps2_gs_frame_count - base == (u32)want && nlog < 4000) {
+            u64 r[12];
+            u32 h = 2166136261u, k;
+            r[0] = frame_reg(); r[1] = zbuf_reg(); r[2] = test_reg();
+            r[3] = alpha_reg(); r[4] = tex0_reg(); r[5] = gs_reg[GS_TEXA];
+            r[6] = gs_reg[GS_COLCLAMP]; r[7] = gs_reg[ctx_of() ? GS_FBA_2 : GS_FBA_1];
+            r[8] = gs_prim; r[9] = clamp_reg();
+            r[10] = tex1_reg(); r[11] = miptbp1_reg();
+            for (k = 0; k < 12; k++) h = (h ^ (u32)r[k] ^ (u32)(r[k] >> 32)) * 16777619u;
+            if (h != last_h) {
+                last_h = h;
+                nlog++;
+                ps2_log("gsregs: prim=%03llX FRAME fbp=%05X fbw=%u psm=%02X msk=%08X | "
+                        "ZBUF zbp=%05X psm=%X zmsk=%u | TEST %09llX | ALPHA %llX fix=%u | "
+                        "TEX0 tbp=%05X tbw=%u psm=%02X %ux%u tcc=%u tfx=%u | TEXA %llX | "
+                        "CLAMP %llX | colclamp=%u fba=%u | rt=%u texrt=%u | tex0=%016llX "
+                        "| TEX1 %016llX MIPTBP1 %016llX",
+                        (unsigned long long)r[8], (u32)(r[0] & 0x1FF) * 2048u,
+                        (u32)((r[0] >> 16) & 0x3F) * 64u, (u32)((r[0] >> 24) & 0x3F),
+                        (u32)(r[0] >> 32), (u32)(r[1] & 0x1FF) * 2048u,
+                        (u32)((r[1] >> 24) & 0xF), (u32)((r[1] >> 32) & 1),
+                        (unsigned long long)r[2], (unsigned long long)(r[3] & 0xFF),
+                        (u32)((r[3] >> 32) & 0xFF), (u32)(r[4] & 0x3FFF) * 64u,
+                        (u32)((r[4] >> 14) & 0x3F) * 64u, (u32)((r[4] >> 20) & 0x3F),
+                        1u << ((r[4] >> 26) & 0xF), 1u << ((r[4] >> 30) & 0xF),
+                        (u32)((r[4] >> 34) & 1), (u32)((r[4] >> 35) & 3),
+                        (unsigned long long)r[5], (unsigned long long)r[9],
+                        (u32)(r[6] & 1), (u32)(r[7] & 1), st->rt, st->tex_rt,
+                        (unsigned long long)r[4], (unsigned long long)r[10],
+                        (unsigned long long)r[11]);
+            }
+        }
+    }
 }
 
 #define DRAWCENSUS_N 2048
@@ -3436,6 +3719,29 @@ static void vk_vertex(ps2_vk_vertex *o, const gs_vtx *v, int iip,
     else     { o->s = v->s; o->t = v->t; o->q = v->q; }
     o->fog = v->fog;
     o->round_uv = 0;
+    o->clamp_u = o->clamp_v = 0;
+}
+
+/* Texel coordinates a sprite axis samples at its first and last covered pixel
+   centre (vertex coordinates carry the +0.5 pixel-centre offset), packed for
+   PS2_VK_RUV_CLAMP.  Returns 0 when the axis covers no pixel. */
+static int sprite_clamp_axis(float e0, float e1, float c0, float c1, u32 *out) {
+    float pc0, pc1, d, a, b, lo, hi;
+    s32 l, h;
+    if (e1 <= e0) return 0;
+    pc0 = ceilf(e0 - 0.5f) + 0.5f;
+    pc1 = ceilf(e1 - 0.5f) - 0.5f;
+    if (pc1 < pc0) return 0;
+    d = (c1 - c0) / (e1 - e0);
+    a = c0 + (pc0 - e0) * d;
+    b = c0 + (pc1 - e0) * d;
+    lo = a < b ? a : b;
+    hi = a < b ? b : a;
+    l = (s32)lrintf(lo * 16.0f);
+    h = (s32)lrintf(hi * 16.0f);
+    if (l < -32768 || h > 32767) return 0;
+    *out = ((u32)l & 0xFFFFu) | (((u32)h & 0xFFFFu) << 16);
+    return 1;
 }
 
 static u32 sprite_round_axis(s32 p0, s32 p1, u32 t0, u32 t1) {
@@ -3451,7 +3757,9 @@ static void vk_triangle(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
     ps2_vk_state st;
     ps2_vk_vertex v[3];
     int iip = (gs_prim & PRIM_IIP) ? 1 : 0;
+    gs_prim_lod(a, b, c);
     fill_state(&st);
+    gs_dyn_lod = -1;
     vk_vertex(&v[0], a, iip, c, st.fst, st.tex_lod);
     vk_vertex(&v[1], b, iip, c, st.fst, st.tex_lod);
     vk_vertex(&v[2], c, iip, c, st.fst, st.tex_lod);
@@ -3698,7 +4006,9 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
     ps2_vk_state st;
     ps2_vk_vertex q[4], t[6];
     int i;
+    gs_prim_lod(a, b, NULL);
     fill_state(&st);
+    gs_dyn_lod = -1;
     vk_vertex(&q[0], a, 0, b, st.fst, st.tex_lod);
     vk_vertex(&q[2], b, 0, b, st.fst, st.tex_lod);
     if (st.tex_self && st.fst && st.fb_psm == PSM_CT16S
@@ -3709,7 +4019,10 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
         && st.maxu == 0u && st.minv == 1023u && st.maxv == 0u
         && ((tex0_reg() >> 14) & 63u) * 64u == st.fb_w
         && (a->x & 1023) == 0 && (a->y & 1023) == 0
-        && (b->x & 1023) == 1016 && (b->y & 1023) == 0
+        /* strips end at 63.5 px (AC5) or exactly 64 px (AC4's self-shadow):
+           both cover the same 64 columns */
+        && ((b->x & 1023) == 1016 || ((b->x & 1023) == 0 && b->x - a->x == 1024))
+        && (b->y & 1023) == 0
         && b->x > a->x && b->y > a->y
         && a->u == a->x + 8 && b->u == b->x + 8
         && a->v == a->y + 8 && b->v == b->y + 8) {
@@ -3718,7 +4031,7 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
                          | (u32)(((gs_reg[GS_TEXA] >> 39) & 1u) << 1)
                          | (u32)(((gs_reg[GS_TEXA] >> 15) & 1u) << 2);
         q[0].x = (float)a->x / 16.0f;
-        q[2].x = ((float)b->x + 8.0f) / 16.0f;
+        q[2].x = ((float)b->x + ((b->x & 1023) ? 8.0f : 0.0f)) / 16.0f;
         q[0].y = (float)a->y / 32.0f;
         q[2].y = (float)b->y / 32.0f;
         st.scissor[2] /= 2;
@@ -3766,6 +4079,16 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
     t[0] = q[0]; t[1] = q[1]; t[2] = q[2];
     t[3] = q[0]; t[4] = q[2]; t[5] = q[3];
     for (i = 0; i < 6; i++) t[i].round_uv = PS2_VK_RUV_SPRITE;
+    if (st.tme && st.fst && !st.tex_point && !st.shuffle_rg) {
+        u32 cu, cv;
+        if (sprite_clamp_axis(q[0].x, q[2].x, q[0].s, q[2].s, &cu)
+            && sprite_clamp_axis(q[0].y, q[2].y, q[0].t, q[2].t, &cv))
+            for (i = 0; i < 6; i++) {
+                t[i].round_uv |= PS2_VK_RUV_CLAMP;
+                t[i].clamp_u = cu;
+                t[i].clamp_v = cv;
+            }
+    }
     if (st.tme && st.fst && st.tex_point && !st.shuffle_rg
         && !st.tex_rt && !st.tex_lod) {
         u32 ru = sprite_round_axis(a->x, b->x, a->u, b->u);
@@ -3803,7 +4126,9 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
 static void vk_line(const gs_vtx *a, const gs_vtx *b) {
     ps2_vk_state st;
     ps2_vk_vertex v[2];
+    gs_prim_lod(a, b, NULL);
     fill_state(&st);
+    gs_dyn_lod = -1;
     vk_vertex(&v[0], a, (gs_prim & PRIM_IIP) ? 1 : 0, b, st.fst, st.tex_lod);
     vk_vertex(&v[1], b, (gs_prim & PRIM_IIP) ? 1 : 0, b, st.fst, st.tex_lod);
     draw_census(&st, v, 2);
@@ -3818,7 +4143,9 @@ static void vk_line(const gs_vtx *a, const gs_vtx *b) {
 static void vk_point(const gs_vtx *a) {
     ps2_vk_state st;
     ps2_vk_vertex v[1];
+    gs_prim_lod(a, NULL, NULL);
     fill_state(&st);
+    gs_dyn_lod = -1;
     vk_vertex(&v[0], a, 1, a, st.fst, st.tex_lod);
     draw_census(&st, v, 1);
     {
@@ -3974,6 +4301,15 @@ void ps2_gs_write_reg(u32 reg, u64 val) {
     if (g_cap_shallow) ps2_cap_reg(reg, val);
     if (PS2_UNLIKELY(rn_dump_on)) rn_dump_gsreg(reg, val);
     gs_stat_regs++;
+    if (PS2_UNLIKELY(reg >= GS_BITBLTBUF && reg <= GS_TRXDIR)
+        && PS2_ENV("PS2_TRACE_TRXREGS")) {
+        static u32 said;
+        if (said++ < 4000u)
+            ps2_log("trxreg: field %u %s = %016llX", ps2_gs_frame_count,
+                    reg == GS_BITBLTBUF ? "BITBLTBUF" : reg == GS_TRXPOS ? "TRXPOS"
+                    : reg == GS_TRXREG ? "TRXREG" : "TRXDIR",
+                    (unsigned long long)val);
+    }
     if (reg < 0x64) {
         gs_reg_hist[reg]++;
         if (gs_reg[reg] != val && !gs_reg_is_data[reg]) gs_state_ver++;

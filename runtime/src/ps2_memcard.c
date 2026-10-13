@@ -21,7 +21,7 @@
 typedef struct { char path[256]; u8 info[64]; u8 *data; u32 size; } mc_entry;
 typedef struct {
     mc_entry e[MC_ENTRIES];
-    int loaded, failed, formatted, dirty, cursor;
+    int loaded, failed, formatted, dirty, cursor, announced;
     char cwd[256], pattern[256], file[1024];
 } mc_card;
 static mc_card cards[2];
@@ -194,7 +194,13 @@ static int operation(u32 f,u32 s,int ssize) {
     if(f==1) {
         u32 a=ps2_r32(s+28); if(!ram_ok(a,192)) return -5;
         u8 info[192]={0}; wr32(info,2); wr32(info+4,8192-used_clusters(c)); wr32(info+144,c->formatted);
-        to_guest(a,info,sizeof info); return c->formatted?0:-2;
+        to_guest(a,info,sizeof info);
+#ifdef PS2_GAME_AC4
+        /* the first look at a card reports it as newly inserted (-1, or -2
+           unformatted), as the hardware does; AC4 waits for that event */
+        if(!c->announced) { c->announced=1; return c->formatted?-1:-2; }
+#endif
+        return c->formatted?0:-2;
     }
     if(f==16||f==17) {
         for(int i=0;i<MC_HANDLES;i++) if(handles[i].used&&handles[i].card==port) return -5;
@@ -352,5 +358,9 @@ int ps2_memcard_rpc(ps2_ctx *ctx,u32 f,u32 send,int ssize,u32 recv,int rsize) {
     if(f==254) {
         if(rsize>=12) { ps2_w32(recv+4,522); ps2_w32(recv+8,526); }
     } else ps2_w32(recv,(u32)operation(f,send,ssize));
+    if(PS2_ENV("PS2_TRACE_MC")) {
+        static unsigned n;
+        if(n++<64) ps2_log("memcard: fno=%u ssize=%d -> %d",f,ssize,(int)ps2_r32(recv));
+    }
     return 0;
 }

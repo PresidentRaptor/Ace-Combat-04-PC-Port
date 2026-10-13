@@ -730,6 +730,37 @@ PS2_INLINE void vu_efu_issue(ps2_vu *vu, u32 cyc, u32 lat, float v) {
     vu->p_ready = cyc + lat;
 }
 
+/* the VF register a lower instruction writes (LQ, LQI, LQD, MOVE, MR32,
+   MFIR, MFP, RNEXT, RGET), or -1; with no destination fields it writes
+   nothing */
+static int vu_lower_vf_dest(u32 ins) {
+    u32 op = (ins >> 25) & 0x7Fu, ft = (ins >> 16) & 31u;
+    if (!((ins >> 21) & 0xFu) || !ft) return -1;
+    if (op == 0x00u) return (int)ft;                    /* LQ */
+    if (op == 0x40u) {
+        switch (ins & 0x7FFu) {
+        case 0x37C: case 0x37E: case 0x33C: case 0x33D:
+        case 0x3FD: case 0x67C: case 0x43C: case 0x43D:
+            return (int)ft;
+        }
+    }
+    return -1;
+}
+
+/* Decode the write, rather than comparing register values after execution:
+   writing the same value still discards the lower instruction on a collision. */
+static int vu_upper_vf_dest(u32 ins) {
+    u32 f = ins & 63u;
+    if ((f & 60u) == 60u) {
+        u32 sub = (ins & 3u) | ((ins >> 4) & 124u);
+        if ((sub >= 0x10u && sub <= 0x17u) || sub == 0x1Du)
+            return ((ins >> 21) & 15u) ? (int)((ins >> 16) & 31u) : -1;
+        return -1;
+    }
+    return f <= 0x2Fu && (((ins >> 21) & 15u) || f == 0x2Eu)
+        ? (int)((ins >> 6) & 31u) : -1;
+}
+
 static s64 vu_lower(ps2_vu *vu, u32 ins, u32 pc, u32 cyc) {
     u32 op = (ins >> 25) & 0x7Fu;
     s64 br = -1;
@@ -1111,6 +1142,19 @@ static void vu_watch_hit(const ps2_vu *vu, u32 pc) {
             (double)vu->vf[1].f[0], (double)vu->vf[1].f[1],
             (double)vu->vf[1].f[2], (double)vu->vf[1].f[3]);
     ps2_log("            VI:%s", line);
+    {   /* PS2_VU_WATCH_VF=16,20,22 adds those VF registers */
+        const char *e = getenv("PS2_VU_WATCH_VF");
+        while (e && *e) {
+            char *end;
+            unsigned r = (unsigned)strtoul(e, &end, 0);
+            if (end == e) break;
+            if (r < 32)
+                ps2_log("            VF%02u = %g %g %g %g", r,
+                        (double)vu->vf[r].f[0], (double)vu->vf[r].f[1],
+                        (double)vu->vf[r].f[2], (double)vu->vf[r].f[3]);
+            e = *end ? end + 1 : end;
+        }
+    }
 }
 
 #if defined(__has_include)
@@ -1467,8 +1511,40 @@ static void vu_run(ps2_vu *vu, u32 start) {
                     int lo_nop = ((lo >> 25) & 0x7Fu) == 0x40u
                                  && (lo & 0x7FFu) == 0x33Cu
                                  && ((lo >> 21) & 0xFu) == 0u;
-                    if (!lo_nop || PS2_UNLIKELY(diag))
+                    /* Both halves of a pair read their sources in the same
+                       cycle: when the lower instruction loads a VF register
+                       the upper one reads, the upper must see the old value
+                       (pipelined matrix code pairs MULAx VF22.. with
+                       LQ VF22, next row).  Run the upper against the old
+                       register and keep the loaded value unless the upper
+                       wrote that register too, as the hardware does. */
+                    int lvf = up_nop ? -1 : vu_lower_vf_dest(lo);
+                    int discard_lower = 0;
+                    if (lvf > 0 && lvf == vu_upper_vf_dest(up)) {
+                        /* The whole lower instruction is discarded, including
+                           an LQI/LQD address-register update. */
+                        vu_upper(vu, up & 0x7FFFFFFFu, fslot);
+                        up_nop = 1;
+                        lo_nop = 1;
+                        discard_lower = 1;
+                        lvf = -1;
+                    }
+                    if (lvf > 0) {
+                        u32 uf_s = (up >> 11) & 31u, uf_t = (up >> 16) & 31u;
+                        if ((u32)lvf != uf_s && (u32)lvf != uf_t) lvf = -1;
+                    }
+                    if (PS2_UNLIKELY(lvf > 0)) {
+                        ps2_vf old = vu->vf[lvf], loaded;
+                        if (!lo_nop || PS2_UNLIKELY(diag))
+                            br = vu_lower(vu, lo, pc, guard);
+                        loaded = vu->vf[lvf];
+                        vu->vf[lvf] = old;
+                        vu_upper(vu, up & 0x7FFFFFFFu, fslot);
+                        vu->vf[lvf] = loaded;
+                        up_nop = 1;
+                    } else if (!discard_lower && (!lo_nop || PS2_UNLIKELY(diag))) {
                         br = vu_lower(vu, lo, pc, guard);
+                    }
                 }
                 if (!up_nop) vu_upper(vu, up & 0x7FFFFFFFu, fslot);
             }
@@ -2821,6 +2897,38 @@ static void vu_test_reset(void) {
 int ps2_vu_selftest(void) {
     vu_test_fail = 0;
     if (!vu1.micro || !vu1.mem) { ps2_log("vu selftest: VU1 not initialised"); return 1; }
+    {
+        /* A same-value upper write still wins; the lower load's unwritten
+           lanes and address increment must not leak into the result. */
+        for (u32 source = 1; source <= 3; source += 2) {
+            u32 lo[2] = {0x8000037Cu | (15u << 21) | (1u << 16) | (2u << 11), VU_LO_NOP};
+            u32 up[2] = {vu_up_fmac(0x28u, 8u, 1, source, 0) | 0x40000000u, VU_UP_NOP};
+            float loaded[4] = {9, 9, 9, 9};
+            vu_test_reset();
+            vu1.vi[2] = 8;
+            for (u32 k = 0; k < 4; k++) {
+                vu1.vf[1].f[k] = (float)(k + 1);
+                vu1.vf[3].f[k] = (float)(k + 1);
+            }
+            memcpy(vu1.mem + 128, loaded, sizeof loaded);
+            vu_test_prog(lo, up, 2);
+            vu_run(&vu1, 0);
+            vu_test_expect("paired write keeps same-value upper result", vu1.vf[1].u[0], 0x3F800000u);
+            vu_test_expect("paired write discards lower masked lanes", vu1.vf[1].u[1], 0x40000000u);
+            vu_test_expect("paired write discards LQI address increment", vu1.vi[2], 8);
+        }
+        {
+            u32 lo[2] = {(15u << 21) | (1u << 16) | (2u << 11), VU_LO_NOP};
+            u32 up[2] = {vu_up_fmac(0x28u, 8u, 3, 1, 0) | 0x40000000u, VU_UP_NOP};
+            vu_test_reset();
+            vu1.vi[2] = 8;
+            vu1.vf[1].f[0] = 5;
+            vu_test_prog(lo, up, 2);
+            vu_run(&vu1, 0);
+            vu_test_expect("paired upper reads value before lower load", vu1.vf[3].u[0], 0x40A00000u);
+            vu_test_expect("paired lower load survives separate upper write", vu1.vf[1].u[0], 0x41100000u);
+        }
+    }
     {
         vu_test_reset();
         vu1.vi[15] = 0xBEEF;

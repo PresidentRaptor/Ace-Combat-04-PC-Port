@@ -38,6 +38,7 @@ void ps2_rpc_register(u32 sid, ps2_rpc_fn fn, const char *name);
 int  ps2_rpc_call(u32 sid, u32 fno, u32 send, int ssize,
                   u32 recv, int rsize);
 void ps2_sif_hle_init(void);
+u32  ps2_iop_alloc(u32 size);
 void ps2_sif_hle_report(void);
 
 void ps2_cdvd_init(void);
@@ -67,6 +68,12 @@ void ps2_iop_services_register(void);
 void ps2_nufile_report(void);
 void ps2_nusound_report(void);
 void ps2_nusndstr_report(void);
+void ps2_ac4_services_register(void);
+void ps2_ac4_report(void);
+void ps2_ac4_iop_fill(u32 addr, u32 size);
+void ps2_ac4_vag_mix(s16 *out, u32 n);
+void ps2_ac4_snd_mix(s16 *out, u32 n);
+void ps2_libpad_report(void);
 
 void ps2_ipu_init(void);
 u32  ps2_ipu_read32(u32 addr);
