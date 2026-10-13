@@ -13,7 +13,9 @@ There's no game code or assets in this repo. You bring your own copy of the game
 - Boot, memory card, the opening movie, title and menus, story movies with sound, briefings, the hangar, and **Mission 01 in flight** (HUD, radio, music, voices, effects) are checked start to finish at native resolution and at 6x internal resolution.
 - **Saving and loading** work (pre-mission SAVE, title-screen LOAD and CONTINUE).
 - **Controller vibration**, rebindable keyboard and controller, PCSX2-style analog settings.
-- Not checked yet: later missions. The 16:9 widescreen patch is AC5-only and isn't offered.
+- The picture defaults to an undistorted 4:3 image in wide windows. AC4 does not yet have a verified game-specific 16:9 camera patch; AC5's patch is not applied.
+- A 4K graphics preset selects internal resolution automatically to cover the current display, up to 8x (GPU and memory permitting). The PS2's original texture art remains native resolution; filtering improves sampling, not source detail.
+- Later missions have not been checked yet.
 
 How AC4 differs from AC5 under the hood:
 

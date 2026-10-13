@@ -2147,6 +2147,24 @@ static u32 current_texture_inner(float *out_w, float *out_h) {
                     pal[e] = ent * 0x010101u | 0xFF000000u;
                 }
             }
+            {   /* debugging: PS2_LOG_CLUT=<cbp bytes> logs that CLUT once */
+                static long want = -2;
+                if (want == -2) {
+                    const char *ev = getenv("PS2_LOG_CLUT");
+                    want = ev ? strtol(ev, NULL, 0) : -1;
+                }
+                if (want >= 0 && (u32)want == (u32)((t0 >> 37) & 0x3FFFull) * 256u) {
+                    char line[600];
+                    for (u32 r0 = 0; r0 < n; r0 += 32) {
+                        int k = 0;
+                        for (u32 q = r0; q < r0 + 32 && q < n; q++)
+                            k += snprintf(line + k, sizeof line - (size_t)k, " %08X",
+                                          clut_entry(q));
+                        ps2_log("clut %u [%3u..]:%s", (u32)want, r0, line);
+                    }
+                    want = -1;
+                }
+            }
             for (e = 0; e < (psm == PSM_T4 || psm == PSM_T4HL
                              || psm == PSM_T4HH ? 16u : 256u); e++)
                 hash = (hash ^ pal[e]) * 16777619u;

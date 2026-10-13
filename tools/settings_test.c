@@ -94,11 +94,11 @@ int main(void) {
     CHECK(ps2_settings_preset_matches(&ps2_cfg) == PS2_PRESET_LOW, "defaults do not match Low");
     CHECK(ps2_cfg.anisotropy == 0 && ps2_cfg.deinterlace == 1
           && ps2_cfg.fxaa == 0 && ps2_cfg.sharpen == 0.0f && ps2_cfg.scale_filter == PS2_SCALE_BILINEAR
-          && ps2_cfg.aspect == PS2_ASPECT_STRETCH && ps2_cfg.present_mode == PS2_PRESENT_MAILBOX
+          && ps2_cfg.aspect == PS2_ASPECT_AUTO && ps2_cfg.present_mode == PS2_PRESENT_MAILBOX
           && ps2_cfg.window_w == 1280 && ps2_cfg.window_h == 896 && ps2_cfg.widescreen == 0
           && ps2_cfg.internal_res == 1,
-          "defaults differ from the pre-menu renderer");
-    for (int i = 0; i <= PS2_PRESET_ULTRA; i++) {
+          "settings defaults are incorrect");
+    for (int i = 0; i <= PS2_PRESET_4K; i++) {
         ps2_settings s;
         ps2_settings_defaults(&s);
         ps2_settings_apply_preset(&s, i);
@@ -109,8 +109,8 @@ int main(void) {
         ps2_settings_defaults(&s);
         s.anisotropy = 4;
         CHECK(ps2_settings_preset_matches(&s) == PS2_PRESET_CUSTOM, "edited preset not Custom");
-        static const int res[4] = { 1, 2, 3, 4 };
-        for (int i = 0; i <= PS2_PRESET_ULTRA; i++) {
+        static const int res[5] = { 1, 2, 3, 4, 0 };
+        for (int i = 0; i <= PS2_PRESET_4K; i++) {
             ps2_settings_apply_preset(&s, i);
             CHECK(s.internal_res == res[i], "preset %d internal resolution %d", i, s.internal_res);
         }

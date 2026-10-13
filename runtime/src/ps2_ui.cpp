@@ -469,7 +469,7 @@ void present_controls() {
 }
 
 struct PresetInfo { const char *name, *blurb; };
-const PresetInfo PRESETS[4] = {
+const PresetInfo PRESETS[5] = {
     { "Low",    "The PS2's native 640x448 with plain bilinear scaling to the window -- the "
                 "renderer as it was before this menu. Lightest on the GPU; the one for "
                 "integrated graphics." },
@@ -480,6 +480,9 @@ const PresetInfo PRESETS[4] = {
     { "Ultra",  "4x internal resolution (2560x1792), averaged down to the window for "
                 "anti-aliasing, 16x anisotropic filtering and light sharpening. Uses the "
                 "most video memory." },
+    { "4K",     "Display-aware internal resolution: Auto selects enough pixels for the "
+                "current window, up to 8x, with 16x anisotropic filtering and sharp scaling. "
+                "At 4K this can use substantial GPU memory and time." },
 };
 
 void internal_res_status() {
@@ -538,9 +541,9 @@ void internal_res_control() {
 void tab_quick() {
     ImGuiStyle &st = ImGui::GetStyle();
     ImGui::SeparatorText("Graphics quality");
-    float w = (ImGui::GetContentRegionAvail().x - st.ItemSpacing.x * 3.0f) / 4.0f;
+    float w = (ImGui::GetContentRegionAvail().x - st.ItemSpacing.x * 4.0f) / 5.0f;
     float h = ImGui::GetFrameHeight() * 2.2f;
-    for (int i = PS2_PRESET_ULTRA; i >= PS2_PRESET_LOW; i--) {
+    for (int i = PS2_PRESET_4K; i >= PS2_PRESET_LOW; i--) {
         bool sel = ps2_cfg.preset == i;
         if (sel) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(UI_RGB(0.25f, 0.52f, 0.32f, 0.18f, 0.38f, 0.68f), 1.0f));

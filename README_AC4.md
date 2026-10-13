@@ -51,7 +51,8 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
 - `ps2_hle_pad.c` — the original libpad (state machine, modes, actuators, pressure mode).
 - `ps2_game.h` — window title, settings/pipeline file names, serial for mods.
 - the native VU1 renderer (`rn/`) is off: it implements AC5's microcode.
-- the 16:9 widescreen patch is AC5-specific and is never applied (`ps2_settings.c`).
+- the 16:9 camera patch previously used by the AC5 build is not valid for AC4 and is never applied (`ps2_settings.c`). AC4's output defaults to an undistorted 4:3 image on wide displays; a validated game-specific camera patch is still needed for expanded 16:9 gameplay.
+- the 4K preset uses display-aware internal resolution (Auto, up to 8x) with 16x anisotropic filtering and sharp scaling. This sharpens rendered edges and sampling; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists.
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread (`PS2_ASYNC_GFX=1` brings the async thread
   back, with intermittent stray-triangle frames in flight).

@@ -90,8 +90,12 @@ Known limits
 - Graphics run through the emulated GS. The native renderer the AC5 port
   uses was written for AC5's VU1 programs and is off. Higher internal
   resolutions (F4) work; resolution 6 was checked through Mission 01.
-- The 16:9 widescreen option is ignored: the patch behind it is for AC5's
-  executable and would corrupt AC4.
+- The picture defaults to an undistorted 4:3 image in wide windows. AC5's
+  16:9 camera patch is not used because it targets a different executable;
+  AC4 still needs a verified game-specific camera patch for expanded 16:9 play.
+- F4's 4K graphics preset selects an internal resolution to cover the current
+  display (up to 8x if the GPU allows), with sharper scaling and 16x
+  anisotropic filtering. Game textures remain at their original PS2 detail.
 - The graphics machine runs on the game thread (an AC4-specific race shows
   up when it runs on its own thread); a modern CPU holds full speed.
 - Only Mission 01 has been played through so far; later missions have not
