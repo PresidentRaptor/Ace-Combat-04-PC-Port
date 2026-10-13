@@ -26,6 +26,8 @@ int  ps2_ui_event(const SDL_Event *e);
 int  ps2_ui_visible(void);
 void ps2_ui_set_visible(int on);
 int  ps2_ui_blocks_game_input(void);
+/* Esc in the game: open the menu with a quit prompt; 0 if there is no menu */
+int  ps2_ui_ask_quit(void);
 void ps2_ui_draw(VkCommandBuffer cmd);
 void ps2_ui_swapchain_changed(uint32_t image_count);
 

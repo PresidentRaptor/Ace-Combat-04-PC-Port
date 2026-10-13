@@ -328,6 +328,10 @@ void ps2_statecap_init(u8 *ram, u64 size) {
         pthread_create(&th, NULL, marker_thread, NULL);
         pthread_detach(th);
     }
-    ps2_log("snap: armed: press F8 in the game window (or drop snap.on) for a "
-            "full state snapshot into out/snap_NNN/");
+    if (PS2_ENV("PS2_DEV_KEYS"))
+        ps2_log("snap: armed: press F8 in the game window (or drop snap.on) for a "
+                "full state snapshot into out/snap_NNN/");
+    else
+        ps2_log("snap: drop a file named snap.on next to the game for a full state "
+                "snapshot (F6-F10 need PS2_DEV_KEYS=1, as DIAGNOSTICS.bat sets)");
 }

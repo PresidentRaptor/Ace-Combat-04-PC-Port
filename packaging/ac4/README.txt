@@ -17,7 +17,8 @@ folder - keep it when updating the build.
 Keyboard: Enter = Start, arrows = D-pad, X = Cross, S = Circle,
 Z = Square, A = Triangle, numpad 8/2/4/6 = left stick, Q/E = L1/R1,
 1/3 = L2/R2, right Shift = Select. Everything can be rebound in the
-settings menu (F4). F11 or Alt+Enter toggles fullscreen; Esc quits.
+settings menu (F4), which also has the master volume and vibration.
+F11 or Alt+Enter toggles fullscreen; Esc asks before quitting.
 
 For a bug, send last-play.log (replaced on each launch) with the mission,
 what happened and how to reproduce it. DIAGNOSTICS.bat writes a more
@@ -78,6 +79,11 @@ Fixed in this build
   reads it back.
 - Quitting no longer leaves a 25 MB ps2_frame.ppm screenshot in this
   folder (an older one can be deleted).
+- Esc no longer ends the game on the spot: it asks first. The settings
+  menu (F4) gained a master volume, "mute in the background" and a Quit
+  button, and lost the widescreen option that only applied to AC5. The
+  F6-F10 debugging keys only work in DIAGNOSTICS.bat now, so a stray key
+  press can't fill the folder with capture files.
 
 Known limits
 ------------

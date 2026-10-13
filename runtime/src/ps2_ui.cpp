@@ -14,10 +14,12 @@
 #include <cstring>
 
 extern "C" void ps2_log(const char *fmt, ...);
+extern "C" void ps2_video_request_close(void);
 
 namespace {
 
 bool g_init, g_visible;
+bool g_quit_prompt;      /* Esc in the game: confirm before quitting */
 SDL_Window *g_window;
 float g_max_aniso;
 float g_dpi = 1.0f;
@@ -382,14 +384,24 @@ void resolution_controls() {
 }
 
 const char *const ASPECTS[] = {
+#ifdef PS2_GAME_AC4
+    "Stretch to fill the window", "Auto (keep the game's 4:3)", "4:3", "16:9", "Custom",
+#else
     "Stretch to fill the window", "Auto (4:3, or 16:9 with widescreen)", "4:3", "16:9", "Custom",
+#endif
 };
 
 void aspect_controls() {
     if (ImGui::Combo("Aspect ratio", &ps2_cfg.aspect, ASPECTS, 5)) changed(0);
+#ifdef PS2_GAME_AC4
+    help("The shape of the picture inside the window. Auto and 4:3 keep the game's 4:3 picture "
+         "undistorted, with bars at the sides of a wide window. Stretch fills the window "
+         "whatever its shape.");
+#else
     help("The shape of the picture inside the window. Auto keeps the PS2's 4:3 picture "
          "undistorted and becomes 16:9 when the widescreen patch is on. Stretch fills the "
          "window whatever its shape, which is how the runtime always behaved.");
+#endif
     env_note("PS2_ASPECT", "overrides the aspect ratio");
     if (ps2_cfg.aspect == PS2_ASPECT_CUSTOM
         && ImGui::SliderFloat("Custom ratio", &ps2_cfg.aspect_custom, 1.0f, 3.0f, "%.3f : 1"))
@@ -398,8 +410,7 @@ void aspect_controls() {
 
 void widescreen_control() {
 #ifdef PS2_GAME_AC4
-    ImGui::TextDisabled("Widescreen camera patch is not available for Ace Combat 04.");
-    return;
+    return;     /* the 16:9 camera patch is AC5's; nothing to offer for AC4 */
 #endif
     bool ws = ps2_cfg.widescreen != 0;
     if (ImGui::Checkbox("Widescreen (16:9)", &ws)) {
@@ -557,6 +568,21 @@ void tab_quick() {
     bool fps = ps2_cfg.show_fps != 0;
     if (ImGui::Checkbox("Show FPS counter", &fps)) { ps2_cfg.show_fps = fps; changed(0); }
 
+    ImGui::SeparatorText("Audio");
+    {   float pct = ps2_cfg.volume * 100.0f;
+        if (ImGui::SliderFloat("Volume", &pct, 0.0f, 100.0f, "%.0f%%")) {
+            ps2_cfg.volume = pct / 100.0f;
+            changed(0);
+        }
+        help("Master volume of everything the game plays: music, voices and effects. The "
+             "game's own sound options still apply underneath.");
+        bool mute = ps2_cfg.mute_unfocused != 0;
+        if (ImGui::Checkbox("Mute when the window is in the background", &mute)) {
+            ps2_cfg.mute_unfocused = mute;
+            changed(0);
+        }
+    }
+
     ImGui::SeparatorText("Controls");
     if (ImGui::Button("Keyboard bindings")) g_want_tab = TAB_KEYBOARD;
     ImGui::SameLine();
@@ -567,6 +593,8 @@ void tab_quick() {
     ImGui::Spacing();
     ImGui::Separator();
     if (ImGui::Button("Reset all settings to defaults")) ImGui::OpenPopup("Reset all settings?");
+    ImGui::SameLine();
+    if (ImGui::Button("Quit game")) g_quit_prompt = true;
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopupModal("Reset all settings?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("Graphics, display, bindings and dead zones all return to their defaults.");
@@ -873,10 +901,28 @@ void draw_menu() {
             ImGui::EndTabBar();
         }
         ImGui::Separator();
-        ImGui::TextDisabled("F4 or Esc closes  |  F11 or Alt+Enter toggles fullscreen  |  %s",
-                            ps2_settings_path());
+        ImGui::TextDisabled("F4 or Esc closes  |  Esc in game asks to quit  |  F11 or Alt+Enter "
+                            "toggles fullscreen  |  %s", ps2_settings_path());
     }
     ImGui::End();
+    if (g_quit_prompt) {
+        const char *title = "Quit " PS2_GAME_SHORT "?";
+        if (!ImGui::IsPopupOpen(title)) ImGui::OpenPopup(title);
+        ImGui::SetNextWindowPos(io.DisplaySize * 0.5f, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Progress since your last save will be lost.");
+            float bw = ImGui::GetFontSize() * 8.0f;
+            if (ImGui::Button("Quit", ImVec2(bw, 0.0f))) ps2_video_request_close();
+            ImGui::SameLine();
+            if (ImGui::Button("Keep playing", ImVec2(bw, 0.0f))) {
+                g_quit_prompt = false;
+                ImGui::CloseCurrentPopup();
+                open = false;
+            }
+            ImGui::SetItemDefaultFocus();
+            ImGui::EndPopup();
+        }
+    }
     if (!open) ps2_ui_set_visible(0);
 }
 
@@ -929,9 +975,10 @@ int ps2_ui_init(const ps2_ui_init_info *info) {
     }
     g_init = true;
     ps2_log("ui: Dear ImGui %s ready -- F4 opens the settings menu", IMGUI_VERSION);
-    if (const char *e = getenv("PS2_UI_OPEN")) {
+    if (const char *e = getenv("PS2_UI_OPEN")) {   /* tab number, or q: the quit prompt */
         ps2_ui_set_visible(1);
-        g_want_tab = atoi(e);
+        if (*e == 'q') g_quit_prompt = true;
+        else g_want_tab = atoi(e);
     }
     return 0;
 }
@@ -947,9 +994,17 @@ void ps2_ui_shutdown(void) {
 
 int ps2_ui_visible(void) { return g_init && g_visible; }
 
+int ps2_ui_ask_quit(void) {
+    if (!g_init) return 0;
+    g_quit_prompt = true;
+    ps2_ui_set_visible(1);
+    return 1;
+}
+
 void ps2_ui_set_visible(int on) {
     if (!g_init || (on != 0) == g_visible) return;
     g_visible = on != 0;
+    if (!g_visible) g_quit_prompt = false;
     ImGuiIO &io = ImGui::GetIO();
     io.ClearEventsQueue();
     io.ClearInputKeys();

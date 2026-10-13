@@ -62,6 +62,8 @@ typedef struct ps2_settings {
     float ui_scale;
     int   block_input_in_menu;
     int   vibration;
+    float volume;           /* master volume, 0..1 */
+    int   mute_unfocused;   /* silence while the window is in the background */
     int   key[PS2_ACT_COUNT][PS2_BIND_SLOTS];
     int   pad[PS2_ACT_COUNT][PS2_BIND_SLOTS];
     float deadzone;

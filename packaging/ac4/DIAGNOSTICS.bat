@@ -15,6 +15,8 @@ set "PS2_PROFILE_PHASES=1"
 set "PS2_PROFILE_GUEST=1"
 set "PS2_PAD_DIAG=1"
 set "PS2_TRACE_MC=1"
+set "PS2_DEV_KEYS=1"
+set "PS2_TRACE_RUMBLE=1"
 echo Diagnostic mode adds profiling overhead. Close the game normally for final summaries.
 echo Session output is saved to diagnostics.log.
 > "%~dp0diagnostics.log" echo AC4 recompiled diagnostics

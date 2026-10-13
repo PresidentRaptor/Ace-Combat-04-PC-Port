@@ -4386,6 +4386,9 @@ static SDL_Gamepad *gamepad;
 
 static int window_hidden;
 void ps2_video_hidden(int on) { window_hidden = on; }
+static volatile int window_focused = 1;
+int ps2_video_focused(void) { return window_focused; }
+void ps2_video_request_close(void) { window_closed = 1; }
 
 static int pad_deadzone_env(void) {
     static int cached = -2;
@@ -4819,8 +4822,20 @@ static void pump_events(void) {
         case SDL_EVENT_GAMEPAD_REMOVED:
             if (gamepad) { SDL_CloseGamepad(gamepad); gamepad = NULL; }
             break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            window_focused = 1;
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            window_focused = 0;
+            break;
         case SDL_EVENT_KEY_DOWN:
-            if (e.key.key == SDLK_ESCAPE && !window_hidden) window_closed = 1;
+            /* Esc asks first: one stray key press used to end the session */
+            if (e.key.key == SDLK_ESCAPE && !e.key.repeat && !window_hidden
+                && !ps2_ui_ask_quit())
+                window_closed = 1;
+            /* F6-F10 are the capture/trace tools, for diagnostics runs only
+               (PS2_DEV_KEYS=1, set by DIAGNOSTICS.bat) */
+            if (!PS2_ENV("PS2_DEV_KEYS")) goto not_dev_key;
             if (e.key.key == SDLK_F9) {
                 ps2_capture_request = 1;
                 ps2_log("capture: requested; the next field will be captured");
@@ -4854,6 +4869,7 @@ static void pump_events(void) {
                 printf("[F10] censuses %s\n", ps2_diag_armed ? "ON" : "off");
                 fflush(stdout);
             }
+        not_dev_key:
             if (e.key.key == SDLK_F11
                 || (e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT))) {
                 ps2_cfg.window_mode = want_fullscreen ? PS2_WIN_WINDOWED

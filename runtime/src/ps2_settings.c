@@ -184,6 +184,8 @@ void ps2_settings_defaults(ps2_settings *s) {
     s->ui_scale = 1.0f;
     s->block_input_in_menu = 1;
     s->vibration = 1;
+    s->volume = 1.0f;
+    s->mute_unfocused = 0;
     ps2_settings_default_bindings(s, 1, 1);
     s->deadzone = 0.0f;
     s->axis_scale = 1.33f;
@@ -233,6 +235,8 @@ static void sanitize(ps2_settings *s) {
     s->ui_scale = clampf(s->ui_scale, 0.5f, 3.0f);
     s->block_input_in_menu = s->block_input_in_menu != 0;
     s->vibration = s->vibration != 0;
+    s->volume = clampf(s->volume, 0.0f, 1.0f);
+    s->mute_unfocused = s->mute_unfocused != 0;
     for (int a = 0; a < PS2_ACT_COUNT; a++)
         for (int k = 0; k < PS2_BIND_SLOTS; k++) {
             if (s->key[a][k] < 0 || s->key[a][k] >= SDL_SCANCODE_COUNT) s->key[a][k] = 0;
@@ -286,6 +290,8 @@ static const cfg_field fields[] = {
     FF("display", "menu_scale", ui_scale, "0.5..3"),
     FI("input", "block_game_input_in_menu", block_input_in_menu, "1 on"),
     FI("input", "vibration", vibration, "1 rumble the controller when the game asks"),
+    FF("audio", "volume", volume, "master volume, 0..1"),
+    FI("audio", "mute_in_background", mute_unfocused, "1 silent while the window is not focused"),
     FF("analog", "deadzone", deadzone, "PCSX2 Analog Deadzone, both sticks, 0..1"),
     FF("analog", "axis_scale", axis_scale, "PCSX2 Analog Sensitivity, 0.01..2 (default 1.33)"),
     FF("analog", "button_deadzone", button_deadzone, "PCSX2 Button/Trigger Deadzone, 0..1"),
