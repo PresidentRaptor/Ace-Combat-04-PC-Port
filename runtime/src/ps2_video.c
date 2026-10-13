@@ -55,6 +55,7 @@ typedef struct {
     u32 mvbase, mblock;
     u16 mcull;
     u16 clut_rt;      /* CLUT read from this render target (slot + 1), at clut_xy */
+    u16 clut_tex;     /* palette texture + 1 for indices read from tex_rt's alpha */
     u32 clut_xy;
 } vk_draw;
 
@@ -3408,7 +3409,8 @@ static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
         pc.tex_scale = d->tex_rt ? (float)rt_scale : 1.0f;
         pc.clut_xy = d->clut_xy;
         pc.flags[0] = d->frag_flags;
-        pc.flags[1] = (d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u;
+        pc.flags[1] = ((d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u)
+                    | (d->clut_tex && d->tex_rt ? 2u : 0u);
         pc.flags[2] = d->wrap;
         pc.flags[3] = debug_solid;
         pc.clamp_uv[0] = d->minu;
@@ -3515,6 +3517,11 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         u16 ti = rep_draws[i].tex;
         if (ti != 0xFFFF && ti < ntextures) {
             vk_texture *t = &textures[ti];
+            if (t->rgba && t->uploaded_gen != (int)t->generation)
+                upload_texture(cmd, fr, t);
+        }
+        if (rep_draws[i].clut_tex && rep_draws[i].clut_tex <= ntextures) {
+            vk_texture *t = &textures[rep_draws[i].clut_tex - 1];
             if (t->rgba && t->uploaded_gen != (int)t->generation)
                 upload_texture(cmd, fr, t);
         }
@@ -3769,6 +3776,9 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
                     && rts[d->clut_rt - 1].created
                     && rts[d->clut_rt - 1].layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
                     cset = rts[d->clut_rt - 1].set;
+                else if (d->clut_tex && d->clut_tex <= ntextures
+                         && textures[d->clut_tex - 1].set)
+                    cset = textures[d->clut_tex - 1].set;
                 if (bound_clut != cset) {
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             gs_layout, 3, 1, &cset, 0, NULL);
@@ -3796,7 +3806,8 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         pc.tex_scale = d->tex_rt ? (float)rt_scale : 1.0f;
         pc.clut_xy = d->clut_xy;
         pc.flags[0] = d->frag_flags;
-        pc.flags[1] = (d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u;
+        pc.flags[1] = ((d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u)
+                    | (d->clut_tex && d->tex_rt ? 2u : 0u);
         pc.flags[2] = d->wrap;
         pc.flags[3] = debug_solid;
         pc.clamp_uv[0] = d->minu;
@@ -5099,6 +5110,7 @@ static void zclear_draw(int topology, const ps2_vk_state *st,
     s.abe = 0; s.ate = 0; s.fge = 0; s.date = 0; s.datm = 0;
     s.tme = 0; s.tex_rt = 0; s.tex_depth = 0; s.tex_self = 0;
     s.shuffle_rg = 0; s.clut_rt = 0; s.colclip = 0; s.zcopy = 0;
+    s.index_rt = 0; s.clut_tex = 0;
     while (k < n) {
         int c = n - k, j;
         if (c > 64) c = 64 - 64 % 6;   /* whole triangles, lines and points */
@@ -5329,6 +5341,8 @@ static void ps2_vk_draw_inner(int topology, const ps2_vk_state *st,
 static void rec_one(int topology, const ps2_vk_state *st,
                     const ps2_vk_vertex *v, int n, u32 flags, u32 depth_key) {
     vk_draw *d;
+    if (st->clut_tex && st->clut_tex <= ntextures)
+        textures[st->clut_tex - 1u].rec_seq = tex_rec_seq;
     if (st->tme && !st->tex_rt && st->tex_index < ntextures)
         textures[st->tex_index].rec_seq = tex_rec_seq;
     for (u32 ch = 0; ch < 4; ch++)
@@ -5355,6 +5369,7 @@ static void rec_one(int topology, const ps2_vk_state *st,
             && d->date == (u16)st->date
             && d->fogcol == st->fogcol
             && d->clut_rt == (u16)st->clut_rt && d->clut_xy == st->clut_xy
+            && d->clut_tex == (u16)(st->index_rt ? st->clut_tex : 0u)
             && d->wrap == (st->wms | (st->wmt << 2))
             && d->minu == (u16)st->minu && d->maxu == (u16)st->maxu
             && d->minv == (u16)st->minv && d->maxv == (u16)st->maxv
@@ -5404,6 +5419,7 @@ static void rec_one(int topology, const ps2_vk_state *st,
     d->tex_rt = (u16)st->tex_rt;
     d->clut_rt = (u16)st->clut_rt;
     d->clut_xy = st->clut_xy;
+    d->clut_tex = (u16)(st->index_rt ? st->clut_tex : 0u);
     d->tex_self = (u16)st->tex_self;
     d->tex_depth = (u16)st->tex_depth;
     d->date = (u16)st->date;

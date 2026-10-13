@@ -79,6 +79,10 @@ typedef struct ps2_vk_state {
        draw as a depth write there. */
     u32 zclear_rt;
     u32 zclear_bits;
+    /* PSMT8H texture whose indices are a render target's alpha (tex_rt):
+       gs.frag looks each alpha up in the palette texture clut_tex - 1 */
+    int index_rt;
+    u32 clut_tex;
 } ps2_vk_state;
 
 enum { PS2_VK_POINTS = 0, PS2_VK_LINES = 1, PS2_VK_TRIANGLES = 2 };

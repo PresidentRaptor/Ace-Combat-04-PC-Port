@@ -118,6 +118,15 @@ General fixes that AC4 exposed:
   is now taken per primitive from the mean vertex LOD (rounded, clamped to MXL) and fed to
   the existing fixed-level decode; it is part of the draw-state memo key.
   `PS2_NO_DYN_MIP=1` turns it off. Real time at 6x stays at 60 fields/s.
+- **PSMT8H indices from a render target** (`ps2_gs.c` `index_rt`/`clut_palette_texture`,
+  gs.frag `flags.y` bit 1): in flight AC4 remaps the back buffer's alpha through a CLUT
+  (TEX0 tbp 0, PSMT8H, FBMSK 00FFFFFF; entries `0x80 - i` below 128) and then blends its
+  haze/sea-detail layer by destination alpha. The indices are read from the target (a
+  self-read snapshot) and looked up in a 256x1 palette texture bound in set 3. Targets
+  track when their alpha was last written (`gs_rt_aepoch`): AC4 also packs the aircraft's
+  PSMT8H texture into the display buffer's alpha bytes, which draws there mask, so VRAM
+  stays the source for it. `PS2_NO_INDEX_RT=1` turns it off; `PS2_TRACE_INDEX_RT=1` logs
+  each use; `PS2_LOG_CLUT=<cbp>` dumps a CLUT.
 - **vibration** (`ps2_hle_pad.c` SetActAlign/SetActDirect, `ps2_video.c` `apply_rumble`):
   the EE side records the motor levels (small on/off, large 0..255, mapped by the align
   bytes; AC4 aligns 00 01 FF..), and the renderer thread, which owns the SDL gamepad,

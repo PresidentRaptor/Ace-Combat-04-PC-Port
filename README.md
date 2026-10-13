@@ -137,6 +137,7 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - **Palettes drawn by the GPU**: the sun's halo palette is rendered every frame; it is now looked up from the render target (the sun was a square of rainbow rings).
 - **Depth clears done with colour draws** into the Z buffer's memory (black shapes over the hangar).
 - **Per-primitive mip levels** for `TEX1.LCM=0`: distant terrain lives only in the small levels of AC4's terrain texture cache (islands were big wrong squares at a distance).
+- **Palette indices read from the frame** (PSMT8H from a render target): the haze and sea-detail layer is weighted by an alpha remap of the back buffer (the haze was uniform and the sea nearly black).
 - **Presentation**: fields are never dropped, each field keeps its own display buffer, and present semaphores are per swapchain image (single frames of an older picture flashed on screen).
 - **Upscaled 2D**: sprites keep to the texels the PS2 samples at native resolution (thin lines around text boxes at higher resolutions).
 

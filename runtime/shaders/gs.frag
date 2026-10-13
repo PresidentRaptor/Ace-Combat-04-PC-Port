@@ -224,6 +224,13 @@ void main() {
         } else {
             t = texture(tex, (tc + 0.5) / pc.img_size);
         }
+        if ((pc.flags.y & 2u) != 0u) {
+            /* PSMT8H read from a render target: the index is the pixel's alpha
+               byte (targets keep alpha as a/128), looked up in the palette
+               texture bound where a GPU-drawn CLUT would be */
+            uint idx = min(uint(t.a * 128.0 + 0.5), 255u);
+            t = texelFetch(clutrt, ivec2(int(idx), 0), 0);
+        }
         float af = c.a;
         vec3 rgb;
         float a;

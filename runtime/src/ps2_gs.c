@@ -1682,6 +1682,27 @@ static u32 clut_entry(u32 idx) {
                          idx);
 }
 
+/* The current 256-entry CLUT as a 256x1 texture, colours converted the way
+   the texture decoder converts them (alpha 0x80 -> 255).  For PSMT8H draws
+   whose indices live in a render target: gs.frag reads them there. */
+static u32 clut_palette_texture(u64 t0) {
+    u8 rgba[256 * 4];
+    u32 hash = 2166136261u, e;
+    u64 key;
+    for (e = 0; e < 256u; e++) {
+        u32 c = clut_entry(e);
+        u32 a = (c >> 24) & 0xFFu;
+        a = a >= 128u ? 255u : a * 2u;
+        c = (c & 0x00FFFFFFu) | (a << 24);
+        memcpy(rgba + e * 4u, &c, 4);
+        hash = (hash ^ c) * 16777619u;
+    }
+    /* psm field 0x3E marks a palette: no GS texture format uses it */
+    key = ((u64)((t0 >> 37) & 0x3FFFull) << 40) | ((u64)((t0 >> 51) & 0x1FFull) << 28)
+        | (0x3Eull << 20) | (256u << 4) | 1u;
+    return ps2_vk_texture(key, hash, rgba, 256u, 1u);
+}
+
 int ps2_gs_decode_indexed(u32 tbp, u32 tbw, u32 psm, u32 w, u32 h, u32 cbp,
                           u32 cpsm, u8 *rgba) {
     u32 bw = tbw ? tbw * 64u : 64u;
@@ -2554,6 +2575,10 @@ static u32 gs_rt_epoch[GS_RT_SLOTS];
 static u32 gs_rt_pages[GS_RT_SLOTS];
 static u32 gs_rt_fbw[GS_RT_SLOTS];      /* buffer width (pixels) of the last draw */
 static u8  gs_rt_psm[GS_RT_SLOTS];      /* frame format of the last draw */
+/* the epoch of the last draw that could write the target's alpha (FBMSK left
+   it open): PSMT8H data packed into the alpha bytes survives draws that mask
+   alpha, so only these make the render target the newer copy of it */
+static u32 gs_rt_aepoch[GS_RT_SLOTS];
 static u32 gs_rt_zbase[GS_RT_SLOTS];
 static u32 gs_rt_zepoch[GS_RT_SLOTS];
 static u8 gs_rt_zframe[GS_RT_SLOTS];
@@ -2572,6 +2597,7 @@ static u32 rt_slot(u32 base) {
         gs_rt_base[gs_rt_n] = base;
         gs_rt_pages[gs_rt_n] = 0;
         gs_rt_zframe[gs_rt_n] = 0;
+        gs_rt_aepoch[gs_rt_n] = 0;
         return gs_rt_n++;
     }
     for (i = 0; i < gs_rt_n; i++) {
@@ -2592,6 +2618,7 @@ static u32 rt_slot(u32 base) {
     gs_rt_epoch[victim] = 0;
     gs_rt_pages[victim] = 0;
     gs_rt_zframe[victim] = 0;
+    gs_rt_aepoch[victim] = 0;
     return victim;
 }
 
@@ -2775,6 +2802,7 @@ void ps2_gs_cap_load(const ps2_gs_capstate *st) {
     memcpy(gs_rt_zbase,  st->rt_zbase,  sizeof gs_rt_zbase);
     memcpy(gs_rt_zepoch, st->rt_zepoch, sizeof gs_rt_zepoch);
     memset(gs_rt_zframe, 0, sizeof gs_rt_zframe);
+    memset(gs_rt_aepoch, 0, sizeof gs_rt_aepoch);
     gs_rt_n = st->rt_n < GS_RT_SLOTS ? st->rt_n : GS_RT_SLOTS;
     gs_disp_base = st->disp_base;
     gs_epoch_seq = st->epoch_seq;
@@ -3173,10 +3201,13 @@ static void fill_state_compute(ps2_vk_state *st) {
         in_disp = now_disp;
     }
     u32 rt_epoch_before = st->rt < GS_RT_SLOTS ? gs_rt_epoch[st->rt] : 0u;
+    u32 rt_aepoch_before = st->rt < GS_RT_SLOTS ? gs_rt_aepoch[st->rt] : 0u;
     if (st->rt < GS_RT_SLOTS) {
         gs_rt_epoch[st->rt] = gs_epoch_seq;
         gs_rt_fbw[st->rt] = st->fb_w;
         gs_rt_psm[st->rt] = (u8)st->fb_psm;
+        if (st->fb_psm == PSM_CT32 && (st->fb_mask >> 24) != 0xFFu)
+            gs_rt_aepoch[st->rt] = gs_epoch_seq;
         {   gs_geom fg;
             u32 pages;
             gs_psm_geom(st->fb_psm, &fg);
@@ -3190,12 +3221,26 @@ static void fill_state_compute(ps2_vk_state *st) {
         if (st->zwrite) gs_rt_zepoch[st->rt] = gs_epoch_seq;
     }
     st->tex_rt = 0;
+    st->index_rt = 0;
+    st->clut_tex = 0;
     if (st->tme) {
         u32 tbp = (u32)(t0 & 0x3FFFull) * 256u;
         u32 tpsm = (u32)((t0 >> 20) & 0x3Full);
         int slot = rt_find(tbp);
         int use_rt = 0;
-        if (slot >= 0 && !psm_is_indexed(tpsm)) {
+        static int index_rt_off = -1;
+        if (index_rt_off < 0) {
+            const char *e = getenv("PS2_NO_INDEX_RT");
+            index_rt_off = (e && *e && *e != '0') ? 1 : 0;
+            if (index_rt_off) ps2_log("GS: PSMT8H indices are always read from VRAM "
+                                      "(PS2_NO_INDEX_RT)");
+        }
+        /* PSMT8H reads the alpha byte of 32-bit pixels: AC4 remaps the back
+           buffer's alpha through a CLUT (its haze strength) before the haze
+           pass blends with destination alpha.  The frame is only on the GPU. */
+        if (slot >= 0 && (!psm_is_indexed(tpsm)
+                          || (tpsm == PSM_T8H && !index_rt_off
+                              && ((t0 >> 51) & 0xFull) == PSM_CT32))) {
             gs_geom g;
             u32 tbw = (u32)((t0 >> 14) & 0x3Full) * 64u;
             u32 tw  = 1u << ((t0 >> 26) & 0xFull);
@@ -3228,6 +3273,42 @@ static void fill_state_compute(ps2_vk_state *st) {
                                                    : "one address");
                 }
                 if (no_rt && (no_rt == 1u || no_rt == tbp)) use_rt = 0;
+            }
+            if (tpsm == PSM_T8H) {
+                /* indices in the alpha bytes: the target counts only if a draw
+                   wrote its alpha after VRAM last did */
+                u32 ae = (u32)slot == st->rt ? rt_aepoch_before : gs_rt_aepoch[slot];
+                use_rt = use_rt && ae && gs_range_epoch(tbp, hi) <= ae;
+            }
+            if (use_rt && tpsm == PSM_T8H) {
+                /* the palette must be current in VRAM; one drawn by the GPU
+                   is not handled together with indices from a target */
+                u32 cbp = (u32)((t0 >> 37) & 0x3FFFull) * 256u, pidx;
+                int cs = rt_covering(cbp);
+                if (cs >= 0 && gs_range_epoch(cbp, cbp + 1u) <= gs_rt_epoch[cs]) {
+                    use_rt = 0;
+                } else if ((pidx = clut_palette_texture(t0)) == 0xFFFFFFFFu) {
+                    use_rt = 0;
+                } else {
+                    st->index_rt = 1;
+                    st->clut_tex = pidx + 1u;
+                    fill_no_memo = 1;
+                    if (PS2_ENV("PS2_TRACE_INDEX_RT")) {
+                        static u32 seen[32], ns;
+                        u32 k, key = tbp ^ (cbp << 1) ^ ((u32)st->rt << 28);
+                        for (k = 0; k < ns && seen[k] != key; k++) {}
+                        if (k == ns && ns < 32u) {
+                            seen[ns++] = key;
+                            ps2_log("index-rt: field %u tbp=%u (rt%d psm %u fbw %u) "
+                                    "cbp=%u into rt%u fbp=%u psm %u self=%d %ux%u",
+                                    ps2_gs_frame_count, tbp, slot,
+                                    (u32)gs_rt_psm[slot], gs_rt_fbw[slot], cbp,
+                                    st->rt, fb_base(), st->fb_psm, st->tex_self,
+                                    1u << ((t0 >> 26) & 0xFull),
+                                    1u << ((t0 >> 30) & 0xFull));
+                        }
+                    }
+                }
             }
             if (!use_rt) {
                 gs_rt_tex_missed++;

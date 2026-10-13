@@ -71,6 +71,11 @@ Fixed in this build
   that choice was missing, so the full-size level was read. The level is
   now chosen for each triangle from its distance, and distant islands
   show their real coastline and terrain.
+- Haze in flight: the game turns each pixel's alpha into a haze strength
+  through a lookup table before drawing its haze and sea-detail layer. That
+  step read stale data, so the haze was the same everywhere and the sea
+  looked almost black from above. It now reads the real frame: haze grows
+  with distance and the sea shows its wave texture.
 - Controller vibration now works: the game's rumble commands drive the
   controller's motors. It can be switched off under Input in the F4 menu
   ("Vibration").
@@ -90,13 +95,8 @@ Known limits
 - Graphics run through the emulated GS. The native renderer the AC5 port
   uses was written for AC5's VU1 programs and is off. Higher internal
   resolutions (F4) work; resolution 6 was checked through Mission 01.
-- The picture defaults to an undistorted 4:3 image in wide windows. AC5's
-  16:9 camera patch is not used because it targets a different executable;
-  AC4 still needs a verified game-specific camera patch for expanded 16:9 play.
-- F4's 4K graphics preset selects an internal resolution to cover the current
-  display (up to 8x if the GPU allows), with sharper scaling and 16x
-  anisotropic filtering. It also smooths enlarged screen-space map and HUD
-  art; game textures remain at their original PS2 detail.
+- The 16:9 widescreen option is ignored: the patch behind it is for AC5's
+  executable and would corrupt AC4.
 - The graphics machine runs on the game thread (an AC4-specific race shows
   up when it runs on its own thread); a modern CPU holds full speed.
 - Only Mission 01 has been played through so far; later missions have not
