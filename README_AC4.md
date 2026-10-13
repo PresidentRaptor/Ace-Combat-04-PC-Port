@@ -54,8 +54,8 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
 - the 16:9 camera patch previously used by the AC5 build is not valid for AC4 and is never applied (`ps2_settings.c`). AC4's output defaults to an undistorted 4:3 image on wide displays; a validated game-specific camera patch is still needed for expanded 16:9 gameplay.
 - the 4K preset uses display-aware internal resolution (Auto, up to 8x), 16x anisotropic filtering, sharp scaling, and bilinear sampling for enlarged screen-space UI art. This smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists.
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
-  the graphics machine stays on the EE thread (`PS2_ASYNC_GFX=1` brings the async thread
-  back, with intermittent stray-triangle frames in flight).
+  the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the
+  async thread back; see below).
 
 General fixes that AC4 exposed:
 
@@ -181,5 +181,13 @@ with sound, Mission 01 briefing, and Mission 01 in flight with HUD, radio, music
 sound effects at full speed -- cockpit, HUD-only and external views, with the player's and
 the wingmen's aircraft textured and self-shadowed -- at native resolution and at internal
 resolution 6. Saving (pre-mission menu) and loading (title menu) are verified. Not yet exercised: later
-missions. `PS2_ASYNC_GFX=1` has not been re-tested since the VU pair fix; the stray
-triangles seen with it may have been that bug.
+missions.
+
+`PS2_ASYNC_GFX=1` (graphics machine on its own thread) was re-tested after the VU pair fix:
+Mission 01 flight at full speed, 1,470 consecutive fields and 1,000 fields sampled every 6th
+over 6,000, checked for single-frame outliers against their neighbours, showed none of the
+stray triangles seen before, which were most likely that bug. `PS2_TRAP_VU1_EE=1` (leaves
+VU1's memory unmapped for the EE and logs every access) found no EE access to VU1 memory from
+boot through flight, and the interrupt status the graphics thread raises VIF interrupts into is
+now updated atomically. AC4 still defaults to synchronous: the EE thread holds full speed at
+6x on a current CPU, and async is the thing to try on a slower one.

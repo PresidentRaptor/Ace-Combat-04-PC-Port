@@ -139,8 +139,13 @@ void ps2_mem_init(void) {
     ps2_mem_map(PS2_IOP_RAM_BASE, PS2_IOP_RAM_SIZE, ps2_iop_ram);
     ps2_mem_map(0x11000000u, PS2_VU0_MICRO_SIZE, ps2_vu0_micro);
     ps2_mem_map(0x11004000u, PS2_VU0_MEM_SIZE, ps2_vu0_mem);
-    ps2_mem_map(0x11008000u, PS2_VU1_MICRO_SIZE, ps2_vu1_micro);
-    ps2_mem_map(0x1100C000u, PS2_VU1_MEM_SIZE, ps2_vu1_mem);
+    /* PS2_TRAP_VU1_EE (debugging): leave VU1's memory unmapped for the EE, so
+       every EE access to it goes through ps2_hw.c and is logged -- with the
+       graphics machine on its own thread such an access would race it */
+    if (!getenv("PS2_TRAP_VU1_EE")) {
+        ps2_mem_map(0x11008000u, PS2_VU1_MICRO_SIZE, ps2_vu1_micro);
+        ps2_mem_map(0x1100C000u, PS2_VU1_MEM_SIZE, ps2_vu1_mem);
+    }
 
     ps2_cpu.vu0.mem = ps2_vu0_mem;
     ps2_cpu.vu0.micro = ps2_vu0_micro;

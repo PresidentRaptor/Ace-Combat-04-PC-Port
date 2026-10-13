@@ -98,8 +98,10 @@ Known limits
   resolutions (F4) work; resolution 6 was checked through Mission 01.
 - The 16:9 widescreen option is ignored: the patch behind it is for AC5's
   executable and would corrupt AC4.
-- The graphics machine runs on the game thread (an AC4-specific race shows
-  up when it runs on its own thread); a modern CPU holds full speed.
+- The graphics machine runs on the game thread by default; a modern CPU
+  holds full speed. On a slower CPU, PS2_ASYNC_GFX=1 runs it on its own
+  thread (re-tested in Mission 01 without the stray triangles it used to
+  show).
 - Only Mission 01 has been played through so far; later missions have not
   been checked yet.
 

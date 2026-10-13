@@ -212,8 +212,10 @@ static u64 gs_imr = 0x7F00ull;
 
 u32 ps2_intc_stat(void) { return intc_stat; }
 u32 ps2_intc_mask(void) { return intc_mask; }
-void ps2_intc_raise(int irq) { intc_stat |= 1u << irq; }
-void ps2_intc_ack(int irq) { intc_stat &= ~(1u << irq); }
+/* atomic: with PS2_ASYNC_GFX the graphics thread raises VIF interrupts while
+   the EE acknowledges others */
+void ps2_intc_raise(int irq) { __atomic_fetch_or(&intc_stat, 1u << irq, __ATOMIC_RELAXED); }
+void ps2_intc_ack(int irq) { __atomic_fetch_and(&intc_stat, ~(1u << irq), __ATOMIC_RELAXED); }
 u32 ps2_intc_pending(void) {
     return intc_stat & intc_mask & ~0x0Cu;
 }
@@ -1106,8 +1108,26 @@ static int dma_channel_of(u32 a) {
     }
 }
 
+/* EE access to VU1 memory with PS2_TRAP_VU1_EE (see ps2_mem_init) */
+u8 *ps2_vu1_microcode(void);
+static u8 *vu1_ee_access(u32 a, u32 v, int write) {
+    static u32 logged;
+    u8 *base = a >= 0x1100C000u ? ps2_vu1_memory() : ps2_vu1_microcode();
+    if (logged < 200u) {
+        logged++;
+        ps2_log("vu1-ee: EE %s VU1 %s +%04X = %08X", write ? "writes" : "reads",
+                a >= 0x1100C000u ? "data" : "micro", a & 0x3FFFu, v);
+    }
+    return base + (a & 0x3FFCu);
+}
+
 static u32 hw_read32(u32 a) {
     int ch;
+    if (PS2_UNLIKELY(a >= 0x11008000u && a < 0x11010000u)) {
+        u32 v;
+        memcpy(&v, vu1_ee_access(a, 0, 0), 4);
+        return v;
+    }
     switch (a) {
     case 0x10000000u: case 0x10000800u: case 0x10001000u: case 0x10001800u: {
         int t = (int)((a >> 11) & 3u);
@@ -1165,6 +1185,10 @@ static u32 hw_read32(u32 a) {
 
 static void hw_write32(u32 a, u32 v) {
     int ch;
+    if (PS2_UNLIKELY(a >= 0x11008000u && a < 0x11010000u)) {
+        memcpy(vu1_ee_access(a, v, 1), &v, 4);
+        return;
+    }
     switch (a) {
     case 0x10000000u: case 0x10000800u: case 0x10001000u: case 0x10001800u: {
         int t = (int)((a >> 11) & 3u);
@@ -1194,7 +1218,7 @@ static void hw_write32(u32 a, u32 v) {
     case 0x1000E040u: d_rbsr = v; return;
     case 0x1000E050u: d_rbor = v; return;
     case 0x1000E060u: d_stadr = v; return;
-    case 0x1000F000u: intc_stat &= ~v; return;
+    case 0x1000F000u: __atomic_fetch_and(&intc_stat, ~v, __ATOMIC_RELAXED); return;
     case 0x1000F010u: intc_mask ^= v; return;
     case 0x1000F520u: d_enable = v; return;
     case 0x1000F590u: d_enable = v; return;
