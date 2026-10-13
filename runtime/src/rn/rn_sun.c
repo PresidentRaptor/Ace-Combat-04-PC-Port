@@ -151,7 +151,9 @@ int rn_sun_claim_prim(const struct ps2_vk_state *st, int kind,
     nd.rt = st->rt;
     nd.tex_w = st->tex_w;
     nd.tex_h = st->tex_h;
-    nd.tex_point = st->tex_point;
+    /* Flare textures are deliberately filtered when magnified at high internal
+       resolutions; their tiny source images look harsh with point sampling. */
+    nd.tex_point = 0;
     nd.wrap = st->wms | (st->wmt << 2);
     for (int i = 0; i < 4; i++) nd.scissor[i] = st->scissor[i];
     if (chain.frame == now && chain.z_frame == now) {

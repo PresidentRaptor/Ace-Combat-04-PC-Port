@@ -95,7 +95,8 @@ Known limits
   AC4 still needs a verified game-specific camera patch for expanded 16:9 play.
 - F4's 4K graphics preset selects an internal resolution to cover the current
   display (up to 8x if the GPU allows), with sharper scaling and 16x
-  anisotropic filtering. Game textures remain at their original PS2 detail.
+  anisotropic filtering. It also smooths enlarged screen-space map and HUD
+  art; game textures remain at their original PS2 detail.
 - The graphics machine runs on the game thread (an AC4-specific race shows
   up when it runs on its own thread); a modern CPU holds full speed.
 - Only Mission 01 has been played through so far; later missions have not

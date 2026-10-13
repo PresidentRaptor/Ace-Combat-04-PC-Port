@@ -482,7 +482,8 @@ const PresetInfo PRESETS[5] = {
                 "most video memory." },
     { "4K",     "Display-aware internal resolution: Auto selects enough pixels for the "
                 "current window, up to 8x, with 16x anisotropic filtering and sharp scaling. "
-                "At 4K this can use substantial GPU memory and time." },
+                "Bilinear UI filtering smooths enlarged map and HUD art. At 4K this can use "
+                "substantial GPU memory and time." },
 };
 
 void internal_res_status() {
@@ -650,9 +651,11 @@ void tab_rendering() {
     };
     if (ImGui::Combo("Texture filtering", &ps2_cfg.tex_filter, TF, 3)) gfx_changed(0);
     help("The PS2 picks nearest or bilinear filtering per draw. Forcing one applies to the 3D "
-         "world's textures. The HUD, menus and text keep what the game asked for: they are 2D "
-         "art laid out texel by texel, and smoothing them pulls in the neighbouring pictures "
-         "(lines across the minimap). So do effects such as the clouds.");
+         "world's textures. Screen-space HUD, menu and map textures have their own option below.");
+    static const char *const UIF[] = { "As the game asks (sharp pixels)", "Bilinear (smoother enlarged art)" };
+    if (ImGui::Combo("UI texture filtering", &ps2_cfg.ui_smooth, UIF, 2)) gfx_changed(0);
+    help("Smooths screen-space HUD, menu and map textures when enlarged. This can soften very "
+         "thin lines or text; the 4K preset enables it.");
 
     static const int AF_VALUES[] = { 0, 2, 4, 8, 16 };
     static const char *const AF[] = { "Off", "2x", "4x", "8x", "16x" };

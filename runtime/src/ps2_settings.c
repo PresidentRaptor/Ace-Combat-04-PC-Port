@@ -128,16 +128,16 @@ void ps2_settings_default_bindings(ps2_settings *s, int keyboard, int pad) {
 }
 
 typedef struct {
-    int internal_res, tex_filter, anisotropy, deinterlace, fxaa, scale_filter;
+    int internal_res, tex_filter, ui_smooth, anisotropy, deinterlace, fxaa, scale_filter;
     float sharpen;
 } preset_def;
 
 static const preset_def presets[5] = {
-     { 1, PS2_TEXFILTER_GAME,  0, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
-     { 2, PS2_TEXFILTER_GAME,  4, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
-     { 3, PS2_TEXFILTER_GAME,  8, 1, 0, PS2_SCALE_SHARP,    0.20f },
-     { 4, PS2_TEXFILTER_GAME, 16, 1, 0, PS2_SCALE_SHARP,    0.20f },
-     { 0, PS2_TEXFILTER_GAME, 16, 1, 0, PS2_SCALE_SHARP,    0.20f },
+     { 1, PS2_TEXFILTER_GAME,  0,  0, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
+     { 2, PS2_TEXFILTER_GAME,  0,  4, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
+     { 3, PS2_TEXFILTER_GAME,  0,  8, 1, 0, PS2_SCALE_SHARP,    0.20f },
+     { 4, PS2_TEXFILTER_GAME,  0, 16, 1, 0, PS2_SCALE_SHARP,    0.20f },
+     { 0, PS2_TEXFILTER_GAME,  1, 16, 1, 0, PS2_SCALE_SHARP,    0.20f },
 };
 
 void ps2_settings_apply_preset(ps2_settings *s, int preset) {
@@ -147,6 +147,7 @@ void ps2_settings_apply_preset(ps2_settings *s, int preset) {
     s->preset       = preset;
     s->internal_res = p->internal_res;
     s->tex_filter   = p->tex_filter;
+    s->ui_smooth    = p->ui_smooth;
     s->anisotropy   = p->anisotropy;
     s->deinterlace  = p->deinterlace;
     s->fxaa         = p->fxaa;
@@ -158,7 +159,8 @@ int ps2_settings_preset_matches(const ps2_settings *s) {
     for (int i = 0; i <= PS2_PRESET_4K; i++) {
         const preset_def *p = &presets[i];
         if (s->internal_res == p->internal_res
-            && s->tex_filter == p->tex_filter && s->anisotropy == p->anisotropy
+            && s->tex_filter == p->tex_filter && s->ui_smooth == p->ui_smooth
+            && s->anisotropy == p->anisotropy
             && s->deinterlace == p->deinterlace
             && s->fxaa == p->fxaa && s->scale_filter == p->scale_filter
             && fabsf(s->sharpen - p->sharpen) < 0.005f)
@@ -203,6 +205,7 @@ static int clampi(int v, int lo, int hi) {
 static void sanitize(ps2_settings *s) {
     s->internal_res = clampi(s->internal_res, 0, PS2_INTERNAL_RES_MAX);
     s->tex_filter = clampi(s->tex_filter, 0, 2);
+    s->ui_smooth = s->ui_smooth != 0;
     if (s->anisotropy != 0 && s->anisotropy != 2 && s->anisotropy != 4
         && s->anisotropy != 8 && s->anisotropy != 16)
         s->anisotropy = 0;
@@ -264,6 +267,7 @@ static const cfg_field fields[] = {
     FI("graphics", "preset", preset, "0 low, 1 medium, 2 high, 3 ultra, 4 4K display-aware, 5 custom"),
     FI("graphics", "internal_resolution", internal_res, "0 auto (cover the window), 1 native 640x448, 2..8 times that"),
     FI("graphics", "texture_filter", tex_filter, "0 as the game asks, 1 force nearest, 2 force bilinear"),
+    FI("graphics", "ui_smooth", ui_smooth, "1 bilinear filtering for screen-space game UI textures"),
     FI("graphics", "anisotropy", anisotropy, "0 off, 2, 4, 8 or 16"),
     FI("graphics", "deinterlace", deinterlace, "1 weave the two fields into whole frames"),
     FI("graphics", "scale_filter", scale_filter, "0 nearest, 1 bilinear, 2 sharp bilinear"),

@@ -37,6 +37,7 @@ typedef struct ps2_settings {
     int   preset;
     int   internal_res;
     int   tex_filter;
+    int   ui_smooth;
     int   anisotropy;
     int   deinterlace;
     int   fxaa;

@@ -5222,7 +5222,8 @@ static void afail_mask(u32 afail, int *rgb, int *a, int *z) {
 }
 
 static int tex_point_for(const ps2_vk_state *st) {
-    if (st->tex_rt || st->fst) return st->tex_point;
+    if (st->tex_rt) return st->tex_point;
+    if (st->fst) return ps2_cfg.ui_smooth ? 0 : st->tex_point;
     if (ps2_cfg.tex_filter == PS2_TEXFILTER_NEAREST) return 1;
     if (ps2_cfg.tex_filter == PS2_TEXFILTER_BILINEAR) return 0;
     return st->tex_point;
