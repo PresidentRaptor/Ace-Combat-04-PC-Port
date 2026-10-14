@@ -97,7 +97,8 @@ Fixed in this build
   with distance and the sea shows its wave texture.
 - Controller vibration now works: the game's rumble commands drive the
   controller's motors. It can be switched off under Input in the F4 menu
-  ("Vibration").
+  ("Vibration"), and "Vibration strength" there sets how hard it shakes
+  (65% by default; full strength felt too strong).
 - Saving and loading were checked: SAVE from the pre-mission menu writes
   the save file (MISSION 01 / SITTING DUCK), and LOAD from the title menu
   reads it back.

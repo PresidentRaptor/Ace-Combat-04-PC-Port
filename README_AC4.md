@@ -141,7 +141,8 @@ General fixes that AC4 exposed:
   the EE side records the motor levels (small on/off, large 0..255, mapped by the align
   bytes; AC4 aligns 00 01 FF..), and the renderer thread, which owns the SDL gamepad,
   drives `SDL_RumbleGamepad`, renewing a running effect each second. `vibration = 0` in
-  `[input]` (F4 > Vibration) turns it off; `PS2_TRACE_RUMBLE=1` logs the setup and changes.
+  `[input]` (F4 > Vibration) turns it off; `vibration_strength` (0..1, default 0.65, F4 >
+  Vibration strength) scales both motors; `PS2_TRACE_RUMBLE=1` logs the setup and changes.
 - **review fixes**: the exit screenshot (`ps2_frame.ppm`) is only written for bounded runs
   (`--vblanks N`) or with `PS2_EXIT_SHOT=1`; the 2D overlay's empty-box sentinel survives a
   signed/unsigned compare; the CLUT-in-render-target lookup requires a PSMCT32/24 target;

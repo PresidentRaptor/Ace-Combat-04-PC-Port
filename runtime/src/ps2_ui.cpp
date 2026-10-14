@@ -21,6 +21,7 @@ namespace {
 
 bool g_init, g_visible;
 bool g_quit_prompt;      /* Esc in the game: confirm before quitting */
+bool g_quit_only;        /* ...shown on its own, without the settings menu behind it */
 SDL_Window *g_window;
 float g_max_aniso;
 float g_dpi = 1.0f;
@@ -777,6 +778,12 @@ void tab_controller() {
         ps2_cfg.vibration = rumble;
         changed(0);
     }
+    {   float pct = ps2_cfg.vibration_strength * 100.0f;
+        if (ImGui::SliderFloat("Vibration strength", &pct, 0.0f, 100.0f, "%.0f%%")) {
+            ps2_cfg.vibration_strength = pct / 100.0f;
+            changed(0);
+        }
+    }
     ImGui::TextWrapped("Click a binding, then press a button, or push a stick or trigger in the "
                        "direction you want. Esc cancels; Backspace or a right-click clears it.");
     if (ImGui::Button("Reset controller to defaults")) {
@@ -901,6 +908,8 @@ void draw_fps() {
     ImGui::End();
 }
 
+bool draw_quit_prompt();
+
 void draw_menu() {
     ImGuiIO &io = ImGui::GetIO();
     float s = g_dpi * ps2_cfg.ui_scale;
@@ -936,6 +945,14 @@ void draw_menu() {
                             "toggles fullscreen  |  %s", ps2_settings_path());
     }
     ImGui::End();
+    if (!draw_quit_prompt()) open = false;
+    if (!open) ps2_ui_set_visible(0);
+}
+
+/* The "Quit?" popup; false once the player picks Keep playing */
+bool draw_quit_prompt() {
+    ImGuiIO &io = ImGui::GetIO();
+    bool open = true;
     if (g_quit_prompt) {
         const char *title = "Quit " PS2_GAME_SHORT "?";
         if (!ImGui::IsPopupOpen(title)) ImGui::OpenPopup(title);
@@ -954,7 +971,7 @@ void draw_menu() {
             ImGui::EndPopup();
         }
     }
-    if (!open) ps2_ui_set_visible(0);
+    return open;
 }
 
 }
@@ -1008,7 +1025,7 @@ int ps2_ui_init(const ps2_ui_init_info *info) {
     ps2_log("ui: Dear ImGui %s ready -- F4 opens the settings menu", IMGUI_VERSION);
     if (const char *e = getenv("PS2_UI_OPEN")) {   /* tab number, or q: the quit prompt */
         ps2_ui_set_visible(1);
-        if (*e == 'q') g_quit_prompt = true;
+        if (*e == 'q') g_quit_prompt = g_quit_only = true;
         else g_want_tab = atoi(e);
     }
     return 0;
@@ -1027,6 +1044,7 @@ int ps2_ui_visible(void) { return g_init && g_visible; }
 
 int ps2_ui_ask_quit(void) {
     if (!g_init) return 0;
+    if (!g_visible) g_quit_only = true;   /* Esc from play: just the popup */
     g_quit_prompt = true;
     ps2_ui_set_visible(1);
     return 1;
@@ -1035,7 +1053,7 @@ int ps2_ui_ask_quit(void) {
 void ps2_ui_set_visible(int on) {
     if (!g_init || (on != 0) == g_visible) return;
     g_visible = on != 0;
-    if (!g_visible) g_quit_prompt = false;
+    if (!g_visible) g_quit_prompt = g_quit_only = false;
     ImGuiIO &io = ImGui::GetIO();
     io.ClearEventsQueue();
     io.ClearInputKeys();
@@ -1084,7 +1102,9 @@ void ps2_ui_draw(VkCommandBuffer cmd) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     if (ps2_cfg.show_fps) draw_fps();
-    if (g_visible) {
+    if (g_visible && g_quit_only) {
+        if (!draw_quit_prompt()) ps2_ui_set_visible(0);
+    } else if (g_visible) {
         draw_menu();
         draw_capture_popup();
     }

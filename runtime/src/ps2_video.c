@@ -4486,7 +4486,8 @@ void ps2_video_select_gamepad(SDL_JoystickID id) {
 /* The game's vibration (libpad scePadSetActDirect) on the selected controller:
    the large motor drives the low-frequency rumble and the small on/off motor
    the high-frequency one.  An SDL rumble runs for a set time, so a running
-   effect is renewed; it stops while the settings menu holds the controls. */
+   effect is renewed; it stops while the settings menu holds the controls.
+   Both motors are scaled by the vibration strength setting. */
 u32 ps2_pad_take_rumble(int port);
 static void apply_rumble(void) {
     static u32 last;
@@ -4497,8 +4498,9 @@ static void apply_rumble(void) {
     Uint64 now = SDL_GetTicks();
     if (!gamepad) { last = 0; last_pad = NULL; return; }
     if (r == last && gamepad == last_pad && (!r || now - last_ms < 1000u)) return;
-    SDL_RumbleGamepad(gamepad, (Uint16)(((r >> 8) & 0xFFu) * 257u),
-                      (r & 1u) ? 0xFFFFu : 0u, r ? 2000u : 0u);
+    float k = ps2_cfg.vibration_strength;
+    SDL_RumbleGamepad(gamepad, (Uint16)((float)(((r >> 8) & 0xFFu) * 257u) * k),
+                      (r & 1u) ? (Uint16)(65535.0f * k) : 0u, r ? 2000u : 0u);
     last = r;
     last_ms = now;
     last_pad = gamepad;

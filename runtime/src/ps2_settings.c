@@ -187,6 +187,7 @@ void ps2_settings_defaults(ps2_settings *s) {
     s->ui_scale = 1.0f;
     s->block_input_in_menu = 1;
     s->vibration = 1;
+    s->vibration_strength = 0.65f;
     s->hd_textures = 1;
     s->volume = 1.0f;
     s->mute_unfocused = 0;
@@ -241,6 +242,7 @@ static void sanitize(ps2_settings *s) {
     s->ui_scale = clampf(s->ui_scale, 0.5f, 3.0f);
     s->block_input_in_menu = s->block_input_in_menu != 0;
     s->vibration = s->vibration != 0;
+    s->vibration_strength = clampf(s->vibration_strength, 0.0f, 1.0f);
     s->volume = clampf(s->volume, 0.0f, 1.0f);
     s->mute_unfocused = s->mute_unfocused != 0;
     for (int a = 0; a < PS2_ACT_COUNT; a++)
@@ -298,6 +300,7 @@ static const cfg_field fields[] = {
     FF("display", "menu_scale", ui_scale, "0.5..3"),
     FI("input", "block_game_input_in_menu", block_input_in_menu, "1 on"),
     FI("input", "vibration", vibration, "1 rumble the controller when the game asks"),
+    FF("input", "vibration_strength", vibration_strength, "rumble strength, 0..1 (default 0.65)"),
     FF("audio", "volume", volume, "master volume, 0..1"),
     FI("audio", "mute_in_background", mute_unfocused, "1 silent while the window is not focused"),
     FF("analog", "deadzone", deadzone, "PCSX2 Analog Deadzone, both sticks, 0..1"),
