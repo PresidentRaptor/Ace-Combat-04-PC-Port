@@ -3999,7 +3999,7 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
        centre to the target; the radar's red shapes are scissored, and the
        caption band and the WARNING sign in the middle are left out. */
     {   float sx = 512.0f / (float)st->fb_w, cyn = (y0 + y1) * 0.5f, cxn = (x0 + x1) * 0.5f * sx;
-        int warning = cxn > 192.0f && cxn < 320.0f && cyn > 136.0f && cyn < 180.0f;
+        int warning = n == 6 && cxn > 192.0f && cxn < 320.0f && cyn > 136.0f && cyn < 180.0f;
         if (!(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
             && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
             && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && cyn >= 104.0f && !warning) {
@@ -4058,6 +4058,20 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
         else if (ny > 288.0f && nx > 384.0f
                  && (nx > 434.0f || ny > 345.0f || (st->tme && w > 20.0f)))
             edge = 1;                                             /* weapons, damage */
+    }
+    if (n == 6 && st->tme && st->fst && !st->shuffle_rg && !(v[0].round_uv & PS2_VK_RUV_CLAMP)) {
+        /* A point-sampled sprite loses its pixel-exact placement here, so with
+           smoothed UI (or any filtering at the new size) it would pick up the
+           neighbouring glyphs of its font page as faint lines.  Keep it inside
+           the texels it covers at native resolution, as bilinear sprites are. */
+        u32 cu, cv;
+        if (sprite_clamp_axis(v[0].x, v[2].x, v[0].s, v[2].s, &cu)
+            && sprite_clamp_axis(v[0].y, v[2].y, v[0].t, v[2].t, &cv))
+            for (k = 0; k < n; k++) {
+                v[k].round_uv |= PS2_VK_RUV_CLAMP;
+                v[k].clamp_u = cu;
+                v[k].clamp_v = cv;
+            }
     }
     for (k = 0; k < n; k++) {
         v[k].x = ws_map(v[k].x, edge, s, cx, (float)st->fb_w);
