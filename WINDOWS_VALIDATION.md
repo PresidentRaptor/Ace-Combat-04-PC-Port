@@ -36,10 +36,9 @@ performance need live-play comparison.
 
 ## Coverage gaps
 
-`tools/test_runtime_regressions.py` contains AC5 guest function addresses and
-cannot test the current AC4 generated code. `tools/test_vfs.py` likewise expects
-AC5's extracted disc and DATA.TBL. Neither is counted as an AC4 pass. AC4-specific
-collision/mission-cleanup and archive tests still need equivalent fixtures.
+The AC5 runtime-regression and archive (VFS) tests needed AC5's disc and generated
+code and have been removed. AC4-specific collision/mission-cleanup and archive tests
+still need equivalent fixtures.
 
 Later campaign missions, saving/loading across mission transitions, prolonged
 audio/video playback, device reconnection, fullscreen changes, expanded mission

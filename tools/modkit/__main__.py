@@ -157,8 +157,7 @@ def main(argv=None):
         if name == "verify":
             p.add_argument("--members", type=int, default=8,
                            help="how many members to decode and rebuild byte "
-                                "for byte (0 = all; slow in Python -- "
-                                "tools/test_vfs.py does all 965 in C)")
+                                "for byte (0 = all; slow in Python)")
         p.set_defaults(fn=fn)
     args = ap.parse_args(argv)
     return args.fn(args) or 0

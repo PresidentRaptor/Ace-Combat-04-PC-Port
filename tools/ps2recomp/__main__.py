@@ -13,9 +13,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="ps2recomp")
     ap.add_argument("elf", help="PS2 EE ELF executable")
     ap.add_argument("-o", "--outdir", required=True)
-    ap.add_argument("--ida-db", help="JSON exported by tools/ida/export_db.py")
+    ap.add_argument("--ida-db", help="jump tables, e.g. config/ac4/ida_db.json (tools/find_switches.py)")
     ap.add_argument("--ida-seeds",
-                    help="JSON exported by tools/ida/export_seeds.py")
+                    help="function entries, e.g. config/ac4/seeds.json (tools/find_entries.py)")
     ap.add_argument("--per-file", type=int, default=250,
                     help="functions per generated .c file")
     ap.add_argument("--comments", action="store_true",
