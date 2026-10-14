@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CODE_END 0x003992C0u
-
 enum { P_ACTIVE, P_CONFLICT, P_REMOVED };
 
 typedef struct {
@@ -58,7 +56,6 @@ static int in_code(u32 addr, u32 len) {
     else
         return 0;
     ps2_text_bounds(&lo, &hi);
-    if (hi < CODE_END) hi = CODE_END;
     return phys < hi && phys + len > lo;
 }
 

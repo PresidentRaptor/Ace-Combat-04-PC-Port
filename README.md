@@ -169,7 +169,7 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - `runtime/shaders/`: the GLSL shaders, compiled at build time
 - `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks
 - `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat`, `MAKE_HD_TEXTURES.bat` and the player README
-- `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (AC5 mod scripts)
+- `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (mod scripts; see `mods/README.md`)
 - `generated/`: the recompiler's output, created in step 2
 
 Tests: the scripts in `tools/` named `test_*.py` and `check_*.py` run without the game; `ac4.exe --vu-test --novideo` runs the VU self-test.

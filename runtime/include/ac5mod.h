@@ -18,8 +18,8 @@
  *
  * ADDRESSES ARE STABLE.  A guest address means the same thing in every build:
  * the executable it came from is pinned by SHA-256, so 0x0011DB30 is the same
- * function next year as today.  config/game_symbols.txt names the functions
- * the game's own debug messages identify, and symbol() looks names up.
+ * function next year as today.  symbol() looks up the names the recompiler
+ * and enabled mods' symbols.txt give.
  *
  * WHICH THREAD.  Everything here except log() must happen on a thread that
  * holds the EE: in ac5_mod_main, a hook, or any callback below -- which is
@@ -28,7 +28,7 @@
  *
  * PRIORITY.  A mod's manifest priority settles every conflict: two mods
  * replacing one file, one function, one indirect-call target, one memory
- * patch, one named parameter -- the higher priority wins, both are logged.
+ * patch -- the higher priority wins, both are logged.
  *
  * COMPATIBILITY.  Fields are only ever appended.  A module built against this
  * header runs on any runtime whose abi_version is at least AC5_ABI_VERSION, so
@@ -162,8 +162,8 @@ struct ac5_api {
     int  (*on_field)(ac5_field_fn fn, void *user);
 
     /* -- names ------------------------------------------------------------
-     * The address of a named function, or 0.  Names come from the recompiler,
-     * config/game_symbols.txt and every enabled mod's symbols.txt. */
+     * The address of a named function, or 0.  Names come from the recompiler
+     * and every enabled mod's symbols.txt. */
     uint32_t (*symbol)(const char *name);
     const char *(*symbol_name)(uint32_t guest_addr);
 
@@ -202,10 +202,8 @@ struct ac5_api {
     void     (*set_reg_float)(ac5_ctx *ctx, int n, float v);
 
     /* -- game events -----------------------------------------------------
-     * on_frame(): once per game frame, on the main thread, as the main loop
-     *   dispatches its scene machine -- a safe point to call game functions.
-     * on_scene(): whenever a scene machine changes state, before the new
-     *   state's handler runs.
+     * on_frame() and on_scene() hooked AC5's scene machine; in Ace Combat 04
+     *   they are refused (-1).
      * timer(): fn after `fields` fields; again every `fields` if `repeat`.
      * on_shutdown(): once, when the run ends.
      * cancel(): stop any of these, or an on_field / on_input callback. */
@@ -233,9 +231,9 @@ struct ac5_api {
                   uint32_t len, int when);
     int  (*unpatch)(int handle);
 
-    /* -- the game's named parameters (runtime/include/ps2_params.h) -----
-     * param_set(): override a CTxtio value by name (".enemyjet.distSound"),
-     * converted to whatever type the game asks for it as; NULL clears. */
+    /* -- named parameters ----------------------------------------------
+     * param_set() overrode AC5's CTxtio values; in Ace Combat 04 it is
+     * refused (-1). */
     int  (*param_set)(const char *name, const char *value);
 
     /* -- storage -----------------------------------------------------------

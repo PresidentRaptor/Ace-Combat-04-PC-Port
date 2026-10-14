@@ -70,7 +70,6 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_hook.c
     runtime/src/ps2_modapi.c
     runtime/src/ps2_patch.c
-    runtime/src/ps2_params.c
     runtime/src/ps2_lua.c
     runtime/src/ps2_ui.cpp
     runtime/src/rn/rn_dump.c
@@ -136,8 +135,7 @@ list(REMOVE_ITEM REPLAY_SOURCES runtime/src/ps2_main.c
                                 runtime/src/ps2_modapi.c
                                 runtime/src/ps2_mod.c
                                 runtime/src/ps2_hook.c
-                                runtime/src/ps2_patch.c
-                                runtime/src/ps2_params.c)
+                                runtime/src/ps2_patch.c)
 list(APPEND REPLAY_SOURCES runtime/src/ps2_replay.c)
 
 add_executable(gsreplay ${REPLAY_SOURCES})

@@ -3,7 +3,6 @@
 #include "ps2_hook.h"
 #include "ps2_mod.h"
 #include "ps2_modapi.h"
-#include "ps2_params.h"
 #include "ps2_patch.h"
 #include "ps2_vfs.h"
 
@@ -34,7 +33,7 @@ typedef struct {
     mod_opt *opts;
     unsigned nopts;
     u32 files;
-    u32 natives_ok, natives_failed, patches, params, symbols;
+    u32 natives_ok, natives_failed, patches, symbols;
     const ac5_api *api;
 } mod_info;
 
@@ -469,7 +468,6 @@ void ps2_mod_init(void) {
     DIR *d;
     struct dirent *e;
     u32 enabled = 0, files = 0;
-    symbols_load("config/game_symbols.txt", NULL);
     if (getenv("PS2_NO_MODS")) {
         mods_off = 1;
         ps2_log("mod: disabled by PS2_NO_MODS");
@@ -560,68 +558,6 @@ const ac5_api *ps2_mod_api_at(unsigned i) {
     return i < ps2_mod_count() ? api_of(&mods[load_order[i]]) : NULL;
 }
 
-#define AC5_ULZ_SETUP  0x00102A78u
-
-static const u32 ulz_setup_code[] = {
-    0x8CA20004u, 0x3C0700FFu, 0x34E7FFFFu, 0x24080001u,
-};
-static u64 archive_served, archive_passed;
-
-static int archive_member_setup(ps2_ctx *ctx, void *user) {
-    u32 state = ps2_arg(ctx, 0), dst = ps2_arg(ctx, 2);
-    u32 loader = state - 4u, slot, member, count, table, capacity;
-    u8 mode;
-    (void)user;
-    ps2_hook_call_original(AC5_ULZ_SETUP, ctx);
-    mode = ps2_r8(loader);
-    slot = ps2_r32(loader + 48u);
-    if ((mode != 4 && mode != 5) || slot >= 7u) return 1;
-    member = ps2_r16(loader + 244u + 2u * slot);
-    if (!ps2_vfs_pac_is_changed(member)) {
-        archive_passed++;
-        return 1;
-    }
-    count = ps2_r32(loader + 56u);
-    table = ps2_r32(loader + 64u);
-    capacity = member < count ? ps2_r32(table + 8u * count + 4u * member) : 0;
-    if (capacity != ps2_vfs_pac_size(member)) {
-        static int said;
-        if (!said++)
-            ps2_log("mod: the game's DATA.TBL says member %u is %u bytes and "
-                    "the filesystem says %u -- the table it holds is not the "
-                    "one served, so the member is left to its decompressor",
-                    member, capacity, ps2_vfs_pac_size(member));
-        return 1;
-    }
-    if (ps2_vfs_pac_fill_guest(member, dst, capacity) < 0) {
-        ps2_log("mod: DATA.PAC member %u could not be built; the game gets it "
-                "empty", member);
-        for (u32 i = 0; i < capacity; i++) ps2_w8(dst + i, 0);
-    }
-    ps2_w32(state + 28u, 0);
-    archive_served++;
-    ps2_log("mod: DATA.PAC member %u (%u bytes) served from the filesystem",
-            member, capacity);
-    return 1;
-}
-
-static void archive_driver_install(void) {
-    for (unsigned i = 0; i < sizeof ulz_setup_code / sizeof ulz_setup_code[0]; i++) {
-        if (ps2_r32(AC5_ULZ_SETUP + 4u * i) == ulz_setup_code[i]) continue;
-        ps2_vfs_pac_revert("the code at 00102A78 is not DATA.PAC's decompressor "
-                           "set-up this runtime was written against");
-        return;
-    }
-    if (ps2_hook_replace(AC5_ULZ_SETUP, archive_member_setup, NULL, INT_MAX,
-                         "mod host (DATA.PAC)") < 0) {
-        ps2_vfs_pac_revert("DATA.PAC's decompressor could not be hooked; the "
-                           "hook: line above says why");
-        return;
-    }
-    ps2_log("mod: DATA.PAC's loader reads %u changed member(s) from the "
-            "filesystem", ps2_vfs_pac_changed());
-}
-
 static int str_cmp(const void *a, const void *b) {
     return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
@@ -708,8 +644,6 @@ static void data_files_load(mod_info *m) {
     unsigned n = 0;
     snprintf(path, sizeof path, "%s/symbols.txt", m->dir);
     m->symbols = symbols_load(path, m->id);
-    snprintf(path, sizeof path, "%s/params.txt", m->dir);
-    m->params = (u32)ps2_params_load(path, m->priority, m->id);
     d = opendir(m->dir);
     if (!d) return;
     while ((e = readdir(d)) != NULL && n < 64) {
@@ -731,13 +665,11 @@ static void data_files_load(mod_info *m) {
 
 void ps2_mod_start(void) {
     if (mods_off) return;
-    if (ps2_vfs_pac_changed()) archive_driver_install();
     for (u32 k = 0; k < ps2_mod_count(); k++) {
         mod_info *m = &mods[load_order[k]];
         if (m->enabled) data_files_load(m);
     }
     ps2_patch_start();
-    ps2_params_start();
     for (u32 k = 0; k < ps2_mod_count(); k++) {
         mod_info *m = &mods[load_order[k]];
         if (m->enabled) natives_load(m);
@@ -752,33 +684,24 @@ void ps2_mod_report(void) {
         for (u32 i = 0; i < nmods; i++) {
             const mod_info *m = &mods[i];
             u32 won;
-            s64 heap;
             char native[64] = "";
-            ps2_vfs_owner_stats(m->id, &won, &heap);
+            ps2_vfs_owner_stats(m->id, &won);
             if (m->natives_ok || m->natives_failed)
                 snprintf(native, sizeof native, ", native %u ok / %u failed",
                          m->natives_ok, m->natives_failed);
             ps2_log("   %-24s %-10s priority %-4d %s%s%s%u file(s) filling %u "
-                    "place(s), guest allocation %+lld%s",
+                    "place(s)%s",
                     m->name[0] ? m->name : m->id,
                     m->version[0] ? m->version : "-", m->priority,
                     m->author[0] ? "by " : "", m->author[0] ? m->author : "",
-                    m->author[0] ? ", " : "", m->files, won, (long long)heap,
-                    native);
-            if (m->patches || m->params || m->symbols)
-                ps2_log("      %u patch(es), %u parameter override(s), %u "
-                        "name(s)", m->patches, m->params, m->symbols);
+                    m->author[0] ? ", " : "", m->files, won, native);
+            if (m->patches || m->symbols)
+                ps2_log("      %u patch(es), %u name(s)", m->patches, m->symbols);
             if (!m->enabled)
                 ps2_log("      switched off: %s", m->off_why);
         }
-        if (archive_served || archive_passed)
-            ps2_log("   DATA.PAC loads: %llu member(s) served from the "
-                    "filesystem, %llu left to the game's decompressor",
-                    (unsigned long long)archive_served,
-                    (unsigned long long)archive_passed);
         ps2_modapi_report();
     }
     ps2_patch_report();
-    ps2_params_report();
     ps2_vfs_report();
 }
