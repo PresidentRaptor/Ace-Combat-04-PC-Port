@@ -640,6 +640,10 @@ int main(int argc, char **argv) {
         extern void ps2_hook_texcache_attach(long n);
         ps2_hook_texcache_attach(strtol(getenv("PS2_TRACE_TEXCACHE"), NULL, 0));
     }
+#ifdef PS2_GAME_AC4
+    {   extern void ps2_hook_ac4_widescreen_attach(void);
+        ps2_hook_ac4_widescreen_attach(); }
+#endif
     if (load_image(dir) != 0) return 1;
     ps2_mod_init();
     if (disc && ps2_vfs_open(disc) != 0)

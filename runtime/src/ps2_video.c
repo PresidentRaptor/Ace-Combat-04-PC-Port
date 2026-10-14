@@ -173,6 +173,19 @@ static u64 trace_frame;
 
 static u64 stat_frames, stat_draws, stat_verts, stat_texuploads;
 float ps2_vk_display_aspect = 4.0f / 3.0f;
+
+float ps2_vk_game_aspect(void) {
+    float a;
+    if (!ps2_cfg.widescreen) return 4.0f / 3.0f;
+    switch (ps2_cfg.aspect) {
+    case PS2_ASPECT_4_3:    a = 4.0f / 3.0f; break;
+    case PS2_ASPECT_CUSTOM: a = ps2_cfg.aspect_custom; break;
+    case PS2_ASPECT_STRETCH: a = ps2_vk_display_aspect; break;
+    default:                a = 16.0f / 9.0f; break;
+    }
+    return a > 4.0f / 3.0f ? a : 4.0f / 3.0f;
+}
+
 static u64 stat_selfreads;
 static u64 vk_mono_ns(void);
 static u64 speed_pipe_ns, speed_pipe_n;

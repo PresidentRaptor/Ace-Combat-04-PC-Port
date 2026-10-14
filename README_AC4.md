@@ -51,7 +51,32 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
 - `ps2_hle_pad.c` — the original libpad (state machine, modes, actuators, pressure mode).
 - `ps2_game.h` — window title, settings/pipeline file names, serial for mods.
 - the native VU1 renderer (`rn/`) is off: it implements AC5's microcode.
-- the 16:9 camera patch previously used by the AC5 build is not valid for AC4 and is never applied (`ps2_settings.c`). AC4's output defaults to an undistorted 4:3 image on wide displays; a validated game-specific camera patch is still needed for expanded 16:9 gameplay.
+- **16:9 widescreen** (F4 > Display, `[display] widescreen`; `ps2_hook.c` `vsm_before`,
+  `ps2_gs.c` `ws_hud`, `ps2_vk_game_aspect` in `ps2_video.c`). AC5's camera patch targets
+  SLUS-20851 and is never applied here; PCSX2's AC4 entry (one word at 0040DACC, 769.15 ->
+  627.87) only shortens one camera's focal length. Every AC4 camera goes through
+  `sceVu0ViewScreenMatrix` (00263718). The camera object keeps the size of its virtual
+  screen at +352/+356 (640 x 480), focal length at +360, viewport at +392..+398 (512 x 448 in
+  flight) and ax/ay = viewport / virtual size at +384/+388; the view cone that culls the world
+  and clips the sea-glare fan is worked out from +352/+356 (sub_00102798). A hook before
+  00263718 widens +352 for the on-screen cameras (called from 00102AC0, 00142200, 00246CE8;
+  the matrix is camera + 96) to 640 x aspect / (4/3), 853.33 at 16:9, and scales this call's
+  ax to match. Cameras copy these fields between each other, so a value the hook wrote is
+  recognised and never widened twice; turning widescreen off writes 640 back. Widening only
+  the ax argument left a jagged unlit band at the bottom corners (the sea-glare fan stayed
+  clipped to the 4:3 cone). The self-shadow projection (called from 001146BC) is left alone.
+  The HUD: 2D draws (not PATH1) into a display-sized target (at least 480 x 400) whose
+  vertices all sit at Z max (flight HUD) or Z 0 (menus, captions, movies) with the depth test
+  off (or ZTE 0) are pulled towards the centre by (4/3) / aspect, scissor included. Left
+  alone: depth-tested draws (target boxes, their dotted trails and FRND/TGT labels are drawn
+  with ZTST GREATER, even the parts at Z max, and were already placed by the widened camera),
+  draws with real depth (sun flare, lens ghosts), full-width draws, untextured full-height
+  ones (fades and clears, drawn in 64-pixel strips), render-target copies and off-screen
+  targets (the 512 x 128 cloud target). Movies and menus come out pillarboxed 4:3. With
+  widescreen off nothing changes: the 12 captures replay pixel-identical. `PS2_TRACE_VSM=1`
+  logs the distinct calls of 00263718 and the on-screen cameras' fields; `PS2_VSM_SKIP=ra,...`
+  leaves more callers (return addresses, hex) alone; `PS2_TRACE_WS=N[:M]` logs each primitive
+  kept 4:3 in fields N..M.
 - High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the

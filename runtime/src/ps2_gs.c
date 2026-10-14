@@ -79,6 +79,7 @@ static u64 gs_stat_prims, gs_stat_pixels, gs_stat_regs;
 u64 ps2_gs_vtx_draw, ps2_gs_vtx_adc;
 static u64 gs_stat_trx, gs_stat_trxpix;
 static u64 gs_stat_deint;
+static u64 gs_stat_ws_hud;
 static int no_deinterlace;
 static u64 gs_reg_hist[0x64];
 
@@ -3083,6 +3084,9 @@ void ps2_gs_rt_report(void) {
     }
     ps2_log("GS field blits deinterlaced: %llu",
             (unsigned long long)gs_stat_deint);
+    if (gs_stat_ws_hud)
+        ps2_log("GS widescreen: %llu 2D primitives kept 4:3",
+                (unsigned long long)gs_stat_ws_hud);
     ps2_log("GS DISPFB base %u -> slot %d,  PMODE %llX  DISPFB1 %llX DISPFB2 %llX",
             gs_disp_base, rt_find(gs_disp_base),
             (unsigned long long)ps2_gs_priv_read(0x12000000u),
@@ -3929,6 +3933,72 @@ static u32 sprite_round_axis(s32 p0, s32 p1, u32 t0, u32 t1) {
     return dt <= 0 || !(span & (span - 1u)) ? 1u : 2u;
 }
 
+#ifdef PS2_GAME_AC4
+u64 ps2_kernel_vblank_count(void);
+
+/* AC4 widescreen: the camera is widened in the EE (ps2_hook.c), so the 4:3
+   frame buffer holds a 16:9 view that the presentation stretches.  The HUD,
+   text and menus are 2D draws the game places at the far Z plane (menus: at
+   Z 0) with the depth test off; they are pulled towards the centre so they
+   keep their 4:3 shape.  Markers that follow the world were projected through the widened
+   camera and stay where they are: the sun flare and lens ghosts carry real
+   depth, and target boxes and their labels are drawn depth-tested (GREATER),
+   even the parts at the far plane.  Full-width draws, untextured full-height
+   ones (fades and clears, which AC4 draws in 64-pixel strips), off-screen
+   targets and render-target copies stay too. */
+static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, s, cx, gx, l, r, aspect;
+    int k;
+    if (!ps2_cfg.widescreen || ps2_cfg.hud_layout != PS2_HUD_CENTERED) return;
+    if (ps2_gif_path == 1 || st->tex_rt || st->fb_w < 480u || st->fb_h < 400u) return;
+    if (st->zte && st->ztst != 1u) return;
+    aspect = ps2_vk_game_aspect();
+    if (!(aspect > 1.34f)) return;
+    for (k = 0; k < n; k++) {
+        if (v[k].z < 0.99999f && v[k].z != 0.0f) return;
+        if (v[k].x < x0) x0 = v[k].x;
+        if (v[k].x > x1) x1 = v[k].x;
+        if (v[k].y < y0) y0 = v[k].y;
+        if (v[k].y > y1) y1 = v[k].y;
+    }
+    gx = (float)st->fb_w * 0.5f;
+    if (x0 <= 1.0f && x1 >= (float)st->fb_w - 0.5f) return;
+    if (!st->tme && y0 <= 1.0f && y1 >= (float)st->fb_h - 0.5f) return;
+    s = (4.0f / 3.0f) / aspect;
+    cx = gx + 0.5f;
+    for (k = 0; k < n; k++) {
+        v[k].x = cx + (v[k].x - cx) * s;
+        v[k].round_uv &= PS2_VK_RUV_SPRITE | PS2_VK_RUV_CLAMP;
+    }
+    if (st->tex_point) st->tex_point = 2;
+    {   /* debugging: PS2_TRACE_WS=N[:M] logs each primitive kept 4:3 in fields N..M */
+        static long at = -2, to;
+        u64 vb;
+        if (at == -2) {
+            const char *e = getenv("PS2_TRACE_WS");
+            char *end = NULL;
+            at = e ? strtol(e, &end, 0) : -1;
+            to = end && *end == ':' ? strtol(end + 1, NULL, 0) : at + 1;
+        }
+        vb = at >= 0 ? ps2_kernel_vblank_count() : 0u;
+        if (at >= 0 && vb >= (u64)at && vb <= (u64)to)
+            ps2_log("ws: v%llu path%d prim%u n%d tme%d tex0 %016llX x[%.1f..%.1f] y[%.1f..%.1f] "
+                    "z%.0f fb%ux%u", (unsigned long long)vb, ps2_gif_path,
+                    (unsigned)(gs_prim & 7u), n, st->tme, (unsigned long long)tex0_reg(),
+                    x0, x1, v[0].y, v[n - 1].y, v[0].z, st->fb_w, st->fb_h);
+    }
+    l = gx + ((float)st->scissor[0] - gx) * s;
+    r = gx + ((float)st->scissor[1] + 1.0f - gx) * s;
+    st->scissor[0] = (s32)floorf(l);
+    st->scissor[1] = (s32)ceilf(r) - 1;
+    gs_stat_ws_hud++;
+}
+#else
+static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
+    (void)st; (void)v; (void)n;
+}
+#endif
+
 static void vk_triangle_draw(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
     ps2_vk_state st;
     ps2_vk_vertex v[3];
@@ -3938,6 +4008,7 @@ static void vk_triangle_draw(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) 
     vk_vertex(&v[1], b, iip, c, st.fst, st.tex_lod);
     vk_vertex(&v[2], c, iip, c, st.fst, st.tex_lod);
     draw_census(&st, v, 3);
+    ws_hud(&st, v, 3);
     {
         int claimed = rn_claim_prim(&st, RN_PRIM_TRI, v, 3);
         rn_census_prim(&st, RN_PRIM_TRI, v, 3, claimed);
@@ -4303,6 +4374,7 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
         blitlog[i].s0 = q[0].s; blitlog[i].s1 = q[2].s;
     }
     draw_census(&st, t, 6);
+    ws_hud(&st, t, 6);
     if (rn_claim_prim(&st, RN_PRIM_SPRITE, t, 6)) {
         rn_census_prim(&st, RN_PRIM_SPRITE, t, 3, 1);
         gs_stat_prims++;
@@ -4323,6 +4395,7 @@ static void vk_line(const gs_vtx *a, const gs_vtx *b) {
     vk_vertex(&v[0], a, (gs_prim & PRIM_IIP) ? 1 : 0, b, st.fst, st.tex_lod);
     vk_vertex(&v[1], b, (gs_prim & PRIM_IIP) ? 1 : 0, b, st.fst, st.tex_lod);
     draw_census(&st, v, 2);
+    ws_hud(&st, v, 2);
     {
         int claimed = rn_claim_prim(&st, RN_PRIM_LINE, v, 2);
         rn_census_prim(&st, RN_PRIM_LINE, v, 2, claimed);
@@ -4339,6 +4412,7 @@ static void vk_point(const gs_vtx *a) {
     gs_dyn_lod = -1;
     vk_vertex(&v[0], a, 1, a, st.fst, st.tex_lod);
     draw_census(&st, v, 1);
+    ws_hud(&st, v, 1);
     {
         int claimed = rn_claim_prim(&st, RN_PRIM_POINT, v, 1);
         rn_census_prim(&st, RN_PRIM_POINT, v, 1, claimed);

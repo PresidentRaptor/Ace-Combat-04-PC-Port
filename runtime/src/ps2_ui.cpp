@@ -386,24 +386,14 @@ void resolution_controls() {
 }
 
 const char *const ASPECTS[] = {
-#ifdef PS2_GAME_AC4
-    "Stretch to fill the window", "Auto (keep the game's 4:3)", "4:3", "16:9", "Custom",
-#else
     "Stretch to fill the window", "Auto (4:3, or 16:9 with widescreen)", "4:3", "16:9", "Custom",
-#endif
 };
 
 void aspect_controls() {
     if (ImGui::Combo("Aspect ratio", &ps2_cfg.aspect, ASPECTS, 5)) changed(0);
-#ifdef PS2_GAME_AC4
-    help("The shape of the picture inside the window. Auto and 4:3 keep the game's 4:3 picture "
-         "undistorted, with bars at the sides of a wide window. Stretch fills the window "
-         "whatever its shape.");
-#else
     help("The shape of the picture inside the window. Auto keeps the PS2's 4:3 picture "
-         "undistorted and becomes 16:9 when the widescreen patch is on. Stretch fills the "
+         "undistorted and becomes 16:9 when widescreen is on. Stretch fills the "
          "window whatever its shape, which is how the runtime always behaved.");
-#endif
     env_note("PS2_ASPECT", "overrides the aspect ratio");
     if (ps2_cfg.aspect == PS2_ASPECT_CUSTOM
         && ImGui::SliderFloat("Custom ratio", &ps2_cfg.aspect_custom, 1.0f, 3.0f, "%.3f : 1"))
@@ -411,26 +401,38 @@ void aspect_controls() {
 }
 
 void widescreen_control() {
-#ifdef PS2_GAME_AC4
-    return;     /* the 16:9 camera patch is AC5's; nothing to offer for AC4 */
-#endif
     bool ws = ps2_cfg.widescreen != 0;
     if (ImGui::Checkbox("Widescreen (16:9)", &ws)) {
         ps2_cfg.widescreen = ws;
         if (ws && ps2_cfg.aspect == PS2_ASPECT_4_3) ps2_cfg.aspect = PS2_ASPECT_AUTO;
+#ifdef PS2_GAME_AC4
+        /* settings files from before AC4 had widescreen carry hud_layout 0 */
+        if (ws) ps2_cfg.hud_layout = PS2_HUD_CENTERED;
+#endif
         changed(0);
     }
+#ifdef PS2_GAME_AC4
+    help("Widens the game's own camera, so the 3D view really shows more at the sides "
+         "instead of being stretched. Use Auto or 16:9 aspect with it.");
+#else
     help("Applies the 16:9 patch from PCSX2's patch database (by nemesis2000) to the game's "
          "own camera, so the 3D view really is wider instead of stretched. Use Auto or 16:9 "
          "aspect with it.");
+#endif
     if (ws) {
         static const char *const HUD_LAYOUTS[] = { "Stretched with the picture",
                                                    "4:3 in the centre" };
         if (ImGui::Combo("HUD layout", &ps2_cfg.hud_layout, HUD_LAYOUTS, 2)) changed(0);
+#ifdef PS2_GAME_AC4
+        help("The game's HUD and menus are laid out for 4:3. Centred draws them at their own "
+             "proportions in the middle of the screen; markers placed on things in the world "
+             "stay on them.");
+#else
         help("The game's HUD is laid out for 4:3. Centred draws the screen-fixed parts -- "
              "tapes, readouts, radar, captions -- at their own proportions in the middle of "
              "the screen; markers placed on things in the world stay on them. Needs the "
              "native 2D layer (on unless PS2_RN_2D=0).");
+#endif
     }
     if (ws && ps2_cfg.aspect == PS2_ASPECT_STRETCH && g_window) {
         int w = 0, h = 0;

@@ -110,14 +110,21 @@ Fixed in this build
   button, and lost the widescreen option that only applied to AC5. The
   F6-F10 debugging keys only work in DIAGNOSTICS.bat now, so a stray key
   press can't fill the folder with capture files.
+- 16:9 widescreen: F4 > Display > "Widescreen (16:9)" (off by default).
+  The game's own camera is widened, so flight, the carrier deck, the
+  hangar and the opening show more at the sides instead of being
+  stretched. The HUD, captions, menus, briefings and story movies stay
+  4:3 in the middle of the screen; target boxes and FRND/TGT labels stay
+  on their aircraft. Keep "Aspect ratio" on Auto (or 16:9).
 
 Known limits
 ------------
 - Graphics run through the emulated GS. The native renderer the AC5 port
   uses was written for AC5's VU1 programs and is off. Higher internal
   resolutions (F4) work; resolution 6 was checked through Mission 01.
-- The 16:9 widescreen option is ignored: the patch behind it is for AC5's
-  executable and would corrupt AC4.
+- Widescreen: target boxes and their labels keep the 4:3 HUD's shape, so
+  they look a little wide. On the weapon select screen the tinted panel
+  behind the text covers only the 4:3 middle.
 - The graphics machine runs on the game thread by default; a modern CPU
   holds full speed. On a slower CPU, PS2_ASYNC_GFX=1 runs it on its own
   thread (re-tested in Mission 01 without the stray triangles it used to

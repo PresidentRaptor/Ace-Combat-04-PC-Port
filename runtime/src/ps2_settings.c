@@ -230,10 +230,6 @@ static void sanitize(ps2_settings *s) {
     s->aspect_custom = clampf(s->aspect_custom, 0.5f, 4.0f);
     s->integer_scale = s->integer_scale != 0;
     s->widescreen = s->widescreen != 0;
-#ifdef PS2_GAME_AC4
-    /* The camera constants below belong to SLUS-20851, not SLUS-20152. */
-    s->widescreen = 0;
-#endif
     s->hud_layout = clampi(s->hud_layout, 0, 1);
     s->present_mode = clampi(s->present_mode, 0, 3);
     s->fps_limit = clampi(s->fps_limit, 0, 1000);
@@ -464,7 +460,7 @@ static const u32 ws_patch[2] = { 0x43D638F3u, 0x43EB7385u };
 
 void ps2_settings_apply_game_patches(void) {
 #ifdef PS2_GAME_AC4
-    return;
+    return;     /* AC4 widens its camera through a hook (ps2_hook.c) */
 #else
     static int logged = -1;
     if (!ps2_ram) return;

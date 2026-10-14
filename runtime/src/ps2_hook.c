@@ -546,6 +546,104 @@ void ps2_hook_texcache_attach(long n) {
         ps2_log("hook: texture-cache trace on 0013B2F8 (%ld calls)", n);
 }
 
+#ifdef PS2_GAME_AC4
+/* AC4 widescreen.  Every camera goes through sceVu0ViewScreenMatrix
+   (00263718: m, scrz, ax, ay, cx, cy, zmin, zmax, nearz, farz); ax scales
+   screen X.  With widescreen on, the on-screen cameras get a wider virtual
+   screen (below) and ax shrinks by (4/3) / aspect, so the 4:3 frame buffer
+   holds a wider view that the presentation stretches back out.  Other
+   callers only have ax scaled; the aircraft self-shadow (called from
+   001146BC) projects into its own texture and is left alone.  The HUD is
+   kept 4:3 in ps2_gs.c.  PS2_TRACE_VSM=1 logs each distinct call;
+   PS2_VSM_SKIP=ra,... (hex) leaves more callers alone. */
+#include "ps2_settings.h"
+#include "ps2_vk.h"
+static u32 vsm_skip[8] = { 0x001146C4u };
+static unsigned vsm_nskip = 1;
+static int vsm_trace;
+static struct { u32 orig, scaled; } vsm_wide[16];
+static unsigned vsm_nwide;
+static int vsm_before(ps2_ctx *ctx, void *user) {
+    u32 ra = ctx->r[31].uw[0];
+    unsigned k;
+    float aspect, scale;
+    (void)user;
+    if (vsm_trace) {
+        static u32 seen[64];
+        static unsigned nseen;
+        u32 key = ra ^ ctx->f[13].u ^ (ctx->f[12].u << 1) ^ (u32)ps2_cfg.widescreen;
+        for (k = 0; k < nseen && seen[k] != key; k++) {}
+        if (k == nseen && nseen < 64u && (ra == 0x00102AC8u || ra == 0x00142208u)) {
+            u32 c = ctx->r[4].uw[0] - 96u;
+            ps2_fpr f[8];
+            for (unsigned i = 0; i < 4; i++) f[i].u = ps2_r32(c + 352u + i * 4u);
+            f[4].u = ps2_r32(c + 384u); f[5].u = ps2_r32(c + 388u);
+            f[6].u = ps2_r32(c + 400u); f[7].u = ps2_r32(c + 404u);
+            ps2_log("vsm cam %08X: 352=%g 356=%g 360=%g 364=%g 384=%g 388=%g vp=%d,%d %dx%d "
+                    "400=%g 404=%g 376=%g 380=%g flags=%08X", c, f[0].f, f[1].f, f[2].f, f[3].f,
+                    f[4].f, f[5].f, (s16)ps2_r16(c + 392u), (s16)ps2_r16(c + 394u),
+                    (s16)ps2_r16(c + 396u), (s16)ps2_r16(c + 398u), f[6].f, f[7].f,
+                    ctx->f[15].f, ctx->f[16].f, ps2_r32(c + 408u));
+        }
+        if (k == nseen && nseen < 64u) {
+            ps2_fpr farz;
+            farz.u = ps2_r32(ctx->r[29].uw[0]);
+            seen[nseen++] = key;
+            ps2_log("vsm ra=%08X m=%08X scrz=%g ax=%g ay=%g cx=%g cy=%g zmin=%g zmax=%g "
+                    "near=%g far=%g ws=%d", ra, ctx->r[4].uw[0], ctx->f[12].f, ctx->f[13].f,
+                    ctx->f[14].f, ctx->f[15].f, ctx->f[16].f, ctx->f[17].f, ctx->f[18].f,
+                    ctx->f[19].f, farz.f, ps2_cfg.widescreen);
+        }
+    }
+    for (k = 0; k < vsm_nskip; k++) if (vsm_skip[k] == ra) return 0;
+    aspect = ps2_vk_game_aspect();
+    scale = aspect > 1.34f ? (4.0f / 3.0f) / aspect : 1.0f;
+    if (ra == 0x00102AC8u || ra == 0x00142208u || ra == 0x00246CF0u) {
+        /* m is the camera's own matrix (camera + 96).  The camera keeps the
+           width of its virtual screen at +352 (640, against 480 high at
+           +356); ax is the viewport width over it, and the view cone that
+           culls the world and clips the sea haze is worked out from it too.
+           Widen it there, so all of them agree: 640 becomes 853.33 at 16:9.
+           Cameras copy these fields between each other, so a value this hook
+           wrote is recognised wherever it turns up and never widened twice. */
+        u32 cam = ctx->r[4].uw[0] - 96u;
+        ps2_fpr cur, orig, want;
+        cur.u = ps2_r32(cam + 352u);
+        orig.u = cur.u;
+        for (k = 0; k < vsm_nwide; k++)
+            if (vsm_wide[k].scaled == cur.u) { orig.u = vsm_wide[k].orig; break; }
+        want.f = orig.f / scale;
+        if (want.u != cur.u && want.f > 0.0f && cur.f > 0.0f) {
+            ps2_w32(cam + 352u, want.u);
+            ctx->f[13].f *= cur.f / want.f;
+            if (want.u != orig.u) {
+                for (k = 0; k < vsm_nwide && vsm_wide[k].scaled != want.u; k++) {}
+                if (k == vsm_nwide && vsm_nwide < 16u) {
+                    vsm_wide[vsm_nwide].orig = orig.u;
+                    vsm_wide[vsm_nwide].scaled = want.u;
+                    vsm_nwide++;
+                }
+            }
+        }
+        return 0;
+    }
+    ctx->f[13].f *= scale;
+    return 0;
+}
+void ps2_hook_ac4_widescreen_attach(void);
+void ps2_hook_ac4_widescreen_attach(void) {
+    const char *e = getenv("PS2_VSM_SKIP");
+    vsm_trace = getenv("PS2_TRACE_VSM") != NULL;
+    while (e && *e && vsm_nskip < 8u) {
+        char *end;
+        vsm_skip[vsm_nskip++] = (u32)strtoul(e, &end, 16);
+        e = *end ? end + 1 : end;
+    }
+    if (ps2_hook_before(0x00263718u, vsm_before, NULL, 0, "ac4-widescreen") <= 0)
+        ps2_log("hook: cannot attach the widescreen camera to 00263718");
+}
+#endif
+
 void ps2_hook_selftest_attach(void);
 void ps2_hook_selftest_attach(void) {
     if (ps2_hook_before(0x0011DB30u, selftest_hook, NULL, 0,

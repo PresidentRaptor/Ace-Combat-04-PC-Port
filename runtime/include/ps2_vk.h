@@ -175,6 +175,9 @@ extern int ps2_vk_lockstep;
 int  ps2_vk_screenshot(const char *path);
 
 extern float ps2_vk_display_aspect;
+/* The picture shape the game's camera and HUD are laid out for: 4/3 unless
+   widescreen is on. */
+float ps2_vk_game_aspect(void);
 
 void ps2_vk_stats(u64 *frames, u64 *draws, u64 *verts, u64 *textures);
 
