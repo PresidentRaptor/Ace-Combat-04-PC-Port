@@ -218,7 +218,7 @@ static void replay_pass(u32 field_limit, pass_result *res) {
             u32 kind = rd_u8(&ok);
             u32 a = rd_u32(&ok);
             u32 b = rd_u32(&ok);
-            if (ok) rn_gs_tag(kind, a, b);
+            (void)kind; (void)a; (void)b;
             break;
         }
         case PS2_CAP_OP_INTENT: {
@@ -227,7 +227,7 @@ static void replay_pass(u32 field_limit, pass_result *res) {
             if (!ok) break;
             p = len ? rb_payload(len) : NULL;
             if (len && !p) { ok = 0; break; }
-            rn_gs_intent(p, len);
+            (void)p;
             break;
         }
         case PS2_CAP_OP_VIFQW:
@@ -378,7 +378,6 @@ int main(int argc, char **argv) {
     const char *path = "out/capture.gscap";
     const char *shot = "ps2_replay.ppm";
     int want_video = 1, bench = 0, loops = 1, census = 0;
-    u32 fuzz_start = 0, fuzz_iters = 0, fuzz_seed = 1;
     u32 field_limit = 0;
     double t_total = 0.0;
     u64 fields_total = 0;
@@ -410,12 +409,6 @@ int main(int argc, char **argv) {
             loops = (int)strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--fields") && i + 1 < argc)
             field_limit = (u32)strtoul(argv[++i], NULL, 0);
-        else if (!strcmp(argv[i], "--vp-fuzz") && i + 2 < argc) {
-            fuzz_start = (u32)strtoul(argv[++i], NULL, 16);
-            fuzz_iters = (u32)strtoul(argv[++i], NULL, 0);
-            if (i + 1 < argc && argv[i + 1][0] != '-' && strchr(argv[i + 1], '.') == NULL)
-                fuzz_seed = (u32)strtoul(argv[++i], NULL, 0);
-        }
         else if (argv[i][0] != '-') path = argv[i];
         else { usage(argv[0]); return strcmp(argv[i], "--help") ? 1 : 0; }
     }
@@ -424,7 +417,6 @@ int main(int argc, char **argv) {
       ps2_diag_armed = census || (e && atoi(e) != 0); }
 
     rn_dump_init();
-    rn_vp_init();
     rf = fopen(path, "rb");
     if (!rf) { fprintf(stderr, "[REPLAY] cannot open %s\n", path); return 1; }
     if (fread(&hdr, sizeof hdr, 1, rf) != 1
@@ -487,11 +479,6 @@ int main(int argc, char **argv) {
         free(bm);
         fprintf(stderr, "[REPLAY] %u/%u guest RAM blocks restored\n",
                 nz, hdr.nblk);
-    }
-
-    if (fuzz_start) {
-        restore_snapshot();
-        return rn_vpfuzz_main(fuzz_start, fuzz_iters ? fuzz_iters : 100u, fuzz_seed);
     }
 
     ps2_cap_dict_config(hdr.dict_slots, hdr.dict_min, hdr.dict_max,
@@ -587,7 +574,6 @@ int main(int argc, char **argv) {
                 t_total * 1000.0 / (double)fields_total);
     fclose(rf);
     ps2_host_prof_report();
-    rn_report();
     {   extern int ps2_vk_enabled(void);
         extern void ps2_video_report(void);
         if (ps2_vk_enabled()) ps2_video_report(); }
@@ -629,12 +615,6 @@ void ps2_modapi_field_tick(void) {}
 void ps2_modapi_input(ps2_pad_state *pads, int ports) { (void)pads; (void)ports; }
 
 void ps2_capture_report(const char *why) { (void)why; }
-int rn_taps_on;
-void rn_dma_attrib_slow(int ch, u32 tadr) { (void)ch; (void)tadr; }
-int rn_intents_pending;
-void rn_dma_transfer_slow(int ch, u32 madr, u32 qwc, int after) {
-    (void)ch; (void)madr; (void)qwc; (void)after;
-}
 unsigned ps2_vblank_budget(void) { return 0u; }
 void ps2_finish(const char *why) {
     fprintf(stderr, "[REPLAY] finish: %s\n", why ? why : "?");

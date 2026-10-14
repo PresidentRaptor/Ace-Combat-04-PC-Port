@@ -1,5 +1,4 @@
 #include "ps2_gfxq.h"
-#include "rn.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,9 +27,7 @@ enum {
     GQ_VIFCLR,
     GQ_GS_PRIV,
     GQ_MMIO,
-    GQ_FIELD,
-    GQ_TAG,
-    GQ_INTENT
+    GQ_FIELD
 };
 
 static u8 *q_buf;
@@ -179,12 +176,6 @@ static u32 q_apply(const u8 *r) {
     case GQ_VIFCLR:  ps2_vif_clear_stall((int)r[1]);               return 2u;
     case GQ_GS_PRIV: ps2_gs_priv_write_now(get32(r, 1), get64(r, 5)); return 13u;
     case GQ_MMIO:    ps2_gif_ctrl_write(get32(r, 1), get32(r, 5)); return 9u;
-    case GQ_TAG:     rn_gs_tag(get32(r, 1), get32(r, 5), get32(r, 9)); return 13u;
-    case GQ_INTENT: {
-        u32 len = get32(r, 1);
-        rn_gs_intent(r + 5, len);
-        return 5u + len;
-    }
     case GQ_FIELD:
         if (!ps2_gs_present_now()) ps2_request_exit();
         return 1u;
@@ -445,18 +436,4 @@ void ps2_gfxq_mmio(u32 addr, u32 val) {
       put8(r, 0, GQ_MMIO); put32(r, 1, addr); put32(r, 5, val);
       q_commit(9); }
 }
-
-void ps2_gfxq_tag(u32 kind, u32 a, u32 b) {
-    if (!ps2_gfxq_on) { rn_gs_tag(kind, a, b); return; }
-    { u8 *r = q_reserve(13);
-      put8(r, 0, GQ_TAG); put32(r, 1, kind); put32(r, 5, a); put32(r, 9, b);
-      q_commit(13); }
-}
-
-void ps2_gfxq_intent(const u8 *rec, u32 len) {
-    if (!ps2_gfxq_on) { rn_gs_intent(rec, len); return; }
-    { u8 *r = q_reserve(5u + len);
-      put8(r, 0, GQ_INTENT); put32(r, 1, len);
-      memcpy(r + 5, rec, len);
-      q_commit(5u + len); }
-}
+

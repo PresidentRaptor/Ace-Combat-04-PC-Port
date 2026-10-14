@@ -20,7 +20,7 @@ There's no game code or assets in this repo. You bring your own copy of the game
 
 How AC4 differs from AC5 under the hood:
 
-- AC4 is drawn entirely through the emulated GS. AC5's native renderer was written for AC5's own VU1 programs and is switched off.
+- AC4 is drawn entirely through the emulated GS. AC5's native renderer was written for AC5's own VU1 programs and has been removed.
 - AC4's sound modules (`SOUND.IRX`, `VAG.IRX`) are replaced by native code written from their own symbol tables.
 - The config files in `config/ac4/` were rebuilt from the executable alone, without IDA or the PS2 SDK. `README_AC4.md` explains how.
 

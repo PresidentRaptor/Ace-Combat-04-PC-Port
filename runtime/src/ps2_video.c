@@ -48,13 +48,6 @@ typedef struct {
     u32 wrap;
     u16 minu, maxu, minv, maxv;
     u16 zrt;
-    u16 emitter;
-    u16 native;
-    u16 npoint;
-    float nbox[4];
-    float nsun_z;
-    u32 mvbase, mblock;
-    u16 mcull;
     u16 clut_rt;      /* CLUT read from this render target (slot + 1), at clut_xy */
     u16 clut_tex;     /* palette texture + 1 for indices read from tex_rt's alpha,
                          or the next mip level + 1 (mip bit 21) */
@@ -256,20 +249,6 @@ static vk_draw       *slot_draws[LIST_SLOTS];
 static int            rec_slot;
 static int            pub_slot = LIST_SLOTS - 1;
 
-#define MESH_MAX_VERTS  (1u << 17)
-#define MESH_MAX_INDICES (1u << 19)
-#define MESH_MAX_BLOCKS (1u << 14)
-#define MESH_REC_BYTES 64u
-typedef struct {
-    u8 *recs;
-    u32 *idx;
-    ps2_vk_mesh_block *blocks;
-    u32 nrecs, nidx, nblocks;
-} mesh_arena;
-static mesh_arena slot_mesh[LIST_SLOTS];
-static mesh_arena *rec_mesh, *pub_mesh, *rep_mesh;
-static int mesh_ok;
-static u64 stat_mesh_draws, stat_mesh_overflow, stat_mesh_mat;
 static ps2_vk_vertex *pub_verts;
 static vk_draw       *pub_draws;
 static u32            pub_nverts, pub_ndraws;
@@ -277,8 +256,6 @@ static u32 rep_nverts, rep_ndraws;
 
 #define FRAMES_IN_FLIGHT 3
 #define RT_MAX 2048u
-#define OV_MAX_DRAWS 16384u
-#define OV_MAX_VERTS (1u << 18)
 
 typedef struct {
     VkCommandBuffer cmd;
@@ -293,13 +270,6 @@ typedef struct {
     VkDeviceMemory smem;
     void *sptr;
     size_t soff, staging_capacity;
-    VkBuffer ovbuf;
-    VkDeviceMemory ovmem;
-    void *ovptr;
-    VkBuffer mvbuf, mibuf, mcbuf;
-    VkDeviceMemory mvmem, mimem, mcmem;
-    void *mvptr, *miptr, *mcptr;
-    VkDescriptorSet mset;
 } vk_frame;
 
 static SDL_Window *window;
@@ -369,22 +339,10 @@ static VkDescriptorPool despool;
 static VkDescriptorSetLayout deslayout;
 static VkPipelineLayout gs_layout, present_layout;
 static VkShaderModule gs_vs, gs_fs, present_vs, present_fs;
-static VkShaderModule mesh_vs, mesh_fs;
-static VkDescriptorSetLayout mesh_slayout;
 static VkPipeline present_pipe;
 static VkShaderModule gs_zfs, colclip_fs;
 static VkPipeline colclip_pipe;
 static int zcopy_ok, colclip_ok;
-static VkShaderModule rn_vis_fs, rn_sun_vs, rn_sun_fs;
-static VkPipelineLayout rn_vis_layout, rn_sun_layout;
-static VkPipeline rn_vis_pipe, rn_sun_pipe;
-static VkImage rn_vis_img;
-static VkDeviceMemory rn_vis_mem;
-static VkImageView rn_vis_view;
-static VkDescriptorSet rn_vis_set;
-static VkImageLayout rn_vis_layout_state = VK_IMAGE_LAYOUT_UNDEFINED;
-static int rn_native_ok;
-static u64 stat_native_draws, stat_native_vis, stat_native_vis_kept, stat_native_vis_none;
 static vk_target *cur_zt;
 static VkSampler sampler;
 static VkSampler sampler_point;
@@ -470,7 +428,7 @@ typedef struct {
     float point_size;
     float tex_scale;
     u32   clut_xy;
-    u32   mesh_block;
+    u32   pad;
     u32   mip;
 } gs_push;
 
@@ -782,13 +740,8 @@ static VkCompareOp compare_of_ztst(u32 z) {
 
 static int trace_mask_pipe_env = -1;
 
-static VkPipeline get_pipeline_ex(u32 topology, u32 blend, u32 depth, u32 mesh, u32 cull);
 static VkPipeline get_pipeline(u32 topology, u32 blend, u32 depth) {
-    return get_pipeline_ex(topology, blend, depth, 0, 0);
-}
-static VkPipeline get_pipeline_ex(u32 topology, u32 blend, u32 depth, u32 mesh, u32 cull) {
-    u64 key = ((u64)topology << 40) | ((u64)blend << 16) | depth
-            | ((u64)(mesh & 3u) << 48) | ((u64)(cull & 1u) << 50);
+    u64 key = ((u64)topology << 40) | ((u64)blend << 16) | depth;
     VkPipelineShaderStageCreateInfo stages[2];
     VkVertexInputBindingDescription bind;
     VkVertexInputAttributeDescription attrs[6];
@@ -848,22 +801,6 @@ static VkPipeline get_pipeline_ex(u32 topology, u32 blend, u32 depth, u32 mesh, 
     vin.pVertexBindingDescriptions = &bind;
     vin.vertexAttributeDescriptionCount = 6;
     vin.pVertexAttributeDescriptions = attrs;
-    if (mesh) {
-        if (!mesh_vs || ((mesh & 2u) && !mesh_fs)) return VK_NULL_HANDLE;
-        stages[0].module = mesh_vs;
-        if (mesh & 2u) stages[1].module = mesh_fs;
-        bind.stride = MESH_REC_BYTES;
-        for (u32 a = 0; a < 4; a++) {
-            attrs[a].location = a;
-            attrs[a].binding = 0;
-            attrs[a].offset = a * 16u;
-        }
-        attrs[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        attrs[1].format = VK_FORMAT_R32G32B32A32_SINT;
-        attrs[2].format = VK_FORMAT_R32G32B32A32_SINT;
-        attrs[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        vin.vertexAttributeDescriptionCount = 4;
-    }
 
     memset(&ia, 0, sizeof(ia));
     ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -879,7 +816,7 @@ static VkPipeline get_pipeline_ex(u32 topology, u32 blend, u32 depth, u32 mesh, 
     memset(&rs, 0, sizeof(rs));
     rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = cull ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+    rs.cullMode = VK_CULL_MODE_NONE;
     rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rs.lineWidth = 1.0f;
 
@@ -1079,9 +1016,9 @@ static void pipe_warm_step(u64 budget_ns) {
     u64 t0 = vk_mono_ns();
     while (pipe_warm_i < pipe_warm_n) {
         u64 k = pipe_warm[pipe_warm_i++];
-        (void)get_pipeline_ex((u32)((k >> 40) & 0xFFu), (u32)((k >> 16) & 0xFFFFFFu),
-                              (u32)(k & 0xFFFFu), (u32)((k >> 48) & 3u),
-                              (u32)((k >> 50) & 1u));
+        if (k >> 48) continue;   /* AC5's native mesh pipelines */
+        (void)get_pipeline((u32)((k >> 40) & 0xFFu), (u32)((k >> 16) & 0xFFFFFFu),
+                           (u32)(k & 0xFFFFu));
         stat_pipe_warm++;
         if (vk_mono_ns() - t0 >= budget_ns) break;
     }
@@ -1700,15 +1637,11 @@ static int vk_init(void) {
     psz.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     psz.descriptorCount = VK_MAX_TEXTURES + RT_SLOTS * 3u + 32u;
     {
-        VkDescriptorPoolSize sizes[2];
-        sizes[0] = psz;
-        sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        sizes[1].descriptorCount = FRAMES_IN_FLIGHT;
         memset(&pci, 0, sizeof(pci));
         pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pci.maxSets = VK_MAX_TEXTURES + RT_SLOTS * 3u + 32u + FRAMES_IN_FLIGHT;
-        pci.poolSizeCount = 2;
-        pci.pPoolSizes = sizes;
+        pci.maxSets = VK_MAX_TEXTURES + RT_SLOTS * 3u + 32u;
+        pci.poolSizeCount = 1;
+        pci.pPoolSizes = &psz;
         VKCHK(vkCreateDescriptorPool(dev, &pci, NULL, &despool));
     }
 
@@ -1728,21 +1661,9 @@ static int vk_init(void) {
     pcr.size = sizeof(gs_push);
     memset(&plc, 0, sizeof(plc));
     plc.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    {   VkDescriptorSetLayoutBinding mb;
-        VkDescriptorSetLayoutCreateInfo mc;
-        memset(&mb, 0, sizeof(mb));
-        mb.binding = 0;
-        mb.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        mb.descriptorCount = 1;
-        mb.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        memset(&mc, 0, sizeof(mc));
-        mc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        mc.bindingCount = 1;
-        mc.pBindings = &mb;
-        VKCHK(vkCreateDescriptorSetLayout(dev, &mc, NULL, &mesh_slayout));
-    }
     {   VkDescriptorSetLayout sl[4];
-        sl[0] = deslayout; sl[1] = deslayout; sl[2] = mesh_slayout;
+        sl[0] = deslayout; sl[1] = deslayout;
+        sl[2] = deslayout;   /* unused, keeps clutrt at set 3 */
         sl[3] = deslayout;   /* render target holding a CLUT (gs.frag clutrt) */
         plc.setLayoutCount = 4;
         plc.pSetLayouts = sl;
@@ -1799,11 +1720,6 @@ static int vk_init(void) {
         ps2_log("vk: shader modules missing (looked in '%s')", base);
         return -1;
     }
-    snprintf(spv, sizeof(spv), "%s/mesh.vert.spv", base);
-    mesh_vs = load_spv(spv);
-    snprintf(spv, sizeof(spv), "%s/mesh.frag.spv", base);
-    mesh_fs = load_spv(spv);
-    if (!mesh_vs) ps2_log("vk: mesh.vert missing; native meshes are drawn as GS primitives");
     snprintf(spv, sizeof(spv), "%s/gs_zcopy.frag.spv", base);
     gs_zfs = load_spv(spv);
     snprintf(spv, sizeof(spv), "%s/colclip.frag.spv", base);
@@ -1864,54 +1780,7 @@ static int vk_init(void) {
                         &frames[i].sbuf, &frames[i].smem, &frames[i].sptr) != 0)
             return -1;
         frames[i].staging_capacity = 16u << 20;
-        if (make_buffer((VkDeviceSize)OV_MAX_VERTS * sizeof(ps2_vk_vertex),
-                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                        | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                        &frames[i].ovbuf, &frames[i].ovmem, &frames[i].ovptr) != 0)
-            return -1;
-        if (mesh_vs
-            && make_buffer((VkDeviceSize)MESH_MAX_VERTS * MESH_REC_BYTES,
-                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                           | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                           &frames[i].mvbuf, &frames[i].mvmem, &frames[i].mvptr) == 0
-            && make_buffer((VkDeviceSize)MESH_MAX_INDICES * sizeof(u32),
-                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                           | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                           &frames[i].mibuf, &frames[i].mimem, &frames[i].miptr) == 0
-            && make_buffer((VkDeviceSize)MESH_MAX_BLOCKS * sizeof(ps2_vk_mesh_block),
-                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                           | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                           &frames[i].mcbuf, &frames[i].mcmem, &frames[i].mcptr) == 0) {
-            VkDescriptorSetAllocateInfo ai;
-            memset(&ai, 0, sizeof(ai));
-            ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            ai.descriptorPool = despool;
-            ai.descriptorSetCount = 1;
-            ai.pSetLayouts = &mesh_slayout;
-            if (vkAllocateDescriptorSets(dev, &ai, &frames[i].mset) == VK_SUCCESS) {
-                VkDescriptorBufferInfo bi;
-                VkWriteDescriptorSet w;
-                bi.buffer = frames[i].mcbuf;
-                bi.offset = 0;
-                bi.range = VK_WHOLE_SIZE;
-                memset(&w, 0, sizeof(w));
-                w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                w.dstSet = frames[i].mset;
-                w.dstBinding = 0;
-                w.descriptorCount = 1;
-                w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                w.pBufferInfo = &bi;
-                vkUpdateDescriptorSets(dev, 1, &w, 0, NULL);
-                if (i == FRAMES_IN_FLIGHT - 1) mesh_ok = 1;
-            }
-        }
     }
-    if (mesh_vs && !mesh_ok)
-        ps2_log("vk: native mesh buffers could not be made; meshes are drawn as GS primitives");
 
     if (make_image(1, 1, VK_FORMAT_R8G8B8A8_UNORM,
                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -2010,106 +1879,6 @@ static int vk_init(void) {
         gp.layout = present_layout;
         VKCHK(vkCreateGraphicsPipelines(dev, pipe_cache, 1, &gp, NULL,
                                         &present_pipe));
-
-        {   VkFormat rgba8 = VK_FORMAT_R8G8B8A8_UNORM;
-            VkPushConstantRange r;
-            VkPipelineLayoutCreateInfo li;
-            VkDescriptorSetLayout sl[2] = { deslayout, deslayout };
-            snprintf(spv, sizeof(spv), "%s/rn_vis.frag.spv", base);
-            rn_vis_fs = load_spv(spv);
-            snprintf(spv, sizeof(spv), "%s/rn_sun.vert.spv", base);
-            rn_sun_vs = load_spv(spv);
-            snprintf(spv, sizeof(spv), "%s/rn_sun.frag.spv", base);
-            rn_sun_fs = load_spv(spv);
-            if (rn_vis_fs && rn_sun_vs && rn_sun_fs) {
-                memset(&r, 0, sizeof r);
-                r.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-                r.size = 48;
-                memset(&li, 0, sizeof li);
-                li.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-                li.setLayoutCount = 2;
-                li.pSetLayouts = sl;
-                li.pushConstantRangeCount = 1;
-                li.pPushConstantRanges = &r;
-                if (vkCreatePipelineLayout(dev, &li, NULL, &rn_vis_layout) == VK_SUCCESS
-                    && vkCreatePipelineLayout(dev, &li, NULL, &rn_sun_layout) == VK_SUCCESS
-                    && make_image(1, 1, rgba8,
-                                  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                                  | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                  VK_IMAGE_ASPECT_COLOR_BIT, &rn_vis_img,
-                                  &rn_vis_mem, &rn_vis_view) == 0
-                    && (rn_vis_set = alloc_set_s(rn_vis_view, sampler_point))) {
-                    st[1].module = rn_vis_fs;
-                    rci.pColorAttachmentFormats = &rgba8;
-                    rci.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-                    gp.pDepthStencilState = NULL;
-                    gp.layout = rn_vis_layout;
-                    cba.blendEnable = VK_FALSE;
-                    cba.colorWriteMask = 0xF;
-                    if (vkCreateGraphicsPipelines(dev, pipe_cache, 1, &gp, NULL,
-                                                  &rn_vis_pipe) == VK_SUCCESS) {
-                        VkVertexInputBindingDescription bind;
-                        VkVertexInputAttributeDescription at[5];
-                        VkPipelineVertexInputStateCreateInfo svin;
-                        VkPipelineColorBlendAttachmentState sba = cba;
-                        VkPipelineColorBlendStateCreateInfo scb = cb;
-                        VkGraphicsPipelineCreateInfo sgp = gp;
-                        VkPipelineShaderStageCreateInfo sst[2];
-                        bind.binding = 0;
-                        bind.stride = sizeof(ps2_vk_vertex);
-                        bind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-                        at[0].location = 0; at[0].binding = 0;
-                        at[0].format = VK_FORMAT_R32G32B32_SFLOAT; at[0].offset = 0;
-                        at[1].location = 1; at[1].binding = 0;
-                        at[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; at[1].offset = 12;
-                        at[2].location = 2; at[2].binding = 0;
-                        at[2].format = VK_FORMAT_R32G32B32_SFLOAT; at[2].offset = 28;
-                        at[3].location = 3; at[3].binding = 0;
-                        at[3].format = VK_FORMAT_R32_SFLOAT; at[3].offset = 40;
-                        at[4].location = 4; at[4].binding = 0;
-                        at[4].format = VK_FORMAT_R32_UINT; at[4].offset = 44;
-                        memset(&svin, 0, sizeof svin);
-                        svin.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-                        svin.vertexBindingDescriptionCount = 1;
-                        svin.pVertexBindingDescriptions = &bind;
-                        svin.vertexAttributeDescriptionCount = 5;
-                        svin.pVertexAttributeDescriptions = at;
-                        sba.blendEnable = VK_TRUE;
-                        sba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                        sba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-                        sba.colorBlendOp = VK_BLEND_OP_ADD;
-                        sba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-                        sba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-                        sba.alphaBlendOp = VK_BLEND_OP_ADD;
-                        sba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT
-                                           | VK_COLOR_COMPONENT_G_BIT
-                                           | VK_COLOR_COMPONENT_B_BIT;
-                        scb.pAttachments = &sba;
-                        sst[0] = st[0]; sst[1] = st[1];
-                        sst[0].module = rn_sun_vs;
-                        sst[1].module = rn_sun_fs;
-                        sgp.pStages = sst;
-                        sgp.pVertexInputState = &svin;
-                        sgp.pColorBlendState = &scb;
-                        sgp.layout = rn_sun_layout;
-                        if (vkCreateGraphicsPipelines(dev, pipe_cache, 1, &sgp,
-                                                      NULL, &rn_sun_pipe) == VK_SUCCESS)
-                            rn_native_ok = 1;
-                    }
-                    cba.blendEnable = VK_FALSE;
-                    cba.colorWriteMask = 0xF;
-                }
-            }
-            if (!rn_native_ok)
-                ps2_log("vk: native passes unavailable (rn_vis.frag / rn_sun.vert / "
-                        "rn_sun.frag missing or refused); claimed draws are dropped "
-                        "without a replacement");
-            st[1].module = present_fs;
-            gp.layout = present_layout;
-            gp.pDepthStencilState = NULL;
-            rci.pColorAttachmentFormats = &swap_format;
-            rci.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-        }
 
         if (colclip_ok) {
             VkPipelineDepthStencilStateCreateInfo ds;
@@ -2681,195 +2450,10 @@ static void colclip_resolve(VkCommandBuffer cmd, vk_target *t, vk_target *zt) {
     vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
-typedef struct {
-    float box[4];
-    float sun_z;
-    float use_alpha;
-    float pad[6];
-} rn_vis_push;
-typedef struct {
-    float inv_size[2];
-    float tex_size[2];
-    u32 pass, wrap, point, use_vis;
-    float pad[4];
-} rn_sun_push;
-
-static void native_pass(VkCommandBuffer cmd, vk_frame *fr, const vk_draw *d) {
-    vk_target *t, *zs;
-    int use_vis = 0;
-    VkViewport vp;
-    VkRect2D sc;
-    if (!rn_native_ok || d->rt >= RT_SLOTS) return;
-    t = &rts[d->rt];
-    zs = &rts[d->zrt < RT_SLOTS ? d->zrt : d->rt];
-    if (!t->created || !zs->created) return;
-    if (d->tex == 0xFFFF || d->tex >= ntextures || !textures[d->tex].set) return;
-
-    if (d->nbox[2] > d->nbox[0] && d->nbox[3] > d->nbox[1]
-        && zs->dlayout != VK_IMAGE_LAYOUT_UNDEFINED) {
-        VkDescriptorSet aset = 0;
-        rn_vis_push vpc;
-        VkRenderingAttachmentInfo col;
-        VkRenderingInfo ri;
-        if (zs == t && t->layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
-            aset = target_snapshot(cmd, t);
-        else if (zs->layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-            aset = zs->set;
-        if (rendering_open) { vkCmdEndRendering(cmd); rendering_open = 0; }
-        if (zs->dlayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            barrier(cmd, zs->depth, VK_IMAGE_ASPECT_DEPTH_BIT, zs->dlayout,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_SHADER_READ_BIT);
-            zs->dlayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        }
-        barrier(cmd, rn_vis_img, VK_IMAGE_ASPECT_COLOR_BIT, rn_vis_layout_state,
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        memset(&col, 0, sizeof col);
-        col.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        col.imageView = rn_vis_view;
-        col.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        col.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        col.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        memset(&ri, 0, sizeof ri);
-        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.extent.width = 1;
-        ri.renderArea.extent.height = 1;
-        ri.layerCount = 1;
-        ri.colorAttachmentCount = 1;
-        ri.pColorAttachments = &col;
-        vkCmdBeginRendering(cmd, &ri);
-        memset(&vp, 0, sizeof vp);
-        vp.width = 1.0f; vp.height = 1.0f; vp.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &vp);
-        memset(&sc, 0, sizeof sc);
-        sc.extent.width = 1; sc.extent.height = 1;
-        vkCmdSetScissor(cmd, 0, 1, &sc);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, rn_vis_pipe);
-        {   VkDescriptorSet sets[2];
-            sets[0] = zs->dset;
-            sets[1] = aset ? aset : white_set;
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    rn_vis_layout, 0, 2, sets, 0, NULL);
-        }
-        memset(&vpc, 0, sizeof vpc);
-        for (int i = 0; i < 4; i++) vpc.box[i] = d->nbox[i] * (float)rt_scale;
-        vpc.sun_z = d->nsun_z;
-        vpc.use_alpha = aset ? 1.0f : 0.0f;
-        vkCmdPushConstants(cmd, rn_vis_layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof vpc, &vpc);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
-        vkCmdEndRendering(cmd);
-        barrier(cmd, rn_vis_img, VK_IMAGE_ASPECT_COLOR_BIT,
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                VK_ACCESS_2_SHADER_READ_BIT);
-        rn_vis_layout_state = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        use_vis = 1;
-        stat_native_vis++;
-    } else if (rn_vis_layout_state == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        use_vis = 1;
-        stat_native_vis_kept++;
-    } else {
-        stat_native_vis_none++;
-        return;
-    }
-
-    if (rendering_open) { vkCmdEndRendering(cmd); rendering_open = 0; }
-    if (t->layout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-        barrier(cmd, t->color, VK_IMAGE_ASPECT_COLOR_BIT, t->layout,
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        t->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    }
-    {
-        VkRenderingAttachmentInfo col;
-        VkRenderingInfo ri;
-        rn_sun_push spc;
-        memset(&col, 0, sizeof col);
-        col.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        col.imageView = t->cview;
-        col.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        col.loadOp = t->drawn ? VK_ATTACHMENT_LOAD_OP_LOAD
-                              : VK_ATTACHMENT_LOAD_OP_CLEAR;
-        col.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        memset(&ri, 0, sizeof ri);
-        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.extent.width = rt_w * rt_scale;
-        ri.renderArea.extent.height = rt_h * rt_scale;
-        ri.layerCount = 1;
-        ri.colorAttachmentCount = 1;
-        ri.pColorAttachments = &col;
-        vkCmdBeginRendering(cmd, &ri);
-        t->drawn = 1;
-        memset(&vp, 0, sizeof vp);
-        vp.width = (float)(rt_w * rt_scale);
-        vp.height = (float)(rt_h * rt_scale);
-        vp.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &vp);
-        {
-            s32 x0 = d->scissor[0] < 0 ? 0 : d->scissor[0];
-            s32 y0 = d->scissor[2] < 0 ? 0 : d->scissor[2];
-            s32 x1 = d->scissor[1] + 1, y1 = d->scissor[3] + 1;
-            if (x0 > (s32)rt_w - 1) x0 = (s32)rt_w - 1;
-            if (y0 > (s32)rt_h - 1) y0 = (s32)rt_h - 1;
-            if (x1 > (s32)rt_w) x1 = (s32)rt_w;
-            if (y1 > (s32)rt_h) y1 = (s32)rt_h;
-            if (x1 <= x0) x1 = x0 + 1;
-            if (y1 <= y0) y1 = y0 + 1;
-            sc.offset.x = x0 * (s32)rt_scale;
-            sc.offset.y = y0 * (s32)rt_scale;
-            sc.extent.width = (u32)(x1 - x0) * rt_scale;
-            sc.extent.height = (u32)(y1 - y0) * rt_scale;
-            vkCmdSetScissor(cmd, 0, 1, &sc);
-            t->snap_valid = 0;
-            if (x0 < t->sdx0) t->sdx0 = x0;
-            if (y0 < t->sdy0) t->sdy0 = y0;
-            if (x1 > t->sdx1) t->sdx1 = x1;
-            if (y1 > t->sdy1) t->sdy1 = y1;
-        }
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, rn_sun_pipe);
-        {   VkDescriptorSet sets[2];
-            VkDeviceSize zero = 0;
-            sets[0] = textures[d->tex].set;
-            sets[1] = use_vis ? rn_vis_set : white_set;
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    rn_sun_layout, 0, 2, sets, 0, NULL);
-            vkCmdBindVertexBuffers(cmd, 0, 1, &fr->vbuf, &zero);
-        }
-        memset(&spc, 0, sizeof spc);
-        spc.inv_size[0] = 2.0f / (float)rt_w;
-        spc.inv_size[1] = 2.0f / (float)rt_h;
-        spc.tex_size[0] = d->tex_w > 0.0f ? d->tex_w : 1.0f;
-        spc.tex_size[1] = d->tex_h > 0.0f ? d->tex_h : 1.0f;
-        spc.pass = d->native;
-        spc.wrap = d->wrap;
-        spc.point = d->npoint;
-        spc.use_vis = (u32)use_vis;
-        vkCmdPushConstants(cmd, rn_sun_layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof spc, &spc);
-        vkCmdDraw(cmd, d->count, 1, d->first, 0);
-        vkCmdEndRendering(cmd);
-        stat_native_draws++;
-    }
-}
-
 static void snap_sprite_rows(ps2_vk_vertex *out) {
     for (u32 i = 0; i < rep_ndraws; i++) {
         const vk_draw *d = &rep_draws[i];
-        if (d->topology != PS2_VK_TRIANGLES || d->native == PS2_VK_NATIVE_MESH) continue;
+        if (d->topology != PS2_VK_TRIANGLES) continue;
         if (d->first > rep_nverts || d->count > rep_nverts - d->first) continue;
         for (u32 k = d->first; k + 3u <= d->first + d->count; k += 3u) {
             const ps2_vk_vertex *v = &rep_verts[k];
@@ -2892,586 +2476,6 @@ static void snap_sprite_rows(ps2_vk_vertex *out) {
             }
         }
     }
-}
-
-typedef struct {
-    vk_draw *d;
-    ps2_vk_vertex *v;
-    u32 nd, nv;
-    int overflow;
-} ov_list;
-static ov_list ov_lists[2];
-static int ov_accum;
-static u8 *ov_eligible;
-static int ov_on = -1;
-static int ov_list_log = -1;
-static vk_target ov_comp;
-static u32 ov_k, ov_cw, ov_ch;
-static int ov_show;
-static int ov_seen;
-static int ov_presented;
-static u64 stat_ov_frames, stat_ov_draws, stat_ov_inplace, stat_ov_rgbreads;
-
-static int ov_enabled(void) {
-    if (ov_on < 0) {
-        const char *e = getenv("PS2_RN_2D_OVERLAY");
-        ov_on = !(e && *e == '0');
-        for (int i = 0; ov_on && i < 2; i++) {
-            ov_lists[i].d = (vk_draw *)malloc(sizeof(vk_draw) * OV_MAX_DRAWS);
-            ov_lists[i].v = (ps2_vk_vertex *)malloc(sizeof(ps2_vk_vertex) * OV_MAX_VERTS);
-            if (!ov_lists[i].d || !ov_lists[i].v) ov_on = 0;
-        }
-        ov_eligible = ov_on ? (u8 *)malloc(VK_MAX_DRAWS) : NULL;
-        if (!ov_eligible) ov_on = 0;
-    }
-    return ov_on;
-}
-
-static int ov_is_composite(const vk_draw *d) {
-    return d->tex_rt == 1u && !d->tex_depth && d->rt != 0u && d->rt == present_rt;
-}
-
-#define OV_CELL 16
-#define OV_CW   (RT_MAX / OV_CELL)
-#define OV_CH   (RT_MAX / OV_CELL)
-static u8 ov_grid[OV_CH][OV_CW];
-#define OV_HOLD 30u
-static u64 ov_hold[OV_CH][OV_CW];
-
-static int ov_held(s32 x0, s32 y0, s32 x1, s32 y1) {
-    for (s32 y = y0; y <= y1; y++)
-        for (s32 x = x0; x <= x1; x++)
-            if (ov_hold[y][x] && ov_hold[y][x] + OV_HOLD > stat_frames) return 1;
-    return 0;
-}
-
-static void ov_hold_mark(s32 x0, s32 y0, s32 x1, s32 y1) {
-    for (s32 y = y0; y <= y1; y++)
-        for (s32 x = x0; x <= x1; x++)
-            ov_hold[y][x] = stat_frames ? stat_frames : 1u;
-}
-
-static int ov_additive(const vk_draw *d) {
-    u32 b = d->blend;
-    return (b & 0x100u) && (b & 3u) == 0u && ((b >> 2) & 3u) == 2u
-        && ((b >> 6) & 3u) == 1u;
-}
-
-static const u8 *screen_mesh_rec(const vk_draw *d, u32 k) {
-    u32 ix;
-    if (d->native != PS2_VK_NATIVE_MESH || !rep_mesh || d->mblock >= rep_mesh->nblocks
-        || rep_mesh->blocks[d->mblock].prog != 5u || d->first + k >= rep_mesh->nidx)
-        return NULL;
-    ix = rep_mesh->idx[d->first + k] + d->mvbase;
-    return ix < rep_mesh->nrecs ? rep_mesh->recs + (size_t)ix * MESH_REC_BYTES : NULL;
-}
-
-static void ov_bbox(const vk_draw *d, s32 *x0, s32 *y0, s32 *x1, s32 *y1) {
-    float bx0 = 1e9f, by0 = 1e9f, bx1 = -1e9f, by1 = -1e9f;
-    if (d->native == PS2_VK_NATIVE_MESH && !screen_mesh_rec(d, 0)) {
-        bx0 = by0 = -1e9f; bx1 = by1 = 1e9f;
-    }
-    for (u32 k = 0; k < d->count && d->native == PS2_VK_NATIVE_MESH; k++) {
-        const u8 *r = screen_mesh_rec(d, k);
-        float p[2];
-        if (!r) break;
-        memcpy(p, r, 8);
-        if (p[0] < bx0) bx0 = p[0];
-        if (p[0] > bx1) bx1 = p[0];
-        if (p[1] < by0) by0 = p[1];
-        if (p[1] > by1) by1 = p[1];
-    }
-    for (u32 k = 0; k < d->count && d->native != PS2_VK_NATIVE_MESH; k++) {
-        const ps2_vk_vertex *v = &rep_verts[d->first + k];
-        if (v->x < bx0) bx0 = v->x;
-        if (v->x > bx1) bx1 = v->x;
-        if (v->y < by0) by0 = v->y;
-        if (v->y > by1) by1 = v->y;
-    }
-    bx0 -= 1.0f; by0 -= 1.0f; bx1 += 1.0f; by1 += 1.0f;
-    if (bx0 < (float)d->scissor[0]) bx0 = (float)d->scissor[0];
-    if (by0 < (float)d->scissor[2]) by0 = (float)d->scissor[2];
-    if (bx1 > (float)d->scissor[1] + 1.0f) bx1 = (float)d->scissor[1] + 1.0f;
-    if (by1 > (float)d->scissor[3] + 1.0f) by1 = (float)d->scissor[3] + 1.0f;
-    *x0 = bx0 < 0.0f ? 0 : (s32)bx0 / OV_CELL;
-    *y0 = by0 < 0.0f ? 0 : (s32)by0 / OV_CELL;
-    *x1 = bx1 < 0.0f ? -1 : (s32)bx1 / OV_CELL;
-    *y1 = by1 < 0.0f ? -1 : (s32)by1 / OV_CELL;
-    /* signed compare: -1 marks an empty box and must stay -1 */
-    if (*x1 >= (s32)OV_CW) *x1 = (s32)OV_CW - 1;
-    if (*y1 >= (s32)OV_CH) *y1 = (s32)OV_CH - 1;
-}
-
-static int ov_colourless(const vk_draw *d) {
-    if (!((d->depth >> 3) & 1u)) return 1;
-    if ((d->blend & 0x1FFu) == 0x144u && d->tex == 0xFFFF && !d->tex_rt
-        && d->native != PS2_VK_NATIVE_MESH) {
-        for (u32 k = 0; k < d->count; k++)
-            if (rep_verts[d->first + k].a != 0.0f) return 0;
-        return 1;
-    }
-    if ((d->blend & 0x1FFu) == 0x144u && d->tex == 0xFFFF && !d->tex_rt
-        && screen_mesh_rec(d, 0)) {
-        for (u32 k = 0; k < d->count; k++) {
-            const u8 *r = screen_mesh_rec(d, k);
-            s32 a;
-            if (!r) return 0;
-            memcpy(&a, r + 32 + 12, 4);
-            if (a != 0) return 0;
-        }
-        return 1;
-    }
-    return 0;
-}
-
-static void ov_mark(s32 x0, s32 y0, s32 x1, s32 y1, int additive) {
-    for (s32 y = y0; y <= y1; y++)
-        for (s32 x = x0; x <= x1; x++)
-            ov_grid[y][x] |= additive ? 2u : 1u;
-}
-
-static int ov_hit(s32 x0, s32 y0, s32 x1, s32 y1, int additive) {
-    u8 mask = additive ? 1u : 3u;
-    for (s32 y = y0; y <= y1; y++)
-        for (s32 x = x0; x <= x1; x++)
-            if (ov_grid[y][x] & mask) return 1;
-    return 0;
-}
-
-static int ov_safe(const vk_draw *d) {
-    u32 dk = d->depth;
-    if (d->native && d->native != PS2_VK_NATIVE_2D && !screen_mesh_rec(d, 0)) return 0;
-    if (d->tex_self || d->tex_rt == 1u || d->date) return 0;
-    if ((d->blend & 0x100u) && ((d->blend >> 4) & 3u) == 1u) return 0;
-    if ((dk >> 9) & 3u) return 0;
-    if ((dk & 3u) != 1u) return 0;
-    return 1;
-}
-
-static int ov_reads_slot0_rgb(const vk_draw *d) {
-    u32 tfx = d->frag_flags & 3u;
-    if (d->tex_rt != 1u || d->tex_depth) return 0;
-    if (!((d->depth >> 3) & 1u)) return 0;
-    if (((d->depth >> 5) & 7u) == 7u) return 0;
-    if (d->native == PS2_VK_NATIVE_MESH) {
-        if (!screen_mesh_rec(d, 0) || tfx == 1u || ((d->frag_flags >> 24) & 1u)) return 1;
-        for (u32 k = 0; k < d->count; k++) {
-            const u8 *r = screen_mesh_rec(d, k);
-            s32 c[3];
-            if (!r) return 1;
-            memcpy(c, r + 32, 12);
-            if (c[0] || c[1] || c[2]) return 1;
-        }
-        return 0;
-    }
-    if (tfx == 1u || ((d->frag_flags >> 24) & 1u)) return 1;
-    for (u32 k = 0; k < d->count; k++) {
-        const ps2_vk_vertex *v = &rep_verts[d->first + k];
-        if (v->r != 0.0f || v->g != 0.0f || v->b != 0.0f) return 1;
-    }
-    return 0;
-}
-
-static void ov_scan(void) {
-    static int log_left = -1;
-    u32 seg_end = rep_ndraws;
-    if (log_left < 0) {
-        const char *e = getenv("PS2_RN_OV_LOG");
-        log_left = e ? atoi(e) : 0;
-    }
-    memset(ov_eligible, 0, rep_ndraws);
-    while (seg_end > 0) {
-        u32 seg_start = seg_end, first2d = ~0u;
-        int tail = 1;
-        while (seg_start > 0 && !ov_is_composite(&rep_draws[seg_start - 1]))
-            seg_start--;
-        for (u32 i = seg_start; i < seg_end; i++)
-            if (rep_draws[i].native == PS2_VK_NATIVE_2D && rep_draws[i].rt == 0u) {
-                first2d = i;
-                break;
-            }
-        if (first2d != ~0u) {
-            ov_seen = 1;
-            memset(ov_grid, 0, sizeof ov_grid);
-            for (u32 i = seg_end; i-- > first2d;) {
-                const vk_draw *d = &rep_draws[i];
-                int is2d = d->native == PS2_VK_NATIVE_2D;
-                s32 x0, y0, x1, y1;
-                if (d->rt != 0u) {
-                    if (ov_reads_slot0_rgb(d)) {
-                        tail = 0;
-                        memset(ov_grid, 1, sizeof ov_grid);
-                        stat_ov_rgbreads++;
-                    }
-                    continue;
-                }
-                if (!is2d && ov_colourless(d)) continue;
-                ov_bbox(d, &x0, &y0, &x1, &y1);
-                if (tail && ov_safe(d) && !(is2d && ov_held(x0, y0, x1, y1))) {
-                    ov_eligible[i] = 1;
-                    continue;
-                }
-                if (tail && log_left > 0) {
-                    ps2_log("ov: frame %llu tail ends at draw %u of %u: emitter %u "
-                            "native=%u texrt=%u self=%u date=%u blend=%03X "
-                            "depth=%03X", (unsigned long long)stat_frames, i,
-                            rep_ndraws, d->emitter, d->native, d->tex_rt,
-                            d->tex_self, d->date, d->blend, d->depth);
-                    log_left--;
-                }
-                tail = 0;
-                if (is2d && ov_safe(d) && !ov_held(x0, y0, x1, y1)
-                    && !ov_hit(x0, y0, x1, y1, ov_additive(d))) {
-                    ov_eligible[i] = 1;
-                    continue;
-                }
-                if (is2d && (!ov_safe(d) || ov_hit(x0, y0, x1, y1, ov_additive(d))))
-                    ov_hold_mark(x0, y0, x1, y1);
-                if (is2d) stat_ov_inplace++;
-                if (d->tex_rt == 1u) memset(ov_grid, 1, sizeof ov_grid);
-                else ov_mark(x0, y0, x1, y1, ov_additive(d));
-            }
-        }
-        seg_end = seg_start ? seg_start - 1u : 0u;
-    }
-    {
-        static int init;
-        static s32 rx0, ry0, rx1, ry1;
-        static int frames_left;
-        if (!init) {
-            const char *e = getenv("PS2_RN_OV_REGION");
-            init = 1;
-            if (e && sscanf(e, "%d,%d,%d,%d", &rx0, &ry0, &rx1, &ry1) == 4) frames_left = 600;
-        }
-        if (frames_left > 0) {
-            u32 lifted = 0, inplace = 0;
-            frames_left--;
-            for (u32 i = 0; i < rep_ndraws; i++) {
-                const vk_draw *d = &rep_draws[i];
-                float bx0 = 1e9f, by0 = 1e9f, bx1 = -1e9f, by1 = -1e9f;
-                if (d->native != PS2_VK_NATIVE_2D || d->rt != 0u) continue;
-                for (u32 k = 0; k < d->count; k++) {
-                    const ps2_vk_vertex *vv = &rep_verts[d->first + k];
-                    if (vv->x < bx0) bx0 = vv->x;
-                    if (vv->x > bx1) bx1 = vv->x;
-                    if (vv->y < by0) by0 = vv->y;
-                    if (vv->y > by1) by1 = vv->y;
-                }
-                if (bx1 < (float)rx0 || bx0 > (float)rx1 || by1 < (float)ry0 || by0 > (float)ry1)
-                    continue;
-                if (ov_eligible[i]) lifted++;
-                else inplace++;
-            }
-            ps2_log("ov-region: frame %llu lifted %u in place %u",
-                    (unsigned long long)stat_frames, lifted, inplace);
-        }
-    }
-}
-
-static void ov_add(const vk_draw *d) {
-    ov_list *l = &ov_lists[ov_accum];
-    if (l->nd >= OV_MAX_DRAWS || l->nv + d->count > OV_MAX_VERTS) {
-        l->overflow = 1;
-        return;
-    }
-    l->d[l->nd] = *d;
-    l->d[l->nd].first = l->nv;
-    if (d->native == PS2_VK_NATIVE_MESH) {
-        for (u32 k = 0; k < d->count; k++) {
-            const u8 *r = screen_mesh_rec(d, k);
-            ps2_vk_vertex *v = &l->v[l->nv + k];
-            float p[4], uv[4];
-            s32 nrm[4], c[4];
-            if (!r) { l->overflow = 1; return; }
-            memcpy(p, r, 16); memcpy(nrm, r + 16, 16);
-            memcpy(c, r + 32, 16); memcpy(uv, r + 48, 16);
-            v->x = p[0]; v->y = p[1]; v->z = p[2];
-            v->r = (float)c[0]; v->g = (float)c[1]; v->b = (float)c[2]; v->a = (float)c[3];
-            v->s = uv[0]; v->t = uv[1]; v->q = uv[2]; v->fog = uv[3];
-            v->round_uv = (u32)nrm[0];
-        }
-        l->d[l->nd].native = PS2_VK_NATIVE_2D;
-        l->d[l->nd].mcull = 0;
-    } else {
-        memcpy(l->v + l->nv, rep_verts + d->first, sizeof(ps2_vk_vertex) * d->count);
-    }
-    l->nv += d->count;
-    l->nd++;
-}
-
-static void ov_promote(void) {
-    ov_accum = 1 - ov_accum;
-    ov_lists[ov_accum].nd = 0;
-    ov_lists[ov_accum].nv = 0;
-    ov_lists[ov_accum].overflow = 0;
-}
-
-static void ov_prepare(void) {
-    static int env_k = -1;
-    u32 k, big = rt_w > rt_h ? rt_w : rt_h, lim;
-    if (env_k < 0) {
-        const char *e = getenv("PS2_RN_2D_SCALE");
-        env_k = e && atoi(e) > 0 ? atoi(e) : 0;
-    }
-    ov_show = 0;
-    if (!ov_enabled() || !ov_seen || !present_h) return;
-    k = env_k > 0 ? (u32)env_k
-                  : (swap_extent.height + present_h - 1u) / present_h;
-    if (k < rt_scale) k = rt_scale;
-    lim = max_image_dim / (big ? big : 1u);
-    if (k > lim) k = lim;
-    if (k > RT_SCALE_MAX) k = RT_SCALE_MAX;
-    if (k < 1u) k = 1u;
-    if (!ov_comp.created || ov_k != k || ov_cw != rt_w || ov_ch != rt_h) {
-        vkDeviceWaitIdle(dev);
-        destroy_target_images(&ov_comp);
-        if (make_image(rt_w * k, rt_h * k, VK_FORMAT_R8G8B8A8_UNORM,
-                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                       | VK_IMAGE_USAGE_SAMPLED_BIT
-                       | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-                       | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                       VK_IMAGE_ASPECT_COLOR_BIT,
-                       &ov_comp.color, &ov_comp.cmem, &ov_comp.cview) != 0
-            || make_image(rt_w * k, rt_h * k, VK_FORMAT_D32_SFLOAT,
-                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                          VK_IMAGE_ASPECT_DEPTH_BIT,
-                          &ov_comp.depth, &ov_comp.dmem, &ov_comp.dview) != 0) {
-            destroy_target_images(&ov_comp);
-            ov_on = 0;
-            ps2_log("vk: the 2D overlay target (%ux%u) could not be made; "
-                    "native 2D is drawn in place", rt_w * k, rt_h * k);
-            return;
-        }
-        if (ov_comp.set) rebind_set(ov_comp.set, ov_comp.cview);
-        else ov_comp.set = alloc_set(ov_comp.cview);
-        ov_comp.layout = VK_IMAGE_LAYOUT_UNDEFINED;
-        ov_comp.dlayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        ov_comp.created = 1;
-        ov_k = k; ov_cw = rt_w; ov_ch = rt_h;
-        ps2_log("vk: 2D overlay composed at %ux (%ux%u)", k, rt_w * k, rt_h * k);
-    }
-    ov_show = ov_comp.set != VK_NULL_HANDLE;
-}
-
-static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
-    ov_list *r = &ov_lists[1 - ov_accum];
-    vk_target *src = &rts[present_rt < RT_SLOTS && rts[present_rt].created
-                          ? present_rt : 0];
-    u32 k = ov_k, iw = rt_w * k, ih = rt_h * k;
-    float line_w = (float)k, point_sz = (float)k;
-    VkImageBlit b;
-    VkViewport vp;
-    VkRenderingAttachmentInfo col, dep;
-    VkRenderingInfo ri;
-    VkDeviceSize zero = 0;
-    VkPipeline bound = VK_NULL_HANDLE;
-    if (!ov_show || !r->nd || !src->created || src->layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-        ov_show = 0;
-        return;
-    }
-    if (line_w > max_line_width) line_w = max_line_width;
-    if (point_sz > max_point_size) point_sz = max_point_size;
-    if (rendering_open) { vkCmdEndRendering(cmd); rendering_open = 0; }
-
-    memset(&b, 0, sizeof b);
-    b.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    b.srcSubresource.layerCount = 1;
-    b.dstSubresource = b.srcSubresource;
-    b.srcOffsets[1].x = (s32)(rt_w * rt_scale);
-    b.srcOffsets[1].y = (s32)(rt_h * rt_scale);
-    b.srcOffsets[1].z = 1;
-    b.dstOffsets[1].x = (s32)iw;
-    b.dstOffsets[1].y = (s32)ih;
-    b.dstOffsets[1].z = 1;
-    barrier(cmd, src->color, VK_IMAGE_ASPECT_COLOR_BIT, src->layout,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
-            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-    barrier(cmd, ov_comp.color, VK_IMAGE_ASPECT_COLOR_BIT, ov_comp.layout,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
-            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-    vkCmdBlitImage(cmd, src->color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                   ov_comp.color, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b,
-                   k == rt_scale ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
-    barrier(cmd, src->color, VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, src->layout,
-            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0);
-    barrier(cmd, ov_comp.color, VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    ov_comp.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    barrier(cmd, ov_comp.depth, VK_IMAGE_ASPECT_DEPTH_BIT, ov_comp.dlayout,
-            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-    ov_comp.dlayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-
-    memset(&col, 0, sizeof col);
-    col.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    col.imageView = ov_comp.cview;
-    col.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    col.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    col.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    dep = col;
-    dep.imageView = ov_comp.dview;
-    dep.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    dep.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    dep.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    dep.clearValue.depthStencil.depth = 0.0f;
-    memset(&ri, 0, sizeof ri);
-    ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    ri.renderArea.extent.width = iw;
-    ri.renderArea.extent.height = ih;
-    ri.layerCount = 1;
-    ri.colorAttachmentCount = 1;
-    ri.pColorAttachments = &col;
-    ri.pDepthAttachment = &dep;
-    vkCmdBeginRendering(cmd, &ri);
-
-    memcpy(fr->ovptr, r->v, sizeof(ps2_vk_vertex) * r->nv);
-    {   static int snap = -1;
-        if (snap < 0) {
-            const char *e = getenv("PS2_OV_SNAP");
-            snap = !(e && *e == '0');
-        }
-        if (!snap) k = 1u;
-    }
-    if (k > 1u) {
-        ps2_vk_vertex *out = (ps2_vk_vertex *)fr->ovptr;
-        for (u32 i = 0; i < r->nd; i++) {
-            const vk_draw *d = &r->d[i];
-            if (d->topology != PS2_VK_TRIANGLES) continue;
-            for (u32 j = d->first; j + 3u <= d->first + d->count; j += 3u) {
-                const ps2_vk_vertex *v = &r->v[j];
-                float y0, y1, t0, t1, p0, p1, dt;
-                if (!(v[0].round_uv & PS2_VK_RUV_SPRITE)) continue;
-                y0 = y1 = v[0].y;
-                t0 = t1 = v[0].t;
-                for (int m = 1; m < 3; m++) {
-                    if (v[m].y < y0) { y0 = v[m].y; t0 = v[m].t; }
-                    if (v[m].y > y1) { y1 = v[m].y; t1 = v[m].t; }
-                }
-                p0 = ceilf(y0 - 0.5f);
-                p1 = ceilf(y1 - 0.5f);
-                if (!(y1 > y0) || !(p1 > p0)) continue;
-                dt = (t1 - t0) / (y1 - y0);
-                for (int m = 0; m < 3; m++) {
-                    int top = v[m].y == y0;
-                    out[j + m].y = top ? p0 : p1;
-                    out[j + m].t = top ? t0 + (p0 - y0) * dt : t1 + (p1 - y1) * dt;
-                }
-            }
-        }
-    }
-    k = ov_k;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &fr->ovbuf, &zero);
-    memset(&vp, 0, sizeof vp);
-    vp.width = (float)iw;
-    vp.height = (float)ih;
-    vp.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &vp);
-
-    for (u32 i = 0; i < r->nd; i++) {
-        const vk_draw *d = &r->d[i];
-        VkPipeline pipe = get_pipeline(d->topology, d->blend, d->depth);
-        VkDescriptorSet sets[2];
-        VkRect2D sc;
-        gs_push pc;
-        float bc[4];
-        if (!pipe) continue;
-        if (pipe != bound) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
-            vkCmdSetLineWidth(cmd, line_w);
-            bound = pipe;
-        }
-        sets[0] = d->tex != 0xFFFF && d->tex < ntextures && textures[d->tex].set
-                ? textures[d->tex].set : white_set;
-        if (d->tex_rt && d->tex_rt <= RT_SLOTS) {
-            vk_target *t = &rts[d->tex_rt - 1];
-            VkImageLayout l = d->tex_depth ? t->dlayout : t->layout;
-            if (t->created && l == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-                sets[0] = d->tex_depth ? t->dset : t->set;
-        }
-        sets[1] = white_set;
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gs_layout,
-                                0, 2, sets, 0, NULL);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gs_layout,
-                                3, 1, &white_set, 0, NULL);
-        bc[0] = bc[1] = bc[2] = bc[3] = (float)d->fix / 128.0f;
-        vkCmdSetBlendConstants(cmd, bc);
-        {
-            s32 x0 = d->scissor[0] < 0 ? 0 : d->scissor[0];
-            s32 y0 = d->scissor[2] < 0 ? 0 : d->scissor[2];
-            s32 x1 = d->scissor[1] + 1, y1 = d->scissor[3] + 1;
-            if (x0 > (s32)rt_w - 1) x0 = (s32)rt_w - 1;
-            if (y0 > (s32)rt_h - 1) y0 = (s32)rt_h - 1;
-            if (x1 > (s32)rt_w) x1 = (s32)rt_w;
-            if (y1 > (s32)rt_h) y1 = (s32)rt_h;
-            if (x1 <= x0) x1 = x0 + 1;
-            if (y1 <= y0) y1 = y0 + 1;
-            sc.offset.x = x0 * (s32)k;
-            sc.offset.y = y0 * (s32)k;
-            sc.extent.width = (u32)(x1 - x0) * k;
-            sc.extent.height = (u32)(y1 - y0) * k;
-            vkCmdSetScissor(cmd, 0, 1, &sc);
-        }
-        memset(&pc, 0, sizeof pc);
-        pc.scale = (float)k;
-        pc.point_size = point_sz;
-        pc.inv_size[0] = 2.0f / (float)rt_w;
-        pc.inv_size[1] = 2.0f / (float)rt_h;
-        pc.tex_size[0] = d->tex_w > 0.0f ? d->tex_w : 1.0f;
-        pc.tex_size[1] = d->tex_h > 0.0f ? d->tex_h : 1.0f;
-        if (d->tex_rt) {
-            pc.img_size[0] = (float)rt_w;
-            pc.img_size[1] = (float)rt_h;
-        } else if (d->tex != 0xFFFF && d->tex < ntextures) {
-            pc.img_size[0] = (float)textures[d->tex].w;
-            pc.img_size[1] = (float)textures[d->tex].h;
-        } else {
-            pc.img_size[0] = pc.img_size[1] = 1.0f;
-        }
-        pc.tex_scale = d->tex_rt ? (float)rt_scale : 1.0f;
-        pc.clut_xy = d->clut_xy;
-        pc.mip = d->mip;
-        pc.flags[0] = d->frag_flags;
-        pc.flags[1] = ((d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u)
-                    | (d->clut_tex && d->tex_rt ? 2u : 0u);
-        if (!d->tex_rt && d->tex < ntextures)
-            pc.flags[1] |= textures[d->tex].hd_scale << 2;
-        if ((d->mip & (1u << 21)) && d->clut_tex && d->clut_tex <= ntextures)
-            pc.flags[1] |= textures[d->clut_tex - 1u].hd_scale << 6;
-        pc.flags[2] = d->wrap;
-        pc.flags[3] = debug_solid;
-        pc.clamp_uv[0] = d->minu;
-        pc.clamp_uv[1] = d->maxu;
-        pc.clamp_uv[2] = d->minv;
-        pc.clamp_uv[3] = d->maxv;
-        pc.fogcol[0] = (float)((d->fogcol >> 0) & 0xFF) / 255.0f;
-        pc.fogcol[1] = (float)((d->fogcol >> 8) & 0xFF) / 255.0f;
-        pc.fogcol[2] = (float)((d->fogcol >> 16) & 0xFF) / 255.0f;
-        pc.fogcol[3] = 1.0f;
-        vkCmdPushConstants(cmd, gs_layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof pc, &pc);
-        vkCmdDraw(cmd, d->count, 1, d->first, 0);
-        stat_ov_draws++;
-    }
-    vkCmdEndRendering(cmd);
-    barrier(cmd, ov_comp.color, VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-    ov_comp.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    stat_ov_frames++;
 }
 
 /* Called after this frame's fence, before any upload uses its staging buffer.
@@ -3524,7 +2528,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
     gs_push bound_pc;
     int have_sc = 0, have_pc = 0;
     u32 bound_fix = ~0u;
-    int vb = 0, mset_ok = 0, ib_ok = 0;
+    int vb = 0;
     float line_w = (float)rt_scale, point_sz = (float)rt_scale;
     if (line_w > max_line_width) line_w = max_line_width;
     if (point_sz > max_point_size) point_sz = max_point_size;
@@ -3532,12 +2536,6 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
     if (rep_nverts) {
         memcpy(fr->vptr, rep_verts, vbytes);
         if (rt_scale > 1u) snap_sprite_rows((ps2_vk_vertex *)fr->vptr);
-    }
-    if (mesh_ok && rep_mesh && rep_mesh->nblocks) {
-        memcpy(fr->mvptr, rep_mesh->recs, (size_t)rep_mesh->nrecs * MESH_REC_BYTES);
-        memcpy(fr->miptr, rep_mesh->idx, (size_t)rep_mesh->nidx * sizeof(u32));
-        memcpy(fr->mcptr, rep_mesh->blocks,
-               (size_t)rep_mesh->nblocks * sizeof(ps2_vk_mesh_block));
     }
     fr->soff = 0;
 
@@ -3566,8 +2564,6 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         if (rep_draws[i].tex_rt && rep_draws[i].tex_rt <= RT_SLOTS)
             create_target(&rts[rep_draws[i].tex_rt - 1]);
     }
-
-    if (ov_enabled()) ov_scan();
 
     select_target(cmd, &rts[0], &rts[0]);
     cur_rt = 0;
@@ -3641,52 +2637,12 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         u32 dkey = d->depth;
         int want_clip = ((dkey >> 9) & 1u) && colclip_ok && !d->tex_self && !d->date;
 
-        if (ov_on > 0) {
-            if (ov_eligible[i]) {
-                ov_add(d);
-                dkey &= ~(1u << 3);
-                if (!((dkey >> 4) & 1u) && !((dkey >> 2) & 1u)) continue;
-            }
-            if (ov_is_composite(d)) {
-                if (vk_env_flag("PS2_RN_OV_LIST", &ov_list_log))
-                    ps2_log("ov-list: frame %llu composite at draw %u of %u into rt%u (present_rt %u), promoting %u draws",
-                            (unsigned long long)stat_frames, i, rep_ndraws, d->rt, present_rt, ov_lists[ov_accum].nd);
-                ov_promote();
-            }
-            else if (d->tex_rt == 1u && d->rt != 0u
-                     && vk_env_flag("PS2_RN_OV_LIST", &ov_list_log))
-                ps2_log("ov-list: frame %llu draw %u reads slot 0 into rt%u (present_rt %u) -- not a composite",
-                        (unsigned long long)stat_frames, i, d->rt, present_rt);
-        }
-
-        if (d->native && d->native != PS2_VK_NATIVE_2D && d->native != PS2_VK_NATIVE_MESH) {
-            if (clip_open) {
-                colclip_resolve(cmd, &rts[cur_rt], &rts[cur_zrt]);
-                clip_open = 0;
-            }
-            native_pass(cmd, fr, d);
-            if (rendering_open) { vkCmdEndRendering(cmd); rendering_open = 0; }
-            cur_rt = -1;
-            cur_zrt = -1;
-            bound_pipe = VK_NULL_HANDLE;
-            bound_sets[0] = bound_sets[1] = VK_NULL_HANDLE;
-            bound_clut = VK_NULL_HANDLE;
-            mset_ok = 0;
-            have_sc = 0;
-            have_pc = 0;
-            bound_fix = ~0u;
-            cur_fb_w = 0;
-            vb = 0;
-            continue;
-        }
-
         if (clip_open && (!want_clip || (int)d->rt != cur_rt || (int)zrt != cur_zrt)) {
             colclip_resolve(cmd, &rts[cur_rt], &rts[cur_zrt]);
             clip_open = 0;
             bound_pipe = VK_NULL_HANDLE;
             bound_sets[0] = bound_sets[1] = VK_NULL_HANDLE;
             bound_clut = VK_NULL_HANDLE;
-            mset_ok = 0;
             have_sc = 0;
             have_pc = 0;
             bound_fix = ~0u;
@@ -3710,10 +2666,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
             vb = 0;
         }
         if (!clip_open) dkey &= ~(1u << 9);
-        pipe = d->native == PS2_VK_NATIVE_MESH
-             ? get_pipeline_ex(d->topology, d->blend, dkey,
-                               1u | ((d->mcull & 2u) ? 2u : 0u), d->mcull & 1u)
-             : get_pipeline(d->topology, d->blend, dkey);
+        pipe = get_pipeline(d->topology, d->blend, dkey);
         if (!pipe) continue;
         {
             VkDescriptorSet rset = 0;
@@ -3859,7 +2812,6 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         pc.fogcol[1] = (float)((d->fogcol >> 8) & 0xFF) / 255.0f;
         pc.fogcol[2] = (float)((d->fogcol >> 16) & 0xFF) / 255.0f;
         pc.fogcol[3] = 1.0f;
-        pc.mesh_block = d->native == PS2_VK_NATIVE_MESH ? d->mblock : 0u;
         if (!have_pc || memcmp(&pc, &bound_pc, sizeof pc)) {
             vkCmdPushConstants(cmd, gs_layout,
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -3872,7 +2824,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
             float f0 = 1e9f, f1 = -1e9f, ts = 0.0f, tt = 0.0f, tq = 0.0f;
             double z0 = 1e30, z1 = -1e30;
             u32 k;
-            if (rep_verts && d->count && d->native != PS2_VK_NATIVE_MESH) {
+            if (rep_verts && d->count) {
                 for (k = 0; k < d->count; k++) {
                     const ps2_vk_vertex *v = &rep_verts[d->first + k];
                     if (v->fog < f0) f0 = v->fog;
@@ -3889,11 +2841,11 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
                 ts = rep_verts[d->first].s; tt = rep_verts[d->first].t;
                 tq = rep_verts[d->first].q;
             }
-            ps2_log("  draw %3u: seq=%u em=%u rt%u tex=%d n=%u x[%.1f..%.1f] "
+            ps2_log("  draw %3u: seq=%u rt%u tex=%d n=%u x[%.1f..%.1f] "
                     "y[%.1f..%.1f] rgba(%.0f,%.0f,%.0f,%.0f) blend=%03X fix=%u "
                     "set=%s topo=%u flags=%08X wrap=%X texrt=%u zrt=%u depth=%03X "
                     "fog[%.3f..%.3f] fogcol=%06X stq(%.3f,%.3f,%.3f) z[%.6g..%.6g]", i, d->seq,
-                    (unsigned)d->emitter, d->rt,
+                    d->rt,
                     (int)(s16)d->tex, d->count,
                     x0, x1, y0, y1, vr, vg, vb, va, d->blend, d->fix,
                     set == white_set ? "white"
@@ -3907,7 +2859,7 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
                     const char *e = getenv("PS2_TRACE_VERTS");
                     tv = e ? strtol(e, NULL, 0) : -1;
                 }
-                if (tv == (long)i && rep_verts && d->native != PS2_VK_NATIVE_MESH)
+                if (tv == (long)i && rep_verts)
                     for (u32 k = 0; k < d->count; k++) {
                         const ps2_vk_vertex *v = &rep_verts[d->first + k];
                         ps2_log("    v%-3u xyz(%.2f,%.2f,%.7g) stq(%.5g,%.5g,%.5g) "
@@ -3917,37 +2869,17 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
                     }
             }
         }
-        if (d->native == PS2_VK_NATIVE_MESH) {
+        if (vb != 1) {
             VkDeviceSize zero = 0;
-            if (!mset_ok) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gs_layout,
-                                        2, 1, &fr->mset, 0, NULL);
-                mset_ok = 1;
-            }
-            if (vb != 2) {
-                vkCmdBindVertexBuffers(cmd, 0, 1, &fr->mvbuf, &zero);
-                vb = 2;
-            }
-            if (!ib_ok) {
-                vkCmdBindIndexBuffer(cmd, fr->mibuf, 0, VK_INDEX_TYPE_UINT32);
-                ib_ok = 1;
-            }
-            vkCmdDrawIndexed(cmd, d->count, 1, d->first, (int32_t)d->mvbase, 0);
-            stat_mesh_draws++;
-        } else {
-            if (vb != 1) {
-                VkDeviceSize zero = 0;
-                if (rep_nverts) vkCmdBindVertexBuffers(cmd, 0, 1, &fr->vbuf, &zero);
-                vb = 1;
-            }
-            vkCmdDraw(cmd, d->count, 1, d->first, 0);
+            if (rep_nverts) vkCmdBindVertexBuffers(cmd, 0, 1, &fr->vbuf, &zero);
+            vb = 1;
         }
+        vkCmdDraw(cmd, d->count, 1, d->first, 0);
         stat_draws++;
     }
 
     if (clip_open) colclip_resolve(cmd, &rts[cur_rt], &rts[cur_zrt]);
     if (rendering_open) { vkCmdEndRendering(cmd); rendering_open = 0; }
-    if (ov_on > 0 && present_rt == 0u) ov_promote();
     stat_verts += rep_nverts;
 }
 
@@ -4155,8 +3087,7 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
                           : k > (float)RT_SCALE_MAX ? RT_SCALE_MAX : (u32)k;
     }
 
-    vk_target *shown = ov_show ? &ov_comp
-                     : &rts[present_rt < RT_SLOTS && rts[present_rt].created
+    vk_target *shown = &rts[present_rt < RT_SLOTS && rts[present_rt].created
                             ? present_rt : 0];
     if (shown->layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
         barrier(cmd, shown->color, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -4300,9 +3231,7 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
 
     read_w = rt_w * rt_scale;
     read_h = rt_h * rt_scale;
-    read_slot = shown == &ov_comp ? (present_rt < RT_SLOTS ? present_rt : 0u)
-                                  : (u32)(shown - rts);
-    ov_presented = shown == &ov_comp;
+    read_slot = (u32)(shown - rts);
     if (depth_buf && rts[0].created
         && rts[0].dlayout != VK_IMAGE_LAYOUT_UNDEFINED
         && (VkDeviceSize)read_w * read_h * 4u <= depth_capacity) {
@@ -4405,7 +3334,6 @@ static void draw_and_present(void) {
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkResetCommandBuffer(fr->cmd, 0);
-    if (show && !present_blank) ov_prepare(); else ov_show = 0;
     vkBeginCommandBuffer(fr->cmd, &bi);
     if (fr->timing_queries) {
         vkCmdResetQueryPool(fr->cmd, fr->timing_queries, 0, 3);
@@ -4414,7 +3342,6 @@ static void draw_and_present(void) {
     render_list(fr->cmd, fr);
     if (fr->timing_queries)
         vkCmdWriteTimestamp(fr->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, fr->timing_queries, 1);
-    if (show && ov_show) ov_compose(fr->cmd, fr);
     if (show) present_frame(fr->cmd, image_index);
     if (fr->timing_queries)
         vkCmdWriteTimestamp(fr->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, fr->timing_queries, 2);
@@ -5049,7 +3976,6 @@ static void *renderer_main(void *arg) {
         rep_draws  = pub_draws;
         rep_nverts = pub_nverts;
         rep_ndraws = pub_ndraws;
-        rep_mesh   = pub_mesh;
         present_x = pub_present_x;
         present_y = pub_present_y;
         present_w = pub_present_w;
@@ -5094,10 +4020,6 @@ int ps2_video_init(const char *title, int width, int height) {
                                                     * VK_MAX_VERTS);
             slot_draws[s] = (vk_draw *)malloc(sizeof(vk_draw) * VK_MAX_DRAWS);
             if (!slot_verts[s] || !slot_draws[s]) return -1;
-            slot_mesh[s].recs = (u8 *)malloc((size_t)MESH_MAX_VERTS * MESH_REC_BYTES);
-            slot_mesh[s].idx = (u32 *)malloc((size_t)MESH_MAX_INDICES * sizeof(u32));
-            slot_mesh[s].blocks = (ps2_vk_mesh_block *)malloc(
-                (size_t)MESH_MAX_BLOCKS * sizeof(ps2_vk_mesh_block));
         }
     }
     rec_slot  = 0;
@@ -5108,9 +4030,6 @@ int ps2_video_init(const char *title, int width, int height) {
     rep_draws = slot_draws[LIST_SLOTS - 1];
     pub_verts = rep_verts;
     pub_draws = rep_draws;
-    rec_mesh  = &slot_mesh[rec_slot];
-    rep_mesh  = &slot_mesh[LIST_SLOTS - 1];
-    pub_mesh  = rep_mesh;
 
     {
         const char *e = getenv("PS2_LOCKSTEP");
@@ -5159,7 +4078,6 @@ int ps2_vk_closed(void) {
 
 static void ps2_vk_draw_inner(int topology, const ps2_vk_state *st,
                               const ps2_vk_vertex *v, int n);
-static u16 rec_native_mark;
 /* The depth half of a colour draw into another target's Z buffer: the same
    primitives into that target with colour masked, ZTST always and Z taken
    from the colour bits as the PS2 stores them (R low byte, then G, B, A). */
@@ -5195,105 +4113,12 @@ static void zclear_draw(int topology, const ps2_vk_state *st,
 
 void ps2_vk_draw(int topology, const ps2_vk_state *st,
                  const ps2_vk_vertex *v, int n) {
-    if (ps2_vk_before_record) ps2_vk_before_record();
     PS2_PHASE_BEGIN(PS2_PH_VKDRAW);
     ps2_vk_draw_inner(topology, st, v, n);
     if (st->zclear_rt) zclear_draw(topology, st, v, n);
     PS2_PHASE_END(PS2_PH_VKDRAW);
 }
-void ps2_vk_draw_2d(int topology, const ps2_vk_state *st,
-                    const ps2_vk_vertex *v, int n) {
-    if (ps2_vk_before_record) ps2_vk_before_record();
-    PS2_PHASE_BEGIN(PS2_PH_VKDRAW);
-    rec_native_mark = PS2_VK_NATIVE_2D;
-    ps2_vk_draw_inner(topology, st, v, n);
-    rec_native_mark = 0;
-    PS2_PHASE_END(PS2_PH_VKDRAW);
-}
 
-static struct { u32 vbase, ifirst, icount, block, cull; } rec_mesh_pending;
-
-int ps2_vk_mesh_material_ok(const ps2_vk_state *st) {
-    static int sw = -1;
-    if (sw < 0) {
-        const char *e = getenv("PS2_RN_MESH_MAT");
-        sw = !(e && *e == '0');
-    }
-    if (!sw || !mesh_fs) return 0;
-    if (!st) return 1;
-    return !st->date && !st->colclip && !st->shuffle_rg && !st->tex_self
-        && !st->tex_depth && !st->zcopy && !st->fst && st->wms < 3u && st->wmt < 3u;
-}
-
-int ps2_vk_mesh_available(void) {
-    return vk_ready && mesh_ok && rec_mesh && rec_mesh->recs && rec_mesh->idx
-        && rec_mesh->blocks;
-}
-
-int ps2_vk_mesh_store(const u8 *records, u32 n_verts, const u32 *indices,
-                      u32 n_indices, u32 *vbase, u32 *ifirst) {
-    mesh_arena *a = rec_mesh;
-    if (!ps2_vk_mesh_available()) return -1;
-    if (a->nrecs + n_verts > MESH_MAX_VERTS || a->nidx + n_indices > MESH_MAX_INDICES) {
-        stat_mesh_overflow++;
-        return -1;
-    }
-    memcpy(a->recs + (size_t)a->nrecs * MESH_REC_BYTES, records,
-           (size_t)n_verts * MESH_REC_BYTES);
-    memcpy(a->idx + a->nidx, indices, (size_t)n_indices * sizeof(u32));
-    *vbase = a->nrecs;
-    *ifirst = a->nidx;
-    a->nrecs += n_verts;
-    a->nidx += n_indices;
-    return 0;
-}
-
-int ps2_vk_mesh_room(u32 n_verts, u32 n_indices, u32 n_draws) {
-    const mesh_arena *a = rec_mesh;
-    if (!ps2_vk_mesh_available()) return 0;
-    return a->nrecs + n_verts <= MESH_MAX_VERTS && a->nidx + n_indices <= MESH_MAX_INDICES
-        && a->nblocks + n_draws <= MESH_MAX_BLOCKS;
-}
-
-void ps2_vk_draw_mesh(const ps2_vk_state *st, const ps2_vk_mesh_block *b,
-                      u32 vbase, u32 ifirst, u32 n_indices, int cull) {
-    ps2_vk_draw_mesh_topo(st, b, vbase, ifirst, n_indices, cull, PS2_VK_TRIANGLES);
-}
-
-void ps2_vk_draw_mesh_topo(const ps2_vk_state *st, const ps2_vk_mesh_block *b,
-                           u32 vbase, u32 ifirst, u32 n_indices, int cull,
-                           int topology) {
-    mesh_arena *a = rec_mesh;
-    if (!ps2_vk_mesh_available() || !n_indices) return;
-    if (ps2_vk_before_record) ps2_vk_before_record();
-    if (a->nblocks >= MESH_MAX_BLOCKS) { stat_mesh_overflow++; return; }
-    a->blocks[a->nblocks] = *b;
-    rec_mesh_pending.vbase = vbase;
-    rec_mesh_pending.ifirst = ifirst;
-    rec_mesh_pending.icount = n_indices;
-    rec_mesh_pending.block = a->nblocks++;
-    rec_mesh_pending.cull = (cull & PS2_VK_MESH_CULL) ? 1u : 0u;
-    {   int sw = ps2_vk_mesh_material_ok(NULL);
-        if (cull & PS2_VK_MESH_GSFRAG) {
-        } else if (ps2_vk_mesh_material_ok(st)) {
-            rec_mesh_pending.cull |= 2u;
-            stat_mesh_mat++;
-        } else if (sw) {
-            static int shown;
-            if (shown++ < 8)
-                ps2_log("vk: mesh keeps gs.frag: mesh_fs=%d date=%d colclip=%d shuffle=%d "
-                        "tex_rt=%u depth=%d zcopy=%d fst=%d wms=%u wmt=%u", mesh_fs != 0,
-                        st->date, st->colclip, st->shuffle_rg, st->tex_rt, st->tex_depth,
-                        st->zcopy, st->fst, st->wms, st->wmt);
-        }
-    }
-    PS2_PHASE_BEGIN(PS2_PH_VKDRAW);
-    if (topology != PS2_VK_TRIANGLES) rec_mesh_pending.cull &= ~1u;
-    rec_native_mark = PS2_VK_NATIVE_MESH;
-    ps2_vk_draw_inner(topology, st, NULL, 0);
-    rec_native_mark = 0;
-    PS2_PHASE_END(PS2_PH_VKDRAW);
-}
 static void afail_mask(u32 afail, int *rgb, int *a, int *z) {
     if (afail == 1u) { *z = 0; }
     else if (afail == 2u) { *rgb = 0; *a = 0; }
@@ -5310,8 +4135,6 @@ static int tex_point_for(const ps2_vk_state *st) {
 
 static void rec_one(int topology, const ps2_vk_state *st,
                     const ps2_vk_vertex *v, int n, u32 flags, u32 depth_key);
-
-void (*ps2_vk_before_record)(void);
 
 static void ps2_vk_draw_inner(int topology, const ps2_vk_state *st,
                               const ps2_vk_vertex *v, int n) {
@@ -5558,7 +4381,6 @@ static void rec_one(int topology, const ps2_vk_state *st,
     vk_draw *d;
     ps2_vk_state hd_state;
     if (st->tme && !st->tex_rt && !st->clut_rt && !st->shuffle_rg && !st->index_rt
-        && (rec_native_mark == 0 || rec_native_mark == PS2_VK_NATIVE_2D)
         && ps2_texpack_active()) {
         hd_state = *st;
         /* a replacement may recycle a cold store slot: pin both originals
@@ -5579,9 +4401,9 @@ static void rec_one(int topology, const ps2_vk_state *st,
         if (((st->fb_mask >> (ch * 8u)) & 255u) == 255u)
             depth_key |= 1u << (5u + ch);
     if (st->fb_psm == 1u) depth_key |= 1u << 8;
-    if (rec_ndraws && rec_native_mark != PS2_VK_NATIVE_MESH) {
+    if (rec_ndraws) {
         d = &rec_draws[rec_ndraws - 1];
-        if (d->native == rec_native_mark && d->topology == (u16)topology
+        if (d->topology == (u16)topology
             && d->tex == (u16)(st->tme && !st->tex_rt ? st->tex_index : 0xFFFFu)
             && d->frag_flags == flags
             && d->blend == (((u32)st->abe << 8) | st->alpha_a
@@ -5592,7 +4414,6 @@ static void rec_one(int topology, const ps2_vk_state *st,
             && d->fb_w == st->fb_w && d->fb_h == st->fb_h
             && d->rt == (u16)st->rt && d->tex_rt == (u16)st->tex_rt
             && d->zrt == (u16)st->zrt
-            && d->emitter == (u16)st->emitter
             && d->tex_self == (u16)st->tex_self
             && d->tex_depth == (u16)st->tex_depth
             && d->tex_w == st->tex_w && d->tex_h == st->tex_h
@@ -5645,8 +4466,6 @@ static void rec_one(int topology, const ps2_vk_state *st,
     d->fb_h = st->fb_h;
     d->rt = (u16)st->rt;
     d->zrt = (u16)st->zrt;
-    d->emitter = (u16)st->emitter;
-    d->native = rec_native_mark;
     d->tex_rt = (u16)st->tex_rt;
     d->clut_rt = (u16)st->clut_rt;
     d->clut_xy = st->clut_xy;
@@ -5655,139 +4474,13 @@ static void rec_one(int topology, const ps2_vk_state *st,
     d->tex_self = (u16)st->tex_self;
     d->tex_depth = (u16)st->tex_depth;
     d->date = (u16)st->date;
-    d->wrap = st->wms | (st->wmt << 2) | (st->native_region ? 0x100u : 0u);
+    d->wrap = st->wms | (st->wmt << 2);
     d->minu = (u16)st->minu;
     d->maxu = (u16)st->maxu;
     d->minv = (u16)st->minv;
     d->maxv = (u16)st->maxv;
-    if (rec_native_mark == PS2_VK_NATIVE_MESH) {
-        d->first = rec_mesh_pending.ifirst;
-        d->count = rec_mesh_pending.icount;
-        d->mvbase = rec_mesh_pending.vbase;
-        d->mblock = rec_mesh_pending.block;
-        d->mcull = (u16)rec_mesh_pending.cull;
-        return;
-    }
-    d->mvbase = 0;
-    d->mblock = 0;
-    d->mcull = 0;
     memcpy(&rec_verts[rec_nverts], v, sizeof(*v) * (size_t)n);
     rec_nverts += (u32)n;
-}
-
-void ps2_vk_native_draw(const ps2_vk_native *nd, const ps2_vk_vertex *v, int n) {
-    vk_draw *d;
-    if (!vk_ready || n <= 0) return;
-    if (ps2_vk_before_record) ps2_vk_before_record();
-    if (rec_nverts + (u32)n > VK_MAX_VERTS || rec_ndraws + 1u > VK_MAX_DRAWS) {
-        rec_overflow = 1;
-        return;
-    }
-    if (rec_ndraws) {
-        d = &rec_draws[rec_ndraws - 1];
-        if (d->native == (u16)nd->pass && d->tex == (u16)nd->tex
-            && d->rt == (u16)nd->rt && d->zrt == (u16)nd->zrt
-            && d->npoint == (u16)(nd->tex_point ? 1 : 0)
-            && d->wrap == nd->wrap
-            && d->tex_w == nd->tex_w && d->tex_h == nd->tex_h
-            && !memcmp(d->nbox, nd->box, sizeof d->nbox)
-            && d->nsun_z == nd->sun_z
-            && d->scissor[0] == nd->scissor[0] && d->scissor[1] == nd->scissor[1]
-            && d->scissor[2] == nd->scissor[2] && d->scissor[3] == nd->scissor[3]
-            && d->first + d->count == rec_nverts) {
-            memcpy(&rec_verts[rec_nverts], v, sizeof(*v) * (size_t)n);
-            rec_nverts += (u32)n;
-            d->count += (u32)n;
-            return;
-        }
-    }
-    d = &rec_draws[rec_ndraws++];
-    memset(d, 0, sizeof *d);
-    d->seq = (u32)ps2_gs_prim_seq;
-    d->topology = PS2_VK_TRIANGLES;
-    d->native = (u16)nd->pass;
-    d->tex = (u16)(nd->tex < 0xFFFFu ? nd->tex : 0xFFFFu);
-    d->first = rec_nverts;
-    d->count = (u32)n;
-    d->rt = (u16)nd->rt;
-    d->zrt = (u16)nd->zrt;
-    d->tex_w = nd->tex_w;
-    d->tex_h = nd->tex_h;
-    d->wrap = nd->wrap;
-    d->npoint = (u16)(nd->tex_point ? 1 : 0);
-    memcpy(d->nbox, nd->box, sizeof d->nbox);
-    d->nsun_z = nd->sun_z;
-    for (int i = 0; i < 4; i++) d->scissor[i] = nd->scissor[i];
-    d->fb_w = rt_w;
-    d->fb_h = rt_h;
-    memcpy(&rec_verts[rec_nverts], v, sizeof(*v) * (size_t)n);
-    rec_nverts += (u32)n;
-}
-
-u32 ps2_vk_texture_native(u32 src, u32 x, u32 y, u32 w, u32 h) {
-    static u8 *buf;
-    static size_t cap;
-    vk_texture *s;
-    const u8 *px;
-    u64 key;
-    u32 hash, idx, levels = 1;
-    if (!vk_ready || src >= ntextures) return 0xFFFFFFFFu;
-    s = &textures[src];
-    px = __atomic_load_n(&s->rgba, __ATOMIC_ACQUIRE);
-    if (!px || s->levels > 1u || x >= s->w || y >= s->h) return 0xFFFFFFFFu;
-    if (w > s->w - x) w = s->w - x;
-    if (h > s->h - y) h = s->h - y;
-    if (!w || !h) return 0xFFFFFFFFu;
-    key = (1ull << 63) | ((s->key * 0x9E3779B97F4A7C15ull) >> 1);
-    key ^= ((u64)x << 42) ^ ((u64)y << 30) ^ ((u64)w << 16) ^ (u64)h;
-    key |= 1ull << 63;
-    hash = (s->hash * 16777619u) ^ (x * 73856093u) ^ (y * 19349663u)
-         ^ (w * 83492791u) ^ h;
-    for (s32 i = tex_first(key); i >= 0; i = tex_next[i])
-        if (textures[i].key == key && textures[i].hash == hash
-            && textures[i].w == w && textures[i].h == h) {
-            textures[i].rec_seq = tex_rec_seq;
-            return (u32)i;
-        }
-    if ((size_t)w * h * 4u > cap) {
-        u8 *n = (u8 *)realloc(buf, (size_t)w * h * 4u);
-        if (!n) return 0xFFFFFFFFu;
-        buf = n;
-        cap = (size_t)w * h * 4u;
-    }
-    for (u32 r = 0; r < h; r++)
-        memcpy(buf + (size_t)r * w * 4u, px + ((size_t)(y + r) * s->w + x) * 4u,
-               (size_t)w * 4u);
-    idx = ps2_vk_texture(key, hash, buf, w, h);
-    if (idx == 0xFFFFFFFFu) return idx;
-    while ((w >> levels) || (h >> levels)) levels++;
-    if (!textures[idx].image) textures[idx].levels = levels;
-    return textures[idx].levels > 1u ? idx : 0xFFFFFFFFu;
-}
-
-u32 ps2_vk_texture_native_find(u64 key, u32 hash, u32 w, u32 h) {
-    if (!vk_ready || !w || !h) return 0xFFFFFFFFu;
-    key |= 1ull << 63;
-    for (s32 i = tex_first(key); i >= 0; i = tex_next[i])
-        if (textures[i].key == key && textures[i].hash == hash
-            && textures[i].w == w && textures[i].h == h) {
-            textures[i].rec_seq = tex_rec_seq;
-            return (u32)i;
-        }
-    return 0xFFFFFFFFu;
-}
-
-u32 ps2_vk_texture_native_rgba(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h) {
-    u32 idx, levels = 1;
-    if (!vk_ready || !w || !h) return 0xFFFFFFFFu;
-    idx = ps2_vk_texture_native_find(key, hash, w, h);
-    if (idx != 0xFFFFFFFFu) return idx;
-    key |= 1ull << 63;
-    idx = ps2_vk_texture(key, hash, rgba, w, h);
-    if (idx == 0xFFFFFFFFu) return idx;
-    while ((w >> levels) || (h >> levels)) levels++;
-    if (!textures[idx].image) textures[idx].levels = levels;
-    return textures[idx].levels > 1u ? idx : 0xFFFFFFFFu;
 }
 
 int ps2_vk_texture_is(u32 idx, u64 key, u32 hash) {
@@ -5950,7 +4643,6 @@ void ps2_vk_invalidate(u32 base, u32 size) {
 int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
     int replace;
     if (!vk_ready) return 0;
-    if (ps2_vk_before_record) ps2_vk_before_record();
     ps2_texpack_set_enabled(ps2_cfg.hd_textures);
     {
         static u64 calls;
@@ -6070,7 +4762,6 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
     pub_draws  = rec_draws;
     pub_nverts = rec_nverts;
     pub_ndraws = rec_ndraws;
-    pub_mesh   = rec_mesh;
     {   int next = replace ? pub_slot : (0 + 1 + 2) - pub_slot - rec_slot;
         pub_slot = rec_slot;
         rec_slot = next;
@@ -6079,8 +4770,6 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
     rec_draws  = slot_draws[rec_slot];
     rec_nverts = 0;
     rec_ndraws = 0;
-    rec_mesh   = &slot_mesh[rec_slot];
-    rec_mesh->nrecs = rec_mesh->nidx = rec_mesh->nblocks = 0;
     if (disp_w) req_w = disp_w;
     if (disp_h) req_h = disp_h;
     req_x = disp_x;
@@ -6142,31 +4831,6 @@ void ps2_video_report(void) {
     if (stat_selfreads)
         ps2_log("vk: %llu draws read back the target they were drawing into",
                 (unsigned long long)stat_selfreads);
-    if (stat_native_draws || stat_native_vis_none)
-        ps2_log("vk: %llu native draws (rn.h claims), %llu of them with a "
-                "visibility reduction, %llu keeping the last one (no sample that "
-                "frame); %llu passes not drawn before any sample",
-                (unsigned long long)stat_native_draws,
-                (unsigned long long)stat_native_vis,
-                (unsigned long long)stat_native_vis_kept,
-                (unsigned long long)stat_native_vis_none);
-    if (stat_mesh_draws || stat_mesh_overflow)
-        ps2_log("vk: %llu native mesh draws (mesh.vert), %llu recorded with the native "
-                "material (mesh.frag); %llu batches refused for arena space",
-                (unsigned long long)stat_mesh_draws, (unsigned long long)stat_mesh_mat,
-                (unsigned long long)stat_mesh_overflow);
-    if (stat_ov_frames || stat_ov_inplace)
-        ps2_log("vk: 2D overlay composed on %llu frames at %ux, %llu draws lifted "
-                "onto it, %llu native 2D draws kept in place because the frame "
-                "wrote or read slot 0 after them%s",
-                (unsigned long long)stat_ov_frames, ov_k,
-                (unsigned long long)stat_ov_draws,
-                (unsigned long long)stat_ov_inplace,
-                ov_lists[0].overflow || ov_lists[1].overflow
-                    ? "; an overlay list overflowed" : "");
-    if (stat_ov_rgbreads)
-        ps2_log("vk: 2D overlay -- %llu copies of slot 0's colour into another target "
-                "kept the draws before them in place", (unsigned long long)stat_ov_rgbreads);
     if (stat_dropped)
         ps2_log("vk: %llu fields dropped (replaced by a newer one before the "
                 "renderer took them)", (unsigned long long)stat_dropped);
@@ -6355,64 +5019,6 @@ void ps2_vk_statecap(const char *dir) {
     pthread_mutex_unlock(&list_lock);
 }
 
-static VkBuffer ovr_buf;
-static VkDeviceMemory ovr_mem;
-static void *ovr_ptr;
-static VkDeviceSize ovr_cap;
-static int readback_overlay(void) {
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
-    VkCommandBufferAllocateInfo ai = {0};
-    VkCommandBufferBeginInfo bi = {0};
-    VkSubmitInfo si = {0};
-    u32 iw = ov_cw * ov_k, ih = ov_ch * ov_k;
-    VkDeviceSize need = (VkDeviceSize)iw * ih * 4u;
-    VkImageLayout prev = ov_comp.layout;
-    if (!ov_comp.created || prev == VK_IMAGE_LAYOUT_UNDEFINED) return -1;
-    if (vkDeviceWaitIdle(dev) != VK_SUCCESS) return -1;
-    if (need > ovr_cap) {
-        if (ovr_ptr) vkUnmapMemory(dev, ovr_mem);
-        if (ovr_buf) vkDestroyBuffer(dev, ovr_buf, NULL);
-        if (ovr_mem) vkFreeMemory(dev, ovr_mem, NULL);
-        ovr_buf = VK_NULL_HANDLE; ovr_mem = VK_NULL_HANDLE; ovr_ptr = NULL; ovr_cap = 0;
-        if (make_buffer(need, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                        | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                        &ovr_buf, &ovr_mem, &ovr_ptr) != 0) return -1;
-        ovr_cap = need;
-    }
-    ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    ai.commandPool = cmdpool; ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    ai.commandBufferCount = 1;
-    if (vkAllocateCommandBuffers(dev, &ai, &cmd) != VK_SUCCESS) return -1;
-    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &bi);
-    barrier(cmd, ov_comp.color, VK_IMAGE_ASPECT_COLOR_BIT, prev,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0,
-            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-    {   VkBufferImageCopy copy = {0};
-        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copy.imageSubresource.layerCount = 1;
-        copy.imageExtent = (VkExtent3D){iw, ih, 1};
-        vkCmdCopyImageToBuffer(cmd, ov_comp.color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                               ovr_buf, 1, &copy); }
-    barrier(cmd, ov_comp.color, VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, prev,
-            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0);
-    vkEndCommandBuffer(cmd);
-    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    si.commandBufferCount = 1; si.pCommandBuffers = &cmd;
-    if (vkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS
-        || vkQueueWaitIdle(queue) != VK_SUCCESS) {
-        vkFreeCommandBuffers(dev, cmdpool, 1, &cmd);
-        return -1;
-    }
-    vkFreeCommandBuffers(dev, cmdpool, 1, &cmd);
-    return 0;
-}
-
 int ps2_vk_screenshot(const char *path) {
     FILE *fp;
     const u8 *px = (const u8 *)read_ptr;
@@ -6420,28 +5026,6 @@ int ps2_vk_screenshot(const char *path) {
     if (!vk_ready) return -1;
     pthread_mutex_lock(&list_lock);
     pthread_mutex_lock(&gpu_lock);
-    if (ov_presented && !getenv("PS2_SHOT_NO_OVERLAY") && readback_overlay() == 0) {
-        u32 k = ov_k, iw = ov_cw * k;
-        u32 pw = present_w * k, ph = present_h * k;
-        ox = present_x * k; oy = present_y * k;
-        w = pw && pw <= iw ? pw : iw;
-        h = ph && ph <= ov_ch * k ? ph : ov_ch * k;
-        fp = fopen(path, "wb");
-        if (fp) {
-            fprintf(fp, "P6\n%u %u\n255\n", w, h);
-            for (y = 0; y < h; y++)
-                for (x = 0; x < w; x++) {
-                    const u8 *p = (const u8 *)ovr_ptr + ((size_t)(oy + y) * iw + ox + x) * 4u;
-                    fputc(p[0], fp); fputc(p[1], fp); fputc(p[2], fp);
-                }
-            fclose(fp);
-            ps2_log("vk: frame written to %s (%ux%u, with the 2D overlay at %ux)",
-                    path, w, h, k);
-        }
-        pthread_mutex_unlock(&gpu_lock);
-        pthread_mutex_unlock(&list_lock);
-        return fp ? 0 : -1;
-    }
     if (readback_targets(getenv("PS2_DUMP_RTS") != NULL) != 0) {
         pthread_mutex_unlock(&gpu_lock);
         pthread_mutex_unlock(&list_lock);

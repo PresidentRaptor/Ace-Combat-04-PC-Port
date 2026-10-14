@@ -193,10 +193,6 @@ void ps2_finish(const char *why) {
     ps2_cdvd_report();
     ps2_mod_report();
     ps2_hook_report();
-    rn_tap_report();
-    rn_intent_report();
-    rn_fixes_report();
-    rn_report();
     ps2_lua_report();
     ps2_nufile_report();
     ps2_nusound_report();
@@ -289,7 +285,6 @@ void ps2_capture_report(const char *why) {
     ps2_vu_lower_hist_report();
     ps2_vif_hist_report();
     ps2_video_report();
-    rn_census_report("F9");
     ps2_unknown_report();
     ps2_dump_trace("capture");
     {
@@ -649,11 +644,7 @@ int main(int argc, char **argv) {
     if (disc && ps2_vfs_open(disc) != 0)
         ps2_log("warning: no disc at '%s'; CDVD requests will fail", disc);
     ps2_mod_start();
-    rn_init();
     rn_dump_init();
-    rn_vp_init();
-    rn_intent_init();
-    rn_fixes_init();
     if (want_selftest) {
         int bad;
         ps2_sif_hle_init();

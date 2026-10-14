@@ -78,17 +78,6 @@ void rn_dump_frame(void) {
     if (rn_dump_on) fprintf(df, "=== field %llu\n", (unsigned long long)fields);
 }
 
-void rn_dump_tag(u32 kind, u32 a, u32 b) {
-    (void)b;
-    if (kind != RN_TAG_EMITTER) return;
-    flush_vtx();
-    flush_unpack();
-    {
-        const rn_emitter *e = rn_emitter_get(a);
-        fprintf(df, "E %u site %08X via %u\n", a, e ? e->site : 0u, e ? e->via : 0u);
-    }
-}
-
 static struct { int live; u32 addr, n; const u8 *micro; } mpg;
 
 static void flush_mpg(void) {

@@ -128,7 +128,7 @@ Fixed in this build
 Known limits
 ------------
 - Graphics run through the emulated GS. The native renderer the AC5 port
-  uses was written for AC5's VU1 programs and is off. Higher internal
+  uses was written for AC5's VU1 programs and is not included. Higher internal
   resolutions (F4) work; resolution 6 was checked through Mission 01.
 - Widescreen: target boxes and their labels keep the 4:3 HUD's shape, so
   they look a little wide. On the weapon select screen the tinted panel

@@ -76,28 +76,7 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_params.c
     runtime/src/ps2_lua.c
     runtime/src/ps2_ui.cpp
-    runtime/src/rn/rn_census.c
-    runtime/src/rn/rn_2d.c
     runtime/src/rn/rn_dump.c
-    runtime/src/rn/rn_vp.c
-    runtime/src/rn/rn_vp_model.c
-    runtime/src/rn/rn_vp_terrain.c
-    runtime/src/rn/rn_vp_shadow.c
-    runtime/src/rn/rn_vp_sprite.c
-    runtime/src/rn/rn_vp_load.c
-    runtime/src/rn/rn_vp_lit.c
-    runtime/src/rn/rn_vp_fx.c
-    runtime/src/rn/rn_vp_flat.c
-    runtime/src/rn/rn_vpfuzz.c
-    runtime/src/rn/rn_intent.c
-    runtime/src/rn/rn_fixes.c
-    runtime/src/rn/rn_sun.c
-    runtime/src/rn/rn_sky.c
-    runtime/src/rn/rn_tri3d.c
-    runtime/src/rn/rn_billboard.c
-    runtime/src/rn/rn_worldtri.c
-    runtime/src/rn/rn_screen.c
-    runtime/src/rn/rn_tap.c
     runtime/src/ps2_main.c)
 
 set(LUA_DIR "${CMAKE_SOURCE_DIR}/third_party/lua")
@@ -165,10 +144,7 @@ list(REMOVE_ITEM REPLAY_SOURCES runtime/src/ps2_main.c
                                 runtime/src/ps2_mod.c
                                 runtime/src/ps2_hook.c
                                 runtime/src/ps2_patch.c
-                                runtime/src/ps2_params.c
-                                runtime/src/rn/rn_intent.c
-                                runtime/src/rn/rn_fixes.c
-                                runtime/src/rn/rn_tap.c)
+                                runtime/src/ps2_params.c)
 list(APPEND REPLAY_SOURCES runtime/src/ps2_replay.c)
 
 add_executable(gsreplay ${REPLAY_SOURCES})
@@ -202,8 +178,7 @@ endif()
 set(SHADER_OUT "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${SHADER_OUT}")
 set(SPV_FILES)
-foreach(SH gs.vert gs.frag gs_zcopy.frag colclip.frag present.vert present.frag
-           rn_vis.frag rn_sun.vert rn_sun.frag mesh.vert mesh.frag)
+foreach(SH gs.vert gs.frag gs_zcopy.frag colclip.frag present.vert present.frag)
   add_custom_command(
     OUTPUT "${SHADER_OUT}/${SH}.spv"
     COMMAND "${GLSLC}" -O "${CMAKE_SOURCE_DIR}/runtime/shaders/${SH}"

@@ -50,7 +50,9 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
     that drives the EE's refills.
 - `ps2_hle_pad.c` — the original libpad (state machine, modes, actuators, pressure mode).
 - `ps2_game.h` — window title, settings/pipeline file names, serial for mods.
-- the native VU1 renderer (`rn/`) is off: it implements AC5's microcode.
+- AC5's native VU1 renderer (it implemented AC5's microcode) has been removed; everything is
+  drawn through the emulated GS. `rn/rn_dump.c` remains: `PS2_RN_DUMP=<file>` with
+  `PS2_RN_DUMP_FIELD=<n>` writes one field's VIF1 unpacks, XGKICKs and GS register writes.
 - **16:9 widescreen** (F4 > Display, `[display] widescreen`; `ps2_hook.c` `vsm_before`,
   `ps2_gs.c` `ws_hud`, `ps2_vk_game_aspect` in `ps2_video.c`). AC5's camera patch targets
   SLUS-20851 and is never applied here; PCSX2's AC4 entry (one word at 0040DACC, 769.15 ->

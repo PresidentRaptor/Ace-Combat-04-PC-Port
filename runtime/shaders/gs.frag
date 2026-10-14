@@ -24,7 +24,7 @@ layout(push_constant) uniform PC {
     float point_size;
     float tex_scale;
     uint  clut_xy;
-    uint  mesh_block;
+    uint  pad;
     uint  mip;      // per-pixel mip level, see ps2_vk_state.mip
 } pc;
 
