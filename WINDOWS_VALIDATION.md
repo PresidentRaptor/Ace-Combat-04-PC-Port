@@ -49,3 +49,11 @@ testing. Texture work does not close those gaps.
 The separate `PLAY_EDGE_TEST.bat` package uses its own graphics settings and
 shader folder, the normal saves, and original textures. It permits comparison
 with the existing PLAY.bat build while Windows has that executable open.
+
+After the user's live-play approval, the build and shaders were promoted to
+the main `runtime/ac4.exe` package. The approved test settings (6x resolution,
+FXAA, UI smoothing and 0.10 sharpening) were transferred to its settings file;
+replacement textures were disabled to match the test launcher. The main package
+completed the same 180-field ISO startup check with exit code 0. The normal game
+launcher now uses this build. The preceding executable, settings and shaders
+were backed up locally under `review/main-smoothing-backup`.
