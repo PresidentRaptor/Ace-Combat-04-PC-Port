@@ -3948,7 +3948,7 @@ u64 ps2_kernel_vblank_count(void);
    targets and render-target copies stay too. */
 #define WS_MARKERS 256
 static float ws_marker[2][WS_MARKERS][4];
-static u32 ws_nmarker[2], ws_mcur, ws_marker_frame = ~0u;
+static u32 ws_nmarker[2], ws_mcur, ws_marker_frame = ~0u, ws_bigmap_frame = 0x80000000u;
 
 /* x pulled to 4:3 about the centre (edge 0) or the left/right side (-1/1) */
 static float ws_map(float x, int edge, float s, float cx, float w) {
@@ -3993,13 +3993,20 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
        as world-anchored.  They are
        drawn before the target's box, so the boxes of this frame and the one
        before are checked. */
-    if (!st->tme && x1 - x0 <= 40.0f && y1 - y0 <= 40.0f
+    if (!st->tme && n == 2 && x1 - x0 >= 0.5f && y1 - y0 >= 0.5f && st->scissor[0] == 0
+        && v[0].r > 1.5f * v[0].g + 8.0f && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f) {
+        /* the red seeker diamond: slanted red lines, wherever it is on its
+           way from the centre to the target (the radar's are scissored) */
+        gs_stat_ws_cue++;
+        return;
+    }
+    if (!st->tme && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f
         && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f)))   /* not tape ticks */
         for (u32 b = 0; b < 2u; b++)
             for (u32 m = 0; m < ws_nmarker[b]; m++) {
                 const float *r4 = ws_marker[b][m];
-                if (x1 >= r4[0] - 16.0f && x0 <= r4[1] + 16.0f
-                    && y1 >= r4[2] - 16.0f && y0 <= r4[3] + 16.0f) {
+                if (x1 >= r4[0] - 24.0f && x0 <= r4[1] + 24.0f
+                    && y1 >= r4[2] - 24.0f && y0 <= r4[3] + 24.0f) {
                     gs_stat_ws_cue++;
                     return;
                 }
@@ -4023,9 +4030,14 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     if (ps2_cfg.hud_layout == PS2_HUD_EDGES && v[0].z != 0.0f) {
         float sx = 512.0f / (float)st->fb_w;
         float nx = (x0 + x1) * 0.5f * sx, ny = (y0 + y1) * 0.5f, w = (x1 - x0) * sx;
+        /* The enlarged radar map reaches from the left edge far into the
+           middle; while it is up (this frame or the last) the radar block
+           stays centred so the map and its frame keep together. */
+        if (x0 * sx < 40.0f && x1 * sx > 170.0f && y1 > 280.0f) ws_bigmap_frame = ps2_gs_frame_count;
+        int bigmap = ps2_gs_frame_count - ws_bigmap_frame <= 1u;
         if (ny < 56.0f && nx < 165.0f) edge = -1;                 /* PTS, TGT */
         else if (ny < 46.0f && nx > 360.0f) edge = 1;             /* TIME */
-        else if (ny > 284.0f && nx < 140.0f
+        else if (!bigmap && ny > 284.0f && nx < 140.0f
                  && (nx < 90.0f || ny > 345.0f || st->scissor[0] > 0
                      || (w >= 7.5f && w <= 8.5f && y1 - y0 >= 7.5f && y1 - y0 <= 8.5f
                          && nx > 118.0f)))
