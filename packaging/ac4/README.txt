@@ -121,6 +121,10 @@ Fixed in this build
   arrow and diamond stay on their aircraft. Keep "Aspect ratio" on Auto
   (or 16:9).
 
+- The enlarged radar map (Square) showed a dotted pattern instead of the
+  map: a leftover value from the 3D drawing made the map picture repeat
+  thousands of times across the panel. It now shows the islands.
+
 Known limits
 ------------
 - Graphics run through the emulated GS. The native renderer the AC5 port

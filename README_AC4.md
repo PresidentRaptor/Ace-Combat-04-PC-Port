@@ -113,6 +113,11 @@ General fixes that AC4 exposed:
   upscaled sub-pixels inside it, so text boxes, subtitles and HUD labels no longer pick up
   neighbouring texels as thin lines along their edges (PCSX2 needs "round sprite" for this game).
   Native-resolution output is unchanged.
+- **GIF Q reset per tag** (`ps2_hw.c` `gif_feed`): the GIF's internal Q (what a packed RGBA
+  writes into RGBAQ.Q) is reset to 1.0 at every GIFtag. AC4's enlarged radar map (Square) is
+  an STQ sprite with S,T in 0..1 sent without a Q of its own; the Q left over from the last
+  3D packet (~2e-5) tiled its 128 x 128 map texture tens of thousands of times, so the map
+  showed a dot pattern instead of the islands. The 12 captures replay pixel-identical.
 - **no dropped fields** (`ps2_video.c`): a field the renderer had not started used to be
   replaced by the next one, so its draws never ran. AC4 carries render targets from field to
   field (the frame copy, haze and glow buffers), and the field after a drop flashed. The EE

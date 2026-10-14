@@ -373,6 +373,12 @@ static void gif_feed(const ps2_reg128 *q) {
         gif.regs = q->ud[1];
         if (gif.nreg == 0) gif.nreg = 16;
         if (pre && gif.flg == 0) ps2_gs_write_reg(0x00, prim);
+        /* the GIF resets its internal Q to 1.0 at every tag, so a packed
+           RGBA before any packed ST gets Q = 1 (AC4's enlarged radar map
+           is an STQ sprite with S,T in 0..1 and no ST-carried Q; a Q left
+           over from a 3D packet tiled its map texture tens of thousands of
+           times) */
+        gif_q_latch = 0x3F800000u;
         gif_tag_hist[gif.flg]++;
         gif_tag_qwc[gif.flg] += gif.nloop;
         {
