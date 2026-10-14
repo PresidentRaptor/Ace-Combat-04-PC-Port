@@ -3993,10 +3993,13 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
        as world-anchored.  They are
        drawn before the target's box, so the boxes of this frame and the one
        before are checked. */
-    if (!st->tme && n == 2 && x1 - x0 >= 0.5f && y1 - y0 >= 0.5f && st->scissor[0] == 0
-        && v[0].r > 1.5f * v[0].g + 8.0f && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f) {
-        /* the red seeker diamond: slanted red lines, wherever it is on its
-           way from the centre to the target (the radar's are scissored) */
+    if (((!st->tme && n == 2 && x1 - x0 >= 0.5f && y1 - y0 >= 0.5f) || n == 3)
+        && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
+        && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f) {
+        /* the red seeker diamond: a turned square (triangles, or slanted
+           lines in the cockpit), wherever it is on its way from the centre to
+           the target.  The radar's red shapes are scissored; red text such
+           as WARNING is drawn with sprites. */
         gs_stat_ws_cue++;
         return;
     }
