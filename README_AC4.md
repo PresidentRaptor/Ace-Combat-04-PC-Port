@@ -52,7 +52,7 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
 - `ps2_game.h` — window title, settings/pipeline file names, serial for mods.
 - the native VU1 renderer (`rn/`) is off: it implements AC5's microcode.
 - the 16:9 camera patch previously used by the AC5 build is not valid for AC4 and is never applied (`ps2_settings.c`). AC4's output defaults to an undistorted 4:3 image on wide displays; a validated game-specific camera patch is still needed for expanded 16:9 gameplay.
-- the 4K preset uses display-aware internal resolution (Auto, up to 8x), 16x anisotropic filtering, sharp scaling, and bilinear sampling for enlarged screen-space UI art. This smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists.
+- High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the
   async thread back; see below).
