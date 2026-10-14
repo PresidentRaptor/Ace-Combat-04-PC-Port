@@ -88,15 +88,22 @@ vec4 clut_rt_bilinear(vec2 tc, bool four) {
                mix(clut_rt_texel(ivec2(a.x, b.y), four), clut_rt_texel(b, four), w.x), w.y);
 }
 
+vec4 sample_hd(sampler2D image, vec2 tc, vec2 logical_size, uvec4 bounds, int scale,
+               float foot);
+
 // The next mip level (bound as clutrt) at the same s/t, for the GS's blend
 // between levels: wrap and region clamp at that level's size, filtered
-// like the level the draw samples.
-vec4 sample_next_level(vec2 st, bool point, bool half_texel) {
+// like the level the draw samples.  foot: GS texels per pixel at this draw's
+// level (for a replacement's own mip chain).
+vec4 sample_next_level(vec2 st, bool point, bool half_texel, float foot) {
     vec2 size = max(floor(pc.tex_size * 0.5), vec2(1.0));
     uvec4 cl = pc.clamp_uv >> 1u;
     uint mu = pc.flags.z & 3u, mv = (pc.flags.z >> 2) & 3u;
     ivec2 isz = textureSize(clutrt, 0);
     vec2 tc = st * size;
+    int hd = int((pc.flags.y >> 6) & 15u);
+    if (hd > 0)
+        return sample_hd(clutrt, tc - (half_texel ? 0.5 : 0.0), size, cl, hd, foot * 0.5);
     if (point) {
         ivec2 p = ivec2(floor(vec2(
             gs_wrap(tc.x + 1.0 / 32.0, mu, float(cl.x), float(cl.y), size.x, true),
@@ -127,6 +134,44 @@ int wrap_up(int k, uint mode, int lo, int hi, int size, int s) {
     return ((g & lo) | hi) * s + (k - g * s);
 }
 
+// A replacement ("HD") texture, `scale` times the GS texture.  Each bilinear
+// tap is wrapped in GS texel units (wrap_up), so CLAMP, REGION_CLAMP and
+// REGION_REPEAT behave as on the GS while keeping the sub-texel detail; for an
+// atlas window the result is then reduced into the replacement tile.
+vec4 sample_hd_level(sampler2D image, vec2 tc, vec2 logical_size, uvec4 bounds,
+                     int scale, int lv) {
+    vec2 c = (tc + 0.5) * float(scale) - 0.5;
+    ivec2 p = ivec2(floor(c)), size = textureSize(image, lv);
+    vec2 w = fract(c);
+    uint mu = pc.flags.z & 3u, mv = (pc.flags.z >> 2) & 3u;
+    ivec2 a = ivec2(wrap_up(p.x, mu, int(bounds.x), int(bounds.y), int(logical_size.x), scale),
+                    wrap_up(p.y, mv, int(bounds.z), int(bounds.w), int(logical_size.y), scale));
+    ivec2 b = ivec2(wrap_up(p.x+1, mu, int(bounds.x), int(bounds.y), int(logical_size.x), scale),
+                    wrap_up(p.y+1, mv, int(bounds.z), int(bounds.w), int(logical_size.y), scale));
+    a = ((a % size) + size) % size;
+    b = ((b % size) + size) % size;
+    return mix(mix(texelFetch(image, a, lv), texelFetch(image, ivec2(b.x,a.y), lv), w.x),
+               mix(texelFetch(image, ivec2(a.x,b.y), lv), texelFetch(image, b, lv), w.x), w.y);
+}
+
+// The replacement carries a mip chain: minified, it steps down its levels
+// (blending between two) as far as the GS texture's own resolution, so the
+// extra detail fades out with distance instead of shimmering, and a distant
+// surface looks as it did on the PS2.  foot: GS texels per pixel.
+vec4 sample_hd(sampler2D image, vec2 tc, vec2 logical_size, uvec4 bounds, int scale,
+               float foot) {
+    int top = 0;
+    for (int k = scale; k > 1 && (k & 1) == 0; k >>= 1) top++;
+    top = min(top, textureQueryLevels(image) - 1);
+    float lod = clamp(log2(max(foot * float(scale), 1e-6)), 0.0, float(top));
+    int l0 = int(lod);
+    vec4 t = sample_hd_level(image, tc, logical_size, bounds, scale >> l0, l0);
+    if (l0 < top && lod > float(l0))
+        t = mix(t, sample_hd_level(image, tc, logical_size, bounds, scale >> (l0 + 1), l0 + 1),
+                lod - float(l0));
+    return t;
+}
+
 vec4 sample_region_repeat_up(vec2 tc) {
     int s = int(pc.tex_scale + 0.5);
     vec2 c = (tc + 0.5) * pc.tex_scale - 0.5;
@@ -148,7 +193,9 @@ vec4 sample_region_repeat_up(vec2 tc) {
 void main() {
     out_blend = vec4(1.0);
     vec2 tdx = vec2(0.0), tdy = vec2(0.0);
-    if (pc.scale > 1.0 && pc.flags.y != 0u) {
+    /* GS texels per pixel: upscaled sprites, and the mip level of a
+       replacement texture (flags.y bits 2-9) */
+    if ((pc.scale > 1.0 || ((pc.flags.y >> 2) & 255u) != 0u) && pc.flags.y != 0u) {
         vec2 tcd = ((pc.flags.x >> 2) & 1u) != 0u
                  ? v_stq.xy : (v_stq.xy / max(v_stq.z, 1e-9)) * pc.tex_size;
         tdx = dFdx(tcd);
@@ -178,6 +225,8 @@ void main() {
     bool tcc  = ((f >> 17) & 1u) != 0u;
     bool afkeep = ((f >> 18) & 1u) != 0u;
     bool point = ((f >> 19) & 1u) != 0u;
+    int hd = int((pc.flags.y >> 2) & 15u);
+    if (hd > 0) point = false;
     bool point_rows = point && ((f >> 29) & 1u) != 0u;
     bool afonly = ((f >> 20) & 1u) != 0u;
     bool fba   = ((f >> 21) & 1u) != 0u;
@@ -246,7 +295,10 @@ void main() {
                        float(pc.clamp_uv.z), float(pc.clamp_uv.w),
                        pc.tex_size.y, own);
         vec4 t;
-        if ((f & (1u << 30)) != 0u) {
+        float foot = max(length(tdx), length(tdy));
+        if (hd > 0) {
+            t = sample_hd(tex, unwrapped_tc, pc.tex_size, pc.clamp_uv, hd, foot);
+        } else if ((f & (1u << 30)) != 0u) {
             bool four = (f & (1u << 31)) != 0u;
             if (point) t = clut_rt_texel(ivec2(floor(tc + 1.0 / 32.0)), four);
             else       t = clut_rt_bilinear(unwrapped_tc, four);
@@ -272,7 +324,7 @@ void main() {
         }
         if (mip_w > 0.0) {
             vec2 st = fst ? v_stq.xy / pc.tex_size : v_stq.xy / max(v_stq.z, 1e-9);
-            t = mix(t, sample_next_level(st, point, (f & (1u << 25)) != 0u), mip_w);
+            t = mix(t, sample_next_level(st, point, (f & (1u << 25)) != 0u, foot), mip_w);
         }
         if ((pc.flags.y & 2u) != 0u) {
             /* PSMT8H read from a render target: the index is the pixel's alpha

@@ -2,6 +2,7 @@
 #include "ps2_ui.h"
 #include "ps2_game.h"
 #include "ps2_settings.h"
+#include "ps2_texpack.h"
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -656,6 +657,30 @@ void tab_rendering() {
     if (ImGui::Combo("UI texture filtering", &ps2_cfg.ui_smooth, UIF, 2)) gfx_changed(0);
     help("Smooths screen-space HUD, menu and map textures when enlarged. This can soften very "
          "thin lines or text; the 4K preset enables it.");
+
+    {   /* replacement textures (ps2_texpack.c) */
+        unsigned n = ps2_texpack_count();
+        bool hd = ps2_cfg.hd_textures != 0, dump = ps2_texpack_dumping() != 0;
+        if (!n) ImGui::BeginDisabled();
+        if (ImGui::Checkbox("HD texture pack", &hd)) { ps2_cfg.hd_textures = hd; changed(0); }
+        if (!n) ImGui::EndDisabled();
+        if (n) {
+            uint64_t used = 0, limit = 0;
+            ps2_texpack_memory(&used, &limit);
+            ImGui::TextDisabled("%u textures in %s, %.0f MB loaded", n, ps2_texpack_dir(),
+                                (double)used / (1024.0 * 1024.0));
+        } else {
+            ImGui::TextDisabled("No pack in %s", ps2_texpack_dir());
+        }
+        help("Draws higher-resolution versions of the game's textures (aircraft, terrain, menus) "
+             "from the textures\\hd folder in place of the PS2's. Turn it off to compare. "
+             "tools\\texture_pack.py makes a pack from textures saved with the option below.");
+        if (ImGui::Checkbox("Save textures for upscaling", &dump)) ps2_texpack_set_dump(dump);
+        if (dump) ImGui::TextDisabled("%u saved to textures\\dump", ps2_texpack_dumped());
+        help("Saves each texture the game draws into textures\\dump, once, skipping pictures "
+             "that change every frame such as movies. Play the parts you want an HD pack to "
+             "cover with this on. It is not remembered between sessions.");
+    }
 
     static const int AF_VALUES[] = { 0, 2, 4, 8, 16 };
     static const char *const AF[] = { "Off", "2x", "4x", "8x", "16x" };

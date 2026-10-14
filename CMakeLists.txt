@@ -64,6 +64,7 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_hle_iop.c
     runtime/src/ps2_hle_ac4.c
     runtime/src/ps2_video.c
+    runtime/src/ps2_texpack.c
     runtime/src/ps2_state.c
     runtime/src/ps2_capture.c
     runtime/src/ps2_statecap.c

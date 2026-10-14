@@ -156,6 +156,8 @@ extern void (*ps2_vk_before_record)(void);
 
 u32  ps2_vk_texture(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h);
 int  ps2_vk_texture_is(u32 idx, u64 key, u32 hash);
+/* texture whose pixels the caller keeps alive and unchanged (texture packs) */
+u32  ps2_vk_texture_ext(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h);
 
 u32  ps2_vk_texture_native(u32 src, u32 x, u32 y, u32 w, u32 h);
 u32  ps2_vk_texture_native_find(u64 key, u32 hash, u32 w, u32 h);

@@ -24,6 +24,24 @@ For a bug, send last-play.log (replaced on each launch) with the mission,
 what happened and how to reproduce it. DIAGNOSTICS.bat writes a more
 detailed diagnostics.log.
 
+HD textures
+-----------
+The game's textures can be replaced with sharper, upscaled versions (the
+aircraft, the hangar, terrain, menus). Packs are made on your PC from your
+own copy of the game; none are included.
+
+1. In the game press F4, open Rendering and tick "Save textures for
+   upscaling", then play the parts you want covered. Textures are saved
+   once each into textures\dump.
+2. Run MAKE_HD_TEXTURES.bat. It needs Python 3 with Pillow
+   (py -m pip install Pillow) and Real-ESRGAN (the Windows
+   realesrgan-ncnn-vulkan zip from
+   https://github.com/xinntao/Real-ESRGAN/releases, unpacked into
+   tools\realesrgan). The pack goes to textures\hd\upscaled; running it
+   again only adds new textures.
+3. Restart the game. F4 > Rendering > "HD texture pack" switches it on and
+   off for comparison.
+
 What works
 ----------
 Boot, memory card detection, the opening FMV and title, menus, the story

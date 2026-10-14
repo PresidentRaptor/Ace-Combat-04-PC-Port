@@ -187,6 +187,7 @@ void ps2_settings_defaults(ps2_settings *s) {
     s->ui_scale = 1.0f;
     s->block_input_in_menu = 1;
     s->vibration = 1;
+    s->hd_textures = 1;
     s->volume = 1.0f;
     s->mute_unfocused = 0;
     ps2_settings_default_bindings(s, 1, 1);
@@ -206,6 +207,7 @@ static void sanitize(ps2_settings *s) {
     s->internal_res = clampi(s->internal_res, 0, PS2_INTERNAL_RES_MAX);
     s->tex_filter = clampi(s->tex_filter, 0, 2);
     s->ui_smooth = s->ui_smooth != 0;
+    s->hd_textures = s->hd_textures != 0;
     if (s->anisotropy != 0 && s->anisotropy != 2 && s->anisotropy != 4
         && s->anisotropy != 8 && s->anisotropy != 16)
         s->anisotropy = 0;
@@ -268,6 +270,7 @@ static const cfg_field fields[] = {
     FI("graphics", "internal_resolution", internal_res, "0 auto (cover the window), 1 native 640x448, 2..8 times that"),
     FI("graphics", "texture_filter", tex_filter, "0 as the game asks, 1 force nearest, 2 force bilinear"),
     FI("graphics", "ui_smooth", ui_smooth, "1 bilinear filtering for screen-space game UI textures"),
+    FI("graphics", "hd_textures", hd_textures, "1 use the replacement texture pack in textures/hd"),
     FI("graphics", "anisotropy", anisotropy, "0 off, 2, 4, 8 or 16"),
     FI("graphics", "deinterlace", deinterlace, "1 weave the two fields into whole frames"),
     FI("graphics", "scale_filter", scale_filter, "0 nearest, 1 bilinear, 2 sharp bilinear"),

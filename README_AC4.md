@@ -152,6 +152,31 @@ General fixes that AC4 exposed:
   64-pixel strips end exactly on the boundary (AC5 ends them half a pixel short). AC4's
   aircraft self-shadow (shadow volumes counted into a half-size buffer, shuffled into
   alpha, then `Cd*(1-Ad)`) missed the match, so the whole aircraft was darkened to black.
+- **replacement ("HD") textures** (`ps2_texpack.c`, `ps2_video.c` `texture_hd`/`hd_resolve`/
+  `ps2_vk_texture_ext`, gs.frag `sample_hd`; started by reviewer Astra): a texture is
+  identified by an FNV-1a hash of its decoded RGBA and size, never its VRAM address, and a
+  pack is a folder of `<id>_<w>x<h>.pam` files at an integer scale (1-8x). AC4's terrain is
+  matched per atlas window (the REGION_CLAMP/REPEAT rectangle of each 64x64 tile and its mip
+  levels, which must be a power of two aligned to its size), everything else as the whole
+  decode. Only recorded draws bind replacements; the GS keeps its own decode. The pack is
+  indexed at start-up (`textures/hd`, subfolders after the files directly in it, so a
+  hand-made file wins over `textures/hd/upscaled`); a replacement is read on a loader thread
+  the first time it is drawn (the original stands in until then), kept for the session and
+  bound without a copy (`ps2_vk_texture_ext`: full mip chain, recycled only among such
+  textures, outside the 512 MB decode budget), up to `PS2_TEXTURE_PACK_MB` (4096). New
+  uploads are limited to 48 MB a field. gs.frag samples a replacement in GS texel units for
+  each bilinear tap (CLAMP, REGION_CLAMP and REGION_REPEAT as on the GS) and steps down its
+  mip chain with the screen footprint, as far as the original's resolution, so the detail
+  fades with distance instead of shimmering. The per-pixel mip blend binds the next level's
+  replacement too. F4 > Rendering: "HD texture pack" (`[graphics] hd_textures`) and "Save
+  textures for upscaling" (`textures/dump`, or `PS2_TEXTURE_DUMP=<dir>`): a picture is saved
+  the first time it is drawn in a field after the one it appeared in (movie frames are not),
+  with its wrap modes in `dump_info.tsv`. `tools/texture_pack.py upscale` runs Real-ESRGAN
+  (ncnn Vulkan) over a dump: the general model for photographic textures, the anime model
+  for few-colour art and for cut-out alpha (text, decals), borders padded the way the GS
+  wraps or clamps, 4x up to 512 px and 2x up to 1024, skipping textures without detail to
+  gain and the narrow strips AC4 decodes past their picture (64x1024). `MAKE_HD_TEXTURES.bat`
+  wraps it. With no pack and dumping off, every capture replays pixel-identical.
 
 Debug switches added: `PS2_SNAP_AT=<field>` (state snapshot at a field), `PS2_TRACE_DMA4`,
 `PS2_TRACE_MC`, `PS2_IPU_STATS`, `PS2_TRACE_AT_FIELD=<field,...>` (draw trace of the frame

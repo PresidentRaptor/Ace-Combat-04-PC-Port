@@ -38,6 +38,7 @@ typedef struct ps2_settings {
     int   internal_res;
     int   tex_filter;
     int   ui_smooth;
+    int   hd_textures;      /* use the replacement texture pack in textures/hd */
     int   anisotropy;
     int   deinterlace;
     int   fxaa;

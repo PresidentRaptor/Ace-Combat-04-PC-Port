@@ -4,6 +4,7 @@
 #include "ps2_capture.h"
 #include "ps2_vk.h"
 #include "ps2_settings.h"
+#include "ps2_texpack.h"
 #include "ps2_ui.h"
 
 #include <math.h>
@@ -61,12 +62,27 @@ typedef struct {
     u32 mip;          /* ps2_vk_state.mip */
 } vk_draw;
 
+/* a texture's replacement from a texture pack (texture_hd) */
+typedef struct {
+    u64 id, key;
+    u32 hash, hd;       /* hd: store index + 1 */
+    u8 none;            /* no replacement (or it failed) */
+} hd_ref;
+
 typedef struct {
     u64 key;
     u32 hash;
     u32 w, h;
     u8 *rgba;
     u8 *rgba_alt;
+    /* replacement textures: the picture's pack identity for generation
+       hd_gen (an hd_ref); for a replacement itself, its scale over the
+       original.  ext: the pixels belong to the pack (no copy, never freed). */
+    hd_ref hd;
+    u32 hd_gen, hd_scale;
+    u64 hd_key;             /* the GS key hd_churn counts for */
+    u32 hd_changed, hd_churn;
+    u8 ext;
     u32 vram_base, vram_size;
     u32 generation;
     int uploaded_gen;
@@ -3414,6 +3430,10 @@ static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
         pc.flags[0] = d->frag_flags;
         pc.flags[1] = ((d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u)
                     | (d->clut_tex && d->tex_rt ? 2u : 0u);
+        if (!d->tex_rt && d->tex < ntextures)
+            pc.flags[1] |= textures[d->tex].hd_scale << 2;
+        if ((d->mip & (1u << 21)) && d->clut_tex && d->clut_tex <= ntextures)
+            pc.flags[1] |= textures[d->clut_tex - 1u].hd_scale << 6;
         pc.flags[2] = d->wrap;
         pc.flags[3] = debug_solid;
         pc.clamp_uv[0] = d->minu;
@@ -3446,8 +3466,8 @@ static void ov_compose(VkCommandBuffer cmd, vk_frame *fr) {
 static void reserve_texture_staging(vk_frame *fr) {
     u8 seen[VK_MAX_TEXTURES] = {0};
     size_t need = 0;
-    for (u32 i = 0; i < rep_ndraws; i++) {
-        u32 ti = rep_draws[i].tex;
+    for (u32 i = 0; i < rep_ndraws * 2u; i++) {
+        u32 ti = i & 1u ? (u32)rep_draws[i >> 1].clut_tex - 1u : rep_draws[i >> 1].tex;
         if (ti >= ntextures || seen[ti]) continue;
         seen[ti] = 1;
         vk_texture *t = &textures[ti];
@@ -3812,6 +3832,10 @@ static void render_list(VkCommandBuffer cmd, vk_frame *fr) {
         pc.flags[0] = d->frag_flags;
         pc.flags[1] = ((d->tex != 0xFFFF || d->tex_rt) ? 1u : 0u)
                     | (d->clut_tex && d->tex_rt ? 2u : 0u);
+        if (!d->tex_rt && d->tex < ntextures)
+            pc.flags[1] |= textures[d->tex].hd_scale << 2;
+        if ((d->mip & (1u << 21)) && d->clut_tex && d->clut_tex <= ntextures)
+            pc.flags[1] |= textures[d->clut_tex - 1u].hd_scale << 6;
         pc.flags[2] = d->wrap;
         pc.flags[3] = debug_solid;
         pc.clamp_uv[0] = d->minu;
@@ -5342,9 +5366,172 @@ static void ps2_vk_draw_inner(int topology, const ps2_vk_state *st,
     }
 }
 
+/* Replacement ("HD") textures from a texture pack (ps2_texpack.c).  The GS
+   keeps its own decode; only recorded draws bind the replacement, whose
+   pixels belong to the pack (ps2_vk_texture_ext keeps no copy).  A picture is
+   identified once per generation of its texture slot.  Uploads of new
+   replacements are limited per recorded field so a scene change cannot grow
+   the staging buffer without bound; the rest follow on later fields, the
+   originals standing in meanwhile. */
+static u32 hd_upload_seq;
+static size_t hd_upload_bytes;
+#define HD_UPLOAD_PER_FIELD (48u << 20)
+
+static u32 hd_resolve(hd_ref *r, u32 w, u32 h, u32 orig) {
+    unsigned rw = 0, rh = 0;
+    int pending = 0;
+    const u8 *px;
+    u32 hd;
+    if (r->none) return orig;
+    if (r->hd && ps2_vk_texture_is(r->hd - 1u, r->key, r->hash)) {
+        hd = r->hd - 1u;
+    } else {
+        px = ps2_texpack_get(r->id, w, h, &rw, &rh, &pending);
+        if (!px) { if (!pending) r->none = 1; return orig; }
+        r->key = r->id | (1ull << 63);
+        r->hash = (u32)(r->id ^ (r->id >> 32));
+        hd = ps2_vk_texture_ext(r->key, r->hash, px, rw, rh);
+        if (hd == 0xFFFFFFFFu) { r->none = 1; return orig; }
+        textures[hd].hd_scale = rw / w;
+        r->hd = hd + 1u;
+    }
+    if (textures[hd].uploaded_gen != (int)textures[hd].generation) {
+        size_t bytes = (size_t)textures[hd].w * textures[hd].h * 4u;
+        if (hd_upload_seq != tex_rec_seq) { hd_upload_seq = tex_rec_seq; hd_upload_bytes = 0; }
+        if (hd_upload_bytes && hd_upload_bytes + bytes > HD_UPLOAD_PER_FIELD) return orig;
+        hd_upload_bytes += bytes;
+    }
+    textures[hd].rec_seq = tex_rec_seq;
+    return hd;
+}
+
+static u32 texture_hd(u32 idx, const ps2_vk_state *st) {
+    vk_texture *t;
+    if (idx >= ntextures) return idx;
+    t = &textures[idx];
+    t->rec_seq = tex_rec_seq;
+    if (!t->rgba || t->ext || t->levels > 1u) return idx;
+    /* A picture that keeps changing -- a movie, or a texture atlas the game
+       streams tiles into (AC4's terrain, drawn whole by some draws) -- never
+       repeats, so it is not hashed, saved or replaced: three changes less than
+       two seconds apart make it volatile until it has stood still for two
+       seconds. */
+    if (t->hd_key != t->key) {
+        t->hd_key = t->key;
+        t->hd_churn = 0;
+        t->hd_changed = tex_rec_seq - 1000u;
+    }
+    if (t->hd_gen != t->generation) {
+        t->hd_churn = tex_rec_seq - t->hd_changed < 120u ? t->hd_churn + 1u : 0u;
+        t->hd_changed = tex_rec_seq;
+        t->hd_gen = t->generation;
+        memset(&t->hd, 0, sizeof t->hd);
+        if (t->hd_churn >= 3u) t->hd.none = 1;
+        else t->hd.id = ps2_texpack_id(t->rgba, t->w, t->h);
+    } else if (t->hd.none && t->hd_churn >= 3u && tex_rec_seq - t->hd_changed >= 120u) {
+        t->hd_churn = 0;
+        memset(&t->hd, 0, sizeof t->hd);
+        t->hd.id = ps2_texpack_id(t->rgba, t->w, t->h);
+    }
+    if (t->hd_churn >= 3u) return idx;
+    if (ps2_texpack_dumping() && ps2_texpack_want_dump(t->hd.id, tex_rec_seq)) {
+        ps2_texpack_use use;
+        use.wms = st->wms; use.wmt = st->wmt; use.region = 0; use.frame = tex_rec_seq;
+        ps2_texpack_dump(t->rgba, t->w, t->h, t->hd.id, &use);
+    }
+    return hd_resolve(&t->hd, t->w, t->h, idx);
+}
+
+/* AC4's terrain streams 64x64 tiles into an atlas and draws each through a
+   REGION_CLAMP window (REGION_REPEAT works the same way).  Identify the window,
+   not the whole atlas, whose other tiles change all the time.  gs.frag wraps in
+   GS texels before reducing the coordinate into the replacement tile, which is
+   why the window must be a power of two aligned to its size. */
+static u32 texture_hd_region(u32 idx, const ps2_vk_state *st, unsigned mip) {
+    static struct { u32 src, gen, x, y, w, h; hd_ref r; } cache[2048];
+    static u8 *scratch;
+    static size_t capacity;
+    vk_texture *t;
+    u32 x, y, w, h, slot;
+    if (idx >= ntextures) return idx;
+    t = &textures[idx];
+    if (st->wms < 2 || st->wmt < 2) return texture_hd(idx, st);
+    if (st->wms == 2) {
+        x = st->minu >> mip;
+        if ((st->maxu >> mip) < x) return texture_hd(idx, st);
+        w = (st->maxu >> mip) - x + 1u;
+    } else {
+        x = st->maxu >> mip;
+        w = (st->minu >> mip) + 1u;
+    }
+    if (st->wmt == 2) {
+        y = st->minv >> mip;
+        if ((st->maxv >> mip) < y) return texture_hd(idx, st);
+        h = (st->maxv >> mip) - y + 1u;
+    } else {
+        y = st->maxv >> mip;
+        h = (st->minv >> mip) + 1u;
+    }
+    if ((w & (w - 1u)) || (h & (h - 1u)) || (x & (w - 1u)) || (y & (h - 1u))
+        || w < 8u || h < 8u || x >= t->w || y >= t->h || w > t->w - x || h > t->h - y
+        || (w == t->w && h == t->h))
+        return texture_hd(idx, st);
+    if (!t->rgba || t->ext || t->levels > 1u) return idx;
+    t->rec_seq = tex_rec_seq;
+    slot = (idx * 16777619u ^ x * 73856093u ^ y * 19349663u ^ w * 31u ^ h) & 2047u;
+    {
+        int fresh = !(cache[slot].gen == t->generation && cache[slot].src == idx
+                      && cache[slot].x == x && cache[slot].y == y
+                      && cache[slot].w == w && cache[slot].h == h);
+        int dump = 0;
+        if (!fresh && ps2_texpack_dumping())
+            dump = ps2_texpack_want_dump(cache[slot].r.id, tex_rec_seq);
+        if (fresh || dump) {
+            size_t bytes = (size_t)w * h * 4u;
+            if (bytes > capacity) {
+                u8 *p = (u8 *)realloc(scratch, bytes);
+                if (!p) return idx;
+                scratch = p; capacity = bytes;
+            }
+            for (u32 row = 0; row < h; row++)
+                memcpy(scratch + (size_t)row * w * 4u,
+                       t->rgba + ((size_t)(y + row) * t->w + x) * 4u, (size_t)w * 4u);
+        }
+        if (fresh) {
+            cache[slot].src = idx; cache[slot].gen = t->generation;
+            cache[slot].x = x; cache[slot].y = y; cache[slot].w = w; cache[slot].h = h;
+            memset(&cache[slot].r, 0, sizeof cache[slot].r);
+            cache[slot].r.id = ps2_texpack_id(scratch, w, h);
+            if (ps2_texpack_dumping())
+                dump = ps2_texpack_want_dump(cache[slot].r.id, tex_rec_seq);
+        }
+        if (dump) {
+            ps2_texpack_use use;
+            use.wms = st->wms; use.wmt = st->wmt; use.region = 1; use.frame = tex_rec_seq;
+            ps2_texpack_dump(scratch, w, h, cache[slot].r.id, &use);
+        }
+    }
+    return hd_resolve(&cache[slot].r, w, h, idx);
+}
+
 static void rec_one(int topology, const ps2_vk_state *st,
                     const ps2_vk_vertex *v, int n, u32 flags, u32 depth_key) {
     vk_draw *d;
+    ps2_vk_state hd_state;
+    if (st->tme && !st->tex_rt && !st->clut_rt && !st->shuffle_rg && !st->index_rt
+        && (rec_native_mark == 0 || rec_native_mark == PS2_VK_NATIVE_2D)
+        && ps2_texpack_active()) {
+        hd_state = *st;
+        /* a replacement may recycle a cold store slot: pin both originals
+           before looking up either member of a mip pair */
+        if (st->tex_index < ntextures) textures[st->tex_index].rec_seq = tex_rec_seq;
+        if (st->clut_tex && st->clut_tex <= ntextures)
+            textures[st->clut_tex - 1u].rec_seq = tex_rec_seq;
+        hd_state.tex_index = texture_hd_region(st->tex_index, st, 0);
+        if ((st->mip & (1u << 21)) && st->clut_tex && st->clut_tex <= ntextures)
+            hd_state.clut_tex = texture_hd_region(st->clut_tex - 1u, st, 1) + 1u;
+        st = &hd_state;
+    }
     if (st->clut_tex && st->clut_tex <= ntextures)
         textures[st->clut_tex - 1u].rec_seq = tex_rec_seq;
     if (st->tme && !st->tex_rt && st->tex_index < ntextures)
@@ -5568,6 +5755,60 @@ int ps2_vk_texture_is(u32 idx, u64 key, u32 hash) {
     return idx < ntextures && textures[idx].key == key && textures[idx].hash == hash;
 }
 
+/* A texture whose pixels stay owned by the caller, unchanged and alive for
+   the session (texture-pack replacements): no copy is made, and it gets a full
+   mip chain so a large replacement can be minified without shimmering.  Cold
+   slots of the same size are recycled among these only. */
+u32 ps2_vk_texture_ext(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h) {
+    u32 i, spare = 0xFFFFFFFFu, oldest = 2u, levels = 1;
+    if (!vk_ready || !w || !h || !rgba) return 0xFFFFFFFFu;
+    key |= 1ull << 63;
+    for (s32 c = tex_first(key); c >= 0; c = tex_next[c])
+        if (textures[c].key == key && textures[c].hash == hash
+            && textures[c].w == w && textures[c].h == h) {
+            textures[c].rec_seq = tex_rec_seq;
+            return (u32)c;
+        }
+    for (i = 0; i < ntextures; i++) {
+        u32 age = tex_rec_seq - textures[i].rec_seq;
+        if (textures[i].ext && textures[i].w == w && textures[i].h == h && age > oldest) {
+            spare = i;
+            oldest = age;
+        }
+    }
+    if (spare != 0xFFFFFFFFu) {
+        i = spare;
+        if (textures[i].key != key) {
+            tex_index_remove(i);
+            textures[i].key = key;
+            tex_index_add(i);
+        }
+        __atomic_store_n(&textures[i].rgba, (u8 *)rgba, __ATOMIC_RELEASE);
+        textures[i].hash = hash;
+        textures[i].hd_scale = 0;
+        textures[i].rec_seq = tex_rec_seq;
+        __atomic_add_fetch(&textures[i].generation, 1, __ATOMIC_RELEASE);
+        return i;
+    }
+    if (ntextures >= VK_MAX_TEXTURES) return 0xFFFFFFFFu;
+    while ((w >> levels) || (h >> levels)) levels++;
+    i = ntextures++;
+    textures[i].key = key;
+    textures[i].hash = hash;
+    textures[i].w = w;
+    textures[i].h = h;
+    textures[i].ext = 1;
+    textures[i].levels = levels;
+    textures[i].hd_gen = textures[i].hd_scale = 0;
+    textures[i].rgba_alt = NULL;
+    __atomic_store_n(&textures[i].rgba, (u8 *)rgba, __ATOMIC_RELEASE);
+    tex_index_add(i);
+    textures[i].uploaded_gen = 0;
+    textures[i].rec_seq = tex_rec_seq;
+    __atomic_store_n(&textures[i].generation, 1u, __ATOMIC_RELEASE);
+    return i;
+}
+
 const u8 *ps2_vk_texture_pixels(u32 idx) {
     return idx < ntextures ? __atomic_load_n(&textures[idx].rgba, __ATOMIC_ACQUIRE) : NULL;
 }
@@ -5589,7 +5830,7 @@ u32 ps2_vk_texture(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h) {
             textures[i].rec_seq = tex_rec_seq;
             return i;
         }
-        if (spare == 0xFFFFFFFFu && textures[i].rgba
+        if (spare == 0xFFFFFFFFu && textures[i].rgba && !textures[i].ext
             && (u32)(tex_rec_seq - textures[i].rec_seq) > 2u)
             spare = i;
     }
@@ -5601,7 +5842,7 @@ u32 ps2_vk_texture(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h) {
         u32 oldest = 2u;
         for (i = 0; i < ntextures; i++) {
             u32 age = tex_rec_seq - textures[i].rec_seq;
-            if (textures[i].rgba && textures[i].w == w && textures[i].h == h
+            if (textures[i].rgba && !textures[i].ext && textures[i].w == w && textures[i].h == h
                 && ((textures[i].key ^ key) & (1ull << 63)) == 0 && age > oldest) {
                 spare = i;
                 oldest = age;
@@ -5621,6 +5862,7 @@ u32 ps2_vk_texture(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h) {
             __atomic_store_n(&textures[i].rgba, now_live, __ATOMIC_RELEASE);
         }
         textures[i].hash = hash;
+        textures[i].hd_gen = textures[i].hd_scale = 0;
         textures[i].rec_seq = tex_rec_seq;
         __atomic_add_fetch(&textures[i].generation, 1, __ATOMIC_RELEASE);
         return i;
@@ -5643,6 +5885,7 @@ u32 ps2_vk_texture(u64 key, u32 hash, const u8 *rgba, u32 w, u32 h) {
     textures[i].hash = hash;
     textures[i].w = w;
     textures[i].h = h;
+    textures[i].hd_gen = textures[i].hd_scale = 0;
     textures[i].rgba = (u8 *)malloc(bytes);
     textures[i].rgba_alt = (u8 *)malloc(bytes);
     if (!textures[i].rgba || !textures[i].rgba_alt) {
@@ -5669,6 +5912,7 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
     int replace;
     if (!vk_ready) return 0;
     if (ps2_vk_before_record) ps2_vk_before_record();
+    ps2_texpack_set_enabled(ps2_cfg.hd_textures);
     {
         static u64 calls;
         if ((calls++ % 600ull) == 0ull)

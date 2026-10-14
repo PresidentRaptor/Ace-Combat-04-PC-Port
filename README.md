@@ -14,7 +14,8 @@ There's no game code or assets in this repo. You bring your own copy of the game
 - **Saving and loading** work (pre-mission SAVE, title-screen LOAD and CONTINUE).
 - **Controller vibration**, rebindable keyboard and controller, PCSX2-style analog settings.
 - The picture defaults to an undistorted 4:3 image in wide windows. AC4 does not yet have a verified game-specific 16:9 camera patch; AC5's patch is not applied.
-- A 4K graphics preset selects internal resolution automatically to cover the current display, up to 8x (GPU and memory permitting), and smooths enlarged screen-space map and HUD art. The PS2's original texture art remains native resolution; filtering improves sampling, not source detail.
+- A 4K graphics preset selects internal resolution automatically to cover the current display, up to 8x (GPU and memory permitting), and smooths enlarged screen-space map and HUD art.
+- **HD texture packs**: the game's textures can be saved, upscaled with Real-ESRGAN and drawn in place of the PS2 originals (aircraft, hangar, terrain, menus). See [HD textures](#hd-textures).
 - The Windows executable uses the Ace Combat 04 ISAF insignia as its application icon.
 - Later missions haven't been played yet. The title screen's demonstration flights, recorded in several of them (snowy mountains, a bridge, a low pass through a city, the cockpit view), render correctly.
 
@@ -128,6 +129,16 @@ Controllers go through SDL; buttons map by position (bottom face = Cross, right 
 - **Esc** asks before quitting (or closes the menu).
 - F6 to F10 are capture and trace tools for development; they only work with `PS2_DEV_KEYS=1` (DIAGNOSTICS.bat sets it).
 
+### HD textures
+
+The runtime can draw replacement textures, at up to 8x the PS2's resolution, in place of the originals. A replacement is matched by the original's pixels, so it follows a texture wherever the game loads it. No textures are included: a pack is made on your machine from your copy of the game.
+
+1. In the game, open **F4 > Rendering** and tick **Save textures for upscaling**, then play the parts you want covered (menus, the hangar, missions; the title screen's demonstration flights cover several later missions). Textures go to `textures\dump`, each saved once; pictures that change every frame, like movies, are skipped.
+2. Upscale them: `MAKE_HD_TEXTURES.bat` in the game folder, or `python tools/texture_pack.py upscale textures/dump --output textures/hd/upscaled --esrgan <realesrgan-ncnn-vulkan.exe>`. This needs Python with Pillow and the Windows [Real-ESRGAN ncnn Vulkan](https://github.com/xinntao/Real-ESRGAN/releases) build. Photographic textures (terrain, aircraft skins, the hangar) use Real-ESRGAN's general model, and text and menu art its anime model. Textures up to 512 px are scaled 4x and up to 1024 px 2x. Running it again only adds textures that aren't in a pack yet.
+3. Restart the game. **F4 > Rendering > HD texture pack** switches the pack on and off, for comparison.
+
+Replacements are read in the background the first time they're drawn, and use up to 4 GB of RAM (`PS2_TEXTURE_PACK_MB`). Far away they fade back to the original's level of detail instead of shimmering. To change one by hand, `python tools/texture_pack.py export textures/dump` writes PNGs and a contact sheet, and `import ORIGINAL.pam EDITED.png` packages your edit; files directly in `textures\hd` take priority over `textures\hd\upscaled`.
+
 ## What was fixed for AC4
 
 The details, with the debug switches used to find each one, are in `README_AC4.md`. In short:
@@ -158,7 +169,7 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - `runtime/`: everything that stands in for the console, plus the settings menu; `runtime/src/ps2_hle_ac4.c` is AC4's sound system
 - `runtime/shaders/`: the GLSL shaders, compiled at build time
 - `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks; `config/`: AC5's
-- `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat` and the player README
+- `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat`, `MAKE_HD_TEXTURES.bat` and the player README
 - `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (AC5 mod scripts)
 - `generated/`: the recompiler's output, created in step 2
 

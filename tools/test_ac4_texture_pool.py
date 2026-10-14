@@ -21,7 +21,7 @@ static int vk_ready;
 static u32 tex_rec_seq = 2;
 void ps2_log(const char *, ...);
 '''
-header += between('typedef struct {\n    u64 key;', 'static ps2_vk_vertex *rec_verts;')
+header += between('typedef struct {\n    u64 id, key;', 'static ps2_vk_vertex *rec_verts;')
 header += between('static vk_texture textures[', 'static pthread_mutex_t list_lock')
 header += between('int ps2_vk_texture_is(', 'void ps2_vk_invalidate(')
 env = os.environ.copy()

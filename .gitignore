@@ -1,4 +1,5 @@
 build/
+textures/
 generated/
 *.o
 *.obj
