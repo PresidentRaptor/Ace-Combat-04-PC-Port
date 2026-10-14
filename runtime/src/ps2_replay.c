@@ -354,7 +354,7 @@ static void usage(const char *argv0) {
 "  --loop N        replay N times, 0 = until the window is closed\n"
 "  --fields N      stop each pass after N fields\n"
 "  --bench         time every pass and print the phase profile\n"
-"  --preset N      graphics preset: 0 low, 1 medium, 2 high, 3 ultra, 4 4K\n"
+"  --preset N      graphics preset: 0 low, 1 medium, 2 high, 3 ultra\n"
 "  --hidden        render through Vulkan without showing a window\n"
 "  --novideo       run headless -- but NOT the fast path and NOT what you\n"
 "                  want for a measurement: with no Vulkan device, vertex_kick\n"
@@ -400,7 +400,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--preset") && i + 1 < argc) {
             char *end;
             long preset = strtol(argv[++i], &end, 10);
-            if (!*argv[i] || *end || preset < PS2_PRESET_LOW || preset > PS2_PRESET_4K) {
+            if (!*argv[i] || *end || preset < PS2_PRESET_LOW || preset > PS2_PRESET_ULTRA) {
                 fprintf(stderr, "[REPLAY] invalid graphics preset: %s\n", argv[i]);
                 return 1;
             }

@@ -14,7 +14,6 @@ There's no game code or assets in this repo. You bring your own copy of the game
 - **Saving and loading** work (pre-mission SAVE, title-screen LOAD and CONTINUE).
 - **Controller vibration**, rebindable keyboard and controller, PCSX2-style analog settings.
 - The picture defaults to an undistorted 4:3 image in wide windows. AC4 does not yet have a verified game-specific 16:9 camera patch; AC5's patch is not applied.
-- A 4K graphics preset selects internal resolution automatically to cover the current display, up to 8x (GPU and memory permitting), and smooths enlarged screen-space map and HUD art.
 - **HD texture packs**: the game's textures can be saved, upscaled with Real-ESRGAN and drawn in place of the PS2 originals (aircraft, hangar, terrain, menus). See [HD textures](#hd-textures).
 - The Windows executable uses the Ace Combat 04 ISAF insignia as its application icon.
 - Later missions haven't been played yet. The title screen's demonstration flights, recorded in several of them (snowy mountains, a bridge, a low pass through a city, the cockpit view), render correctly.

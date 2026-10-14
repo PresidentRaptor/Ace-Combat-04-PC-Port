@@ -132,17 +132,16 @@ typedef struct {
     float sharpen;
 } preset_def;
 
-static const preset_def presets[5] = {
+static const preset_def presets[4] = {
      { 1, PS2_TEXFILTER_GAME,  0,  0, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
      { 2, PS2_TEXFILTER_GAME,  0,  4, 1, 0, PS2_SCALE_BILINEAR, 0.00f },
      { 3, PS2_TEXFILTER_GAME,  1,  8, 1, 1, PS2_SCALE_SHARP,    0.10f },
      { 4, PS2_TEXFILTER_GAME,  1, 16, 1, 1, PS2_SCALE_SHARP,    0.10f },
-     { 0, PS2_TEXFILTER_GAME,  1, 16, 1, 1, PS2_SCALE_SHARP,    0.10f },
 };
 
 void ps2_settings_apply_preset(ps2_settings *s, int preset) {
     const preset_def *p;
-    if (preset < 0 || preset > PS2_PRESET_4K) return;
+    if (preset < 0 || preset > PS2_PRESET_ULTRA) return;
     p = &presets[preset];
     s->preset       = preset;
     s->internal_res = p->internal_res;
@@ -156,7 +155,7 @@ void ps2_settings_apply_preset(ps2_settings *s, int preset) {
 }
 
 int ps2_settings_preset_matches(const ps2_settings *s) {
-    for (int i = 0; i <= PS2_PRESET_4K; i++) {
+    for (int i = 0; i <= PS2_PRESET_ULTRA; i++) {
         const preset_def *p = &presets[i];
         if (s->internal_res == p->internal_res
             && s->tex_filter == p->tex_filter && s->ui_smooth == p->ui_smooth
@@ -268,7 +267,7 @@ typedef struct {
 #define FF(sec, k, m, c) { sec, k, 'f', offsetof(ps2_settings, m), c }
 
 static const cfg_field fields[] = {
-    FI("graphics", "preset", preset, "0 low, 1 medium, 2 high, 3 ultra, 4 4K display-aware, 5 custom"),
+    FI("graphics", "preset", preset, "0 low, 1 medium, 2 high, 3 ultra, 4 custom"),
     FI("graphics", "internal_resolution", internal_res, "0 auto (cover the window), 1 native 640x448, 2..8 times that"),
     FI("graphics", "texture_filter", tex_filter, "0 as the game asks, 1 force nearest, 2 force bilinear"),
     FI("graphics", "ui_smooth", ui_smooth, "1 bilinear filtering for screen-space game UI textures"),
@@ -335,7 +334,7 @@ static char *trim(char *p) {
 }
 
 static void log_summary(const char *source) {
-    static const char *const presets_n[] = { "low", "medium", "high", "ultra", "4K", "custom" };
+    static const char *const presets_n[] = { "low", "medium", "high", "ultra", "custom" };
     static const char *const win_n[] = { "windowed", "borderless", "exclusive" };
     static const char *const present_n[] = { "mailbox", "fifo", "immediate", "fifo-relaxed" };
     ps2_log("settings: %s -- preset %s, internal resolution %s%d, texture filter %d, "

@@ -6,7 +6,7 @@ of the entire campaign.
 
 ## Edge smoothing
 
-High, Ultra and 4K now enable FXAA and smooth UI texture sampling, with sharpening
+High and Ultra now enable FXAA and smooth UI texture sampling, with sharpening
 reduced from 0.20 to 0.10. Low and Medium retain their existing behavior. Existing
 saved settings are respected: reselect a preset to adopt its new values.
 
@@ -16,7 +16,7 @@ resolution texels and undoing the supersampling average. FXAA skips regions
 with little contrast. These options can be compared in F4; they cannot restore
 detail absent from the original art.
 
-`gsreplay --preset N` exercises the presentation path with presets 0..4. Its PPM
+`gsreplay --preset N` exercises the presentation path with presets 0..3. Its PPM
 screenshot captures the game render target before final presentation effects,
 so it does not establish the visual quality of FXAA. Final display quality and
 performance need live-play comparison.
