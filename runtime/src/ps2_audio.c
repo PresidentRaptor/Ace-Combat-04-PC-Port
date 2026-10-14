@@ -71,10 +71,8 @@ static void SDLCALL audio_cb(void *userdata, SDL_AudioStream *stream,
         frames = want_bytes / (int)(AUDIO_CHANNELS * sizeof(s16));
         if (frames <= 0) break;
         ps2_spu2_mix(buf, (u32)frames);
-#ifdef PS2_GAME_AC4
         ps2_ac4_vag_mix(buf, (u32)frames);
         ps2_ac4_snd_mix(buf, (u32)frames);
-#endif
         {   /* master volume (F4 > Quick > Audio) and the background mute */
             float g = ps2_cfg.volume;
             if (ps2_cfg.mute_unfocused && !ps2_video_focused()) g = 0.0f;

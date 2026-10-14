@@ -942,11 +942,9 @@ void ps2_syscall(ps2_ctx *ctx) {
             u32 e = sdd + (u32)i * 16u;
             u32 src = ps2_r32(e + 0), dst = ps2_r32(e + 4), size = ps2_r32(e + 8);
             if (!size) continue;
-#ifdef PS2_GAME_AC4
             /* the destination is IOP memory (AC4's native IOP services read
                it there); AC5's services expect the EE-side copy */
             if (dst < PS2_IOP_RAM_SIZE) dst += PS2_IOP_RAM_BASE;
-#endif
             for (u32 k = 0; k < size; k++) ps2_w8(dst + k, ps2_r8(src + k));
             sif_dma_bytes += size;
         }
@@ -1007,7 +1005,6 @@ static void deliver_vblank(void) {
     ps2_gs_vblank();
     ps2_timers_tick();
     ps2_pad_latch();
-    ps2_settings_apply_game_patches();
     ps2_modapi_field_tick();
     if (vsync_flag_ptr) ps2_w32(vsync_flag_ptr, vsync_flag_val);
     ps2_kernel_run_intc(&intr_ctx, 2);

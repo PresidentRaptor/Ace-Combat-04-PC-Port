@@ -193,18 +193,9 @@ void ps2_finish(const char *why) {
     ps2_cdvd_report();
     ps2_mod_report();
     ps2_hook_report();
-    rn_tap_report();
-    rn_intent_report();
-    rn_fixes_report();
-    rn_report();
     ps2_lua_report();
-    ps2_nufile_report();
-    ps2_nusound_report();
-    ps2_nusndstr_report();
-#ifdef PS2_GAME_AC4
     ps2_ac4_report();
     ps2_libpad_report();
-#endif
     ps2_spu2_report();
     ps2_audio_report();
     ps2_pad_report();
@@ -289,7 +280,6 @@ void ps2_capture_report(const char *why) {
     ps2_vu_lower_hist_report();
     ps2_vif_hist_report();
     ps2_video_report();
-    rn_census_report("F9");
     ps2_unknown_report();
     ps2_dump_trace("capture");
     {
@@ -307,86 +297,6 @@ void ps2_capture_report(const char *why) {
            (unsigned long long)capture_n, (unsigned long long)capture_n);
     fflush(stdout);
     fflush(stderr);
-}
-
-static int nufile_selftest(const char *disc_file) {
-    enum { REQ = 0x00300000u, BUF = 0x00310000u, REF = 4096 };
-    const ps2_disc_file *f = ps2_vfs_find(disc_file);
-    u8 *ref;
-    u32 i, n, fd;
-    int rc, fails = 0;
-
-    if (!f) {
-        ps2_log("selftest: '%s' is not on the disc", disc_file);
-        return 1;
-    }
-    n = f->size < REF ? f->size : REF;
-    ref = (u8 *)malloc(n + 4096);
-    if (!ref) return 1;
-    if (ps2_vfs_read_sectors(f->lsn, (n + 256 + 2047) / 2048, ref) <= 0) {
-        ps2_log("selftest: cannot read '%s' off the disc", disc_file);
-        free(ref);
-        return 1;
-    }
-
-    for (i = 0; i < 64; i++) ps2_w32(REQ + i * 4, 0);
-    ps2_w32(REQ + 0x18, (u32)strlen(disc_file) + 1);
-    for (i = 0; i <= strlen(disc_file); i++)
-        ps2_w8(REQ + 0x1C + i, (u8)disc_file[i]);
-    rc = ps2_rpc_call(0x4E554649u, 1, REQ, 1024, REQ, 16);
-    fd = ps2_r32(REQ);
-    ps2_log("selftest: nufile open('%s') -> rc %d, handle %d", disc_file, rc,
-            (int)fd);
-    if ((int)fd <= 0) fails++;
-
-    for (i = 0; i < n; i++) ps2_w8(BUF + i, 0xA5);
-    ps2_w32(REQ + 0x08, fd);
-    ps2_w32(REQ + 0x0C, BUF);
-    ps2_w32(REQ + 0x10, n);
-    rc = ps2_rpc_call(0x4E554649u, 3, REQ, 32, REQ, 16);
-    {
-        u32 got = ps2_r32(REQ), bad = 0;
-        for (i = 0; i < n; i++) if (ps2_r8(BUF + i) != ref[i]) bad++;
-        ps2_log("selftest: nufile read(%u) -> %u bytes, %u of %u differ",
-                n, got, bad, n);
-        if (got != n || bad) fails++;
-    }
-
-    ps2_w32(REQ + 0x08, fd);
-    ps2_w32(REQ + 0x0C, BUF);
-    ps2_w32(REQ + 0x10, 256);
-    rc = ps2_rpc_call(0x4E554649u, 4, REQ, 32, REQ, 16);
-    {
-        u32 got = ps2_r32(REQ), bad = 0;
-        u32 want = f->size - n < 256u ? f->size - n : 256u;
-        for (i = 0; i < want && n + i < REF + 2048; i++)
-            if (ps2_r8(BUF + i) != ref[n + i]) bad++;
-        ps2_log("selftest: nufile read(256) at offset %u -> %u bytes "
-                "(%u available), %u differ", n, got, want, bad);
-        if (got != want || bad) fails++;
-    }
-
-    ps2_w32(REQ + 0x08, fd);
-    ps2_rpc_call(0x4E554649u, 2, REQ, 32, REQ, 16);
-
-    for (i = 0; i < 64; i++) ps2_w32(REQ + i * 4, 0);
-    for (i = 0; i < n; i++) ps2_w8(BUF + i, 0x5A);
-    ps2_w32(REQ + 0x08, n);
-    ps2_w32(REQ + 0x0C, BUF);
-    ps2_w32(REQ + 0x10, (u32)strlen(disc_file) + 1);
-    for (i = 0; i <= strlen(disc_file); i++)
-        ps2_w8(REQ + 0x14 + i, (u8)disc_file[i]);
-    rc = ps2_rpc_call(0x4E554649u, 8, REQ, 1024, REQ, 16);
-    {
-        u32 got = ps2_r32(REQ), bad = 0;
-        for (i = 0; i < n; i++) if (ps2_r8(BUF + i) != ref[i]) bad++;
-        ps2_log("selftest: nufile load('%s', %u) -> %u bytes, %u differ",
-                disc_file, n, got, bad);
-        if (got != n || bad) fails++;
-    }
-    free(ref);
-    ps2_log("selftest: %s", fails ? "FAILED" : "all NUFILE checks passed");
-    return fails;
 }
 
 #ifdef _WIN32
@@ -436,10 +346,9 @@ int main(int argc, char **argv) {
     ps2_settings_defaults(&ps2_cfg);
     const char *dir = ".";
     const char *disc = NULL;
-    int want_video = 1, want_profile = 0, want_selftest = 0, want_vif_test = 0, want_vu_test = 0;
+    int want_video = 1, want_profile = 0, want_vif_test = 0, want_vu_test = 0;
     int want_gs_test = 0, want_spu2_test = 0, want_hle_test = 0;
     int want_autoplay = 0, want_deint = 1;
-    int want_stop_scene[3] = { -1, -1, 90 }, have_stop_scene = 0;
     int want_hidden = 0;
     const char *cap_path = NULL;
     int cap_frames = -1, cap_level = -1;
@@ -466,7 +375,6 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--disc") && i + 1 < argc) disc = argv[++i];
         else if (!strcmp(argv[i], "--novideo")) want_video = 0;
         else if (!strcmp(argv[i], "--hidden")) want_hidden = 1;
-        else if (!strcmp(argv[i], "--selftest")) want_selftest = 1;
         else if (!strcmp(argv[i], "--gs-test")) want_gs_test = 1;
         else if (!strcmp(argv[i], "--spu2-test")) want_spu2_test = 1;
         else if (!strcmp(argv[i], "--hle-test")) want_hle_test = 1;
@@ -497,24 +405,13 @@ int main(int argc, char **argv) {
             ps2_trace_show = (unsigned)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--vblanks") && i + 1 < argc)
             max_vblanks = (unsigned)strtoul(argv[++i], NULL, 0);
-        else if (!strcmp(argv[i], "--stop-scene") && i + 1 < argc) {
-            const char *a = argv[++i];
-            char *e;
-            long mj = strtol(a, &e, 10), mn = -1, fr = 90;
-            if (*e == '.') mn = strtol(e + 1, &e, 10);
-            if (*e == ':') fr = strtol(e + 1, &e, 10);
-            want_stop_scene[0] = (int)mj;
-            want_stop_scene[1] = (int)mn;
-            want_stop_scene[2] = (int)fr;
-            have_stop_scene = 1;
-        }
         else if (!strcmp(argv[i], "--help")) {
             printf("usage: %s [--data DIR] [--disc ISO-or-DIR]\n"
                    "          [--vblanks N] [--watchdog N] [--seconds S]\n"
                    "          [--novideo] [--hidden] [--verbose] [--profile]\n"
-                   "          [--autoplay] [--selftest] [--gs-test] [--hle-test] [--spu2-test]\n"
+                   "          [--autoplay] [--gs-test] [--hle-test] [--spu2-test]\n"
                    "          [--ipu-test FILE.ipu [--ipu-frames N]]\n"
-                   "          [--no-deinterlace] [--stop-scene M.N[:frames]]\n"
+                   "          [--no-deinterlace]\n"
                    "          [--capture FILE] [--capture-seconds S |"
                    " --capture-frames N]\n"
                    "          [--capture-level dma|gs] [--capture-at FIELD]\n"
@@ -524,8 +421,6 @@ int main(int argc, char **argv) {
                    "                graphics machine, gs only the renderer.\n"
                    "                Replay it with gsreplay --loop 0 --bench.\n"
                    "  --vblanks 0   run until the window is closed (default)\n"
-                   "  --stop-scene  finish once the game has been in scene\n"
-                   "                state M.N for that many frames (90)\n"
                    "  --watchdog N  give up if no field is delivered for N seconds\n"
                    "                (0 never gives up)\n",
                    argv[0]);
@@ -594,18 +489,7 @@ int main(int argc, char **argv) {
         extern int ps2_hle_selftest(const char *disc);
         return ps2_hle_selftest(disc);
     }
-    if (want_spu2_test) {
-        extern int ps2_nustream_file_selftest(const char *disc);
-        extern int ps2_nusound_packet_selftest(void);
-        extern int ps2_nusndstr_address_selftest(void);
-        extern int ps2_nusndstr_fx_send_selftest(void);
-        int rc = ps2_spu2_selftest();
-        rc |= ps2_nusndstr_address_selftest();
-        rc |= ps2_nusndstr_fx_send_selftest();
-        rc |= ps2_nusound_packet_selftest();
-        if (disc) rc |= ps2_nustream_file_selftest(disc);
-        return rc;
-    }
+    if (want_spu2_test) return ps2_spu2_selftest();
     if (want_vif_test) return ps2_vif_selftest();
     if (want_vu_test) return ps2_vu_selftest();
     ps2_ipu_init();
@@ -614,15 +498,10 @@ int main(int argc, char **argv) {
     ps2_cdvd_init();
     ps2_cdvd_rpc_register();
     ps2_iop_services_register();
-#ifdef PS2_GAME_AC4
     ps2_ac4_services_register();
-#endif
     ps2_pad_init();
     ps2_kernel_init();
     ps2_pad_autoplay(want_autoplay);
-    if (have_stop_scene)
-        ps2_stop_scene(want_stop_scene[0], want_stop_scene[1],
-                       want_stop_scene[2]);
     ps2_gs_deinterlace(!want_deint);
     if (cap_path || cap_frames >= 0 || cap_level >= 0 || cap_at >= 0) {
         ps2_mkdir_p("out");
@@ -640,28 +519,14 @@ int main(int argc, char **argv) {
         extern void ps2_hook_texcache_attach(long n);
         ps2_hook_texcache_attach(strtol(getenv("PS2_TRACE_TEXCACHE"), NULL, 0));
     }
+    {   extern void ps2_hook_ac4_widescreen_attach(void);
+        ps2_hook_ac4_widescreen_attach(); }
     if (load_image(dir) != 0) return 1;
     ps2_mod_init();
     if (disc && ps2_vfs_open(disc) != 0)
         ps2_log("warning: no disc at '%s'; CDVD requests will fail", disc);
     ps2_mod_start();
-    rn_init();
     rn_dump_init();
-    rn_vp_init();
-    rn_intent_init();
-    rn_fixes_init();
-    if (want_selftest) {
-        int bad;
-        ps2_sif_hle_init();
-        ps2_cdvd_rpc_register();
-        ps2_iop_services_register();
-#ifdef PS2_GAME_AC4
-    ps2_ac4_services_register();
-#endif
-        bad  = nufile_selftest("\\BIN\\DATA.TBL;1");
-        bad += nufile_selftest("\\SYSTEM.CNF;1");
-        return bad ? 1 : 0;
-    }
     ps2_settings_load();
     ps2_video_hidden(want_hidden);
     if (want_video && ps2_video_init(PS2_GAME_TITLE, 640, 448) != 0) {
@@ -730,14 +595,9 @@ int main(int argc, char **argv) {
         ps2_gfxq_report();
         ps2_sif_hle_report();
         ps2_cdvd_report();
-    ps2_nufile_report();
-    ps2_nusound_report();
-    ps2_nusndstr_report();
-#ifdef PS2_GAME_AC4
-    ps2_ac4_report();
-    ps2_libpad_report();
-#endif
-    ps2_spu2_report();
+        ps2_ac4_report();
+        ps2_libpad_report();
+        ps2_spu2_report();
         ps2_pad_report();
         ps2_video_report();
         ps2_kernel_report();

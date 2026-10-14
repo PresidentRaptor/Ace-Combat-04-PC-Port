@@ -51,7 +51,6 @@ typedef struct {
 static ps2_vif vif[2];
 static ps2_vu vu1;
 static int vu1_ready;
-static int vu1_test_kicks;
 
 void ps2_vu_control_stop(ps2_ctx *ctx, u32 val) {
     void ps2_gfxq_drain(void);
@@ -262,14 +261,6 @@ void ps2_vif_sync_report(void) {
         ps2_log("VIF stream: %llu transfer(s) abandoned on VIF_STAT.ER1 "
                 "(the rest of each was discarded, not executed)",
                 (unsigned long long)vif_stalls);
-}
-
-ps2_vu *ps2_vu1_test_vu(void) { return &vu1; }
-static void vu_run(ps2_vu *vu, u32 start);
-void ps2_vu1_test_run(u32 start) {
-    vu1_test_kicks = 1;
-    vu_run(&vu1, start);
-    vu1_test_kicks = 0;
 }
 
 void ps2_vu1_init(void) {
@@ -685,14 +676,8 @@ static int vu1_shadow;
 PS2_INLINE void vu_do_xgkick(ps2_vu *vu, u32 vi) {
     if (!vu->mem || vu1_shadow) return;
     if (PS2_UNLIKELY(rn_dump_on)) rn_dump_xgkick(vi, vu->mem, vu->mem_size);
-    if (PS2_UNLIKELY(rn_vp_mode == 2)) rn_vp_kick(vu, vi);
-    if (PS2_UNLIKELY(vu1_test_kicks)) return;
     vu_stat_xgkick++;
-    if (PS2_UNLIKELY(rn_census_on)) rn_census_vu_prog = rn_vp_resident_slot() + 1;
-    rn_vu_kicking = 1;
     vu_stat_xgkick_qw += ps2_gif_kick(vu->mem, vu->mem_size, vi);
-    rn_vu_kicking = 0;
-    rn_census_vu_prog = 0;
 }
 
 static int vu_qlat = -1;
@@ -1419,7 +1404,6 @@ void ps2_vu_recomp_report(void) {
 }
 
 static void vu_run(ps2_vu *vu, u32 start) {
-    if (PS2_UNLIKELY(rn_vp_mode) && vu == &vu1 && rn_vp_run(vu, start)) return;
     u32 pc = start & (vu->micro_size - 8u);
     vu_prog *census = vu_census_enter(vu, pc);
     vu_watch_init();
@@ -2018,7 +2002,6 @@ static void vif_data_qw(ps2_vif *v, const ps2_reg128 *q) {
         if (memcmp(vu->micro + off, q, 16) != 0) {
             memcpy(vu->micro + off, q, 16);
             vu_prog_dirty = 1;
-            rn_vp_dirty = 1;
         }
         if (v->is_vif1) {
             vu_mpg_at[(off >> 10) & 63u]++;
@@ -2177,7 +2160,6 @@ void ps2_vu_cap_load(const ps2_vu_capstate *st) {
     }
     mem = vu1.mem; micro = vu1.micro; msz = vu1.mem_size; usz = vu1.micro_size;
     vu1 = st->vu1;
-    rn_vp_dirty = 1;
     vu1.mem = mem; vu1.micro = micro;
     vu1.mem_size = msz; vu1.micro_size = usz;
     mem = ps2_cpu.vu0.mem; micro = ps2_cpu.vu0.micro;

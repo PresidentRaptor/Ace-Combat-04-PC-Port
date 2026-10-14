@@ -218,7 +218,7 @@ static void replay_pass(u32 field_limit, pass_result *res) {
             u32 kind = rd_u8(&ok);
             u32 a = rd_u32(&ok);
             u32 b = rd_u32(&ok);
-            if (ok) rn_gs_tag(kind, a, b);
+            (void)kind; (void)a; (void)b;
             break;
         }
         case PS2_CAP_OP_INTENT: {
@@ -227,7 +227,7 @@ static void replay_pass(u32 field_limit, pass_result *res) {
             if (!ok) break;
             p = len ? rb_payload(len) : NULL;
             if (len && !p) { ok = 0; break; }
-            rn_gs_intent(p, len);
+            (void)p;
             break;
         }
         case PS2_CAP_OP_VIFQW:
@@ -354,6 +354,7 @@ static void usage(const char *argv0) {
 "  --loop N        replay N times, 0 = until the window is closed\n"
 "  --fields N      stop each pass after N fields\n"
 "  --bench         time every pass and print the phase profile\n"
+"  --preset N      graphics preset: 0 low, 1 medium, 2 high, 3 ultra\n"
 "  --hidden        render through Vulkan without showing a window\n"
 "  --novideo       run headless -- but NOT the fast path and NOT what you\n"
 "                  want for a measurement: with no Vulkan device, vertex_kick\n"
@@ -367,7 +368,7 @@ static void usage(const char *argv0) {
 "                  game disarms them on a path a replay never reaches, so\n"
 "                  leaving them on measures the diagnostics, not the work.\n"
 "\n"
-"A capture is taken from the game with F6, or with --capture on ac5.exe.\n"
+"A capture is taken from the game with F6, or with --capture on ac4.exe.\n"
 "Set PS2_PROFILE_PHASES=1 for the per-phase breakdown a --bench pass prints,\n"
 "and PS2_PRESENT_MODE=immediate so the swapchain does not pace the benchmark.\n",
     argv0);
@@ -377,7 +378,6 @@ int main(int argc, char **argv) {
     const char *path = "out/capture.gscap";
     const char *shot = "ps2_replay.ppm";
     int want_video = 1, bench = 0, loops = 1, census = 0;
-    u32 fuzz_start = 0, fuzz_iters = 0, fuzz_seed = 1;
     u32 field_limit = 0;
     double t_total = 0.0;
     u64 fields_total = 0;
@@ -396,16 +396,19 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--loud")) quiet = 0;
         else if (!strcmp(argv[i], "--census")) census = 1;
         else if (!strcmp(argv[i], "--bench")) bench = 1;
+        else if (!strcmp(argv[i], "--preset") && i + 1 < argc) {
+            char *end;
+            long preset = strtol(argv[++i], &end, 10);
+            if (!*argv[i] || *end || preset < PS2_PRESET_LOW || preset > PS2_PRESET_ULTRA) {
+                fprintf(stderr, "[REPLAY] invalid graphics preset: %s\n", argv[i]);
+                return 1;
+            }
+            ps2_settings_apply_preset(&ps2_cfg, (int)preset);
+        }
         else if (!strcmp(argv[i], "--loop") && i + 1 < argc)
             loops = (int)strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--fields") && i + 1 < argc)
             field_limit = (u32)strtoul(argv[++i], NULL, 0);
-        else if (!strcmp(argv[i], "--vp-fuzz") && i + 2 < argc) {
-            fuzz_start = (u32)strtoul(argv[++i], NULL, 16);
-            fuzz_iters = (u32)strtoul(argv[++i], NULL, 0);
-            if (i + 1 < argc && argv[i + 1][0] != '-' && strchr(argv[i + 1], '.') == NULL)
-                fuzz_seed = (u32)strtoul(argv[++i], NULL, 0);
-        }
         else if (argv[i][0] != '-') path = argv[i];
         else { usage(argv[0]); return strcmp(argv[i], "--help") ? 1 : 0; }
     }
@@ -414,7 +417,6 @@ int main(int argc, char **argv) {
       ps2_diag_armed = census || (e && atoi(e) != 0); }
 
     rn_dump_init();
-    rn_vp_init();
     rf = fopen(path, "rb");
     if (!rf) { fprintf(stderr, "[REPLAY] cannot open %s\n", path); return 1; }
     if (fread(&hdr, sizeof hdr, 1, rf) != 1
@@ -477,11 +479,6 @@ int main(int argc, char **argv) {
         free(bm);
         fprintf(stderr, "[REPLAY] %u/%u guest RAM blocks restored\n",
                 nz, hdr.nblk);
-    }
-
-    if (fuzz_start) {
-        restore_snapshot();
-        return rn_vpfuzz_main(fuzz_start, fuzz_iters ? fuzz_iters : 100u, fuzz_seed);
     }
 
     ps2_cap_dict_config(hdr.dict_slots, hdr.dict_min, hdr.dict_max,
@@ -577,7 +574,6 @@ int main(int argc, char **argv) {
                 t_total * 1000.0 / (double)fields_total);
     fclose(rf);
     ps2_host_prof_report();
-    rn_report();
     {   extern int ps2_vk_enabled(void);
         extern void ps2_video_report(void);
         if (ps2_vk_enabled()) ps2_video_report(); }
@@ -619,12 +615,11 @@ void ps2_modapi_field_tick(void) {}
 void ps2_modapi_input(ps2_pad_state *pads, int ports) { (void)pads; (void)ports; }
 
 void ps2_capture_report(const char *why) { (void)why; }
-int rn_taps_on;
-void rn_dma_attrib_slow(int ch, u32 tadr) { (void)ch; (void)tadr; }
-int rn_intents_pending;
-void rn_dma_transfer_slow(int ch, u32 madr, u32 qwc, int after) {
-    (void)ch; (void)madr; (void)qwc; (void)after;
-}
+unsigned ps2_mod_count(void) { return 0; }
+const char *ps2_mod_id_at(unsigned i) { (void)i; return NULL; }
+int ps2_mod_enabled_at(unsigned i) { (void)i; return 0; }
+int ps2_mod_enabled_setting_at(unsigned i) { (void)i; return 0; }
+int ps2_mod_set_enabled_at(unsigned i, int enabled) { (void)i; (void)enabled; return -1; }
 unsigned ps2_vblank_budget(void) { return 0u; }
 void ps2_finish(const char *why) {
     fprintf(stderr, "[REPLAY] finish: %s\n", why ? why : "?");

@@ -16,9 +16,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
 option(PS2_DIAG "compile the entry histogram and the guest-store watch in" OFF)
 
-set(PS2_GAME "AC4" CACHE STRING "game the runtime is built for: AC4 or AC5")
-set_property(CACHE PS2_GAME PROPERTY STRINGS AC4 AC5)
-string(TOLOWER "${PS2_GAME}" PS2_EXE)
+set(PS2_EXE ac4)
 
 find_package(Threads REQUIRED)
 
@@ -39,7 +37,7 @@ list(APPEND GENERATED_SOURCES
 if(NOT GENERATED_SOURCES)
   message(FATAL_ERROR
     "No generated sources. Run:\n"
-    "  python -m ps2recomp <elf> -o generated --ida-db config/ida_db.json")
+    "  bash tools/build_ac4.sh path/to/SLUS_201.52")
 endif()
 
 set(RUNTIME_SOURCES
@@ -52,7 +50,6 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_ipu.c
     runtime/src/ps2_kernel.c
     runtime/src/ps2_spu2.c
-    runtime/src/ps2_nustream.c
     runtime/src/ps2_memcard.c
     runtime/src/ps2_audio.c
     runtime/src/ps2_sif.c
@@ -64,6 +61,7 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_hle_iop.c
     runtime/src/ps2_hle_ac4.c
     runtime/src/ps2_video.c
+    runtime/src/ps2_texpack.c
     runtime/src/ps2_state.c
     runtime/src/ps2_capture.c
     runtime/src/ps2_statecap.c
@@ -72,31 +70,9 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_hook.c
     runtime/src/ps2_modapi.c
     runtime/src/ps2_patch.c
-    runtime/src/ps2_params.c
     runtime/src/ps2_lua.c
     runtime/src/ps2_ui.cpp
-    runtime/src/rn/rn_census.c
-    runtime/src/rn/rn_2d.c
     runtime/src/rn/rn_dump.c
-    runtime/src/rn/rn_vp.c
-    runtime/src/rn/rn_vp_model.c
-    runtime/src/rn/rn_vp_terrain.c
-    runtime/src/rn/rn_vp_shadow.c
-    runtime/src/rn/rn_vp_sprite.c
-    runtime/src/rn/rn_vp_load.c
-    runtime/src/rn/rn_vp_lit.c
-    runtime/src/rn/rn_vp_fx.c
-    runtime/src/rn/rn_vp_flat.c
-    runtime/src/rn/rn_vpfuzz.c
-    runtime/src/rn/rn_intent.c
-    runtime/src/rn/rn_fixes.c
-    runtime/src/rn/rn_sun.c
-    runtime/src/rn/rn_sky.c
-    runtime/src/rn/rn_tri3d.c
-    runtime/src/rn/rn_billboard.c
-    runtime/src/rn/rn_worldtri.c
-    runtime/src/rn/rn_screen.c
-    runtime/src/rn/rn_tap.c
     runtime/src/ps2_main.c)
 
 set(LUA_DIR "${CMAKE_SOURCE_DIR}/third_party/lua")
@@ -140,11 +116,7 @@ set_source_files_properties(${HOT_SOURCES} PROPERTIES COMPILE_OPTIONS "-O3")
 if(PS2_DIAG)
   target_compile_definitions(${PS2_EXE} PRIVATE PS2_DIAG=1)
 endif()
-if(PS2_GAME STREQUAL "AC4")
-  target_compile_definitions(${PS2_EXE} PRIVATE PS2_GAME_AC4=1)
-endif()
-
-if(WIN32 AND PS2_GAME STREQUAL "AC4")
+if(WIN32)
   enable_language(RC)
   configure_file(runtime/ac4.rc.in "${CMAKE_CURRENT_BINARY_DIR}/ac4.rc" @ONLY)
   target_sources(${PS2_EXE} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ac4.rc")
@@ -163,11 +135,7 @@ list(REMOVE_ITEM REPLAY_SOURCES runtime/src/ps2_main.c
                                 runtime/src/ps2_modapi.c
                                 runtime/src/ps2_mod.c
                                 runtime/src/ps2_hook.c
-                                runtime/src/ps2_patch.c
-                                runtime/src/ps2_params.c
-                                runtime/src/rn/rn_intent.c
-                                runtime/src/rn/rn_fixes.c
-                                runtime/src/rn/rn_tap.c)
+                                runtime/src/ps2_patch.c)
 list(APPEND REPLAY_SOURCES runtime/src/ps2_replay.c)
 
 add_executable(gsreplay ${REPLAY_SOURCES})
@@ -182,9 +150,6 @@ target_link_libraries(gsreplay PRIVATE Threads::Threads m
 target_link_options(gsreplay PRIVATE -static-libstdc++ -static-libgcc)
 if(PS2_DIAG)
   target_compile_definitions(gsreplay PRIVATE PS2_DIAG=1)
-endif()
-if(PS2_GAME STREQUAL "AC4")
-  target_compile_definitions(gsreplay PRIVATE PS2_GAME_AC4=1)
 endif()
 
 target_compile_options(gsreplay PRIVATE
@@ -201,8 +166,7 @@ endif()
 set(SHADER_OUT "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${SHADER_OUT}")
 set(SPV_FILES)
-foreach(SH gs.vert gs.frag gs_zcopy.frag colclip.frag present.vert present.frag
-           rn_vis.frag rn_sun.vert rn_sun.frag mesh.vert mesh.frag)
+foreach(SH gs.vert gs.frag gs_zcopy.frag colclip.frag present.vert present.frag)
   add_custom_command(
     OUTPUT "${SHADER_OUT}/${SH}.spv"
     COMMAND "${GLSLC}" -O "${CMAKE_SOURCE_DIR}/runtime/shaders/${SH}"

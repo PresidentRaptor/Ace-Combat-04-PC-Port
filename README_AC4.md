@@ -2,8 +2,8 @@
 
 This tree is the AC5 static recompilation (github.com/sal063/Ace-Combat-5-Static-recompilation,
 commit 078662b) extended to build **Ace Combat 04: Shattered Skies (USA, SLUS-20152)**.
-`-DPS2_GAME=AC4` (the default here) builds `ac4.exe`; `-DPS2_GAME=AC5` still builds the
-original `ac5.exe`.
+It builds `ac4.exe` only: the AC5 build option, AC5's config and AC5-only tools and tests
+have been removed.
 
 ## Building
 
@@ -23,13 +23,13 @@ build/gcc/ac4.exe --data generated --disc "path/to/Ace Combat 04 (USA).iso" --wa
 
 ## How the AC4 config was made (no IDA, no SDK)
 
-AC5's `config/` comes from IDA and the PS2 SDK. AC4's was rebuilt from the executable alone:
+AC5's config came from IDA and the PS2 SDK. AC4's was rebuilt from the executable alone:
 
 | file | made by | what |
 | --- | --- | --- |
 | `config/ac4/seeds.json` | `tools/find_entries.py` | function entries: code after returns/tail calls, frame openers, code pointers in data |
 | `config/ac4/ida_db.json` | `tools/find_switches.py` | `jr $reg` jump tables (131 of 134; the rest are `longjmp` and hand-written asm) |
-| `config/ac4/sdk_symbols.json` | `tools/port_symbols.py` | SDK names carried over from AC5 by masked-signature, fuzzy and call-graph matching |
+| `config/ac4/sdk_symbols.json` | `tools/port_symbols.py` | SDK names carried over from AC5 (its ELF and sal063's `config/`) by masked-signature, fuzzy and call-graph matching |
 | `config/ac4/manual_symbols.json` | by hand | libpad, the rest of libcdvd, functions the matcher can't place |
 | `config/ac4/overrides.json` | | the SIF/CD overrides that exist in AC4, plus the old (SDK 2.x) libpad |
 
@@ -38,7 +38,7 @@ Coverage is 99.46% of `.text`. `tools/listing.py` (annotated disassembly, `--xre
 
 ## Runtime changes
 
-AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
+AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
 
 - `ps2_hle_ac4.c` — native replacements for AC4's IOP sound modules, written from their own
   symbol tables:
@@ -50,12 +50,52 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
     that drives the EE's refills.
 - `ps2_hle_pad.c` — the original libpad (state machine, modes, actuators, pressure mode).
 - `ps2_game.h` — window title, settings/pipeline file names, serial for mods.
-- the native VU1 renderer (`rn/`) is off: it implements AC5's microcode.
-- the 16:9 camera patch previously used by the AC5 build is not valid for AC4 and is never applied (`ps2_settings.c`). AC4's output defaults to an undistorted 4:3 image on wide displays; a validated game-specific camera patch is still needed for expanded 16:9 gameplay.
-- the 4K preset uses display-aware internal resolution (Auto, up to 8x), 16x anisotropic filtering, sharp scaling, and bilinear sampling for enlarged screen-space UI art. This smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists.
+- AC5's native VU1 renderer (it implemented AC5's microcode) has been removed; everything is
+  drawn through the emulated GS. `rn/rn_dump.c` remains: `PS2_RN_DUMP=<file>` with
+  `PS2_RN_DUMP_FIELD=<n>` writes one field's VIF1 unpacks, XGKICKs and GS register writes.
+- **16:9 widescreen** (F4 > Display, `[display] widescreen`; `ps2_hook.c` `vsm_before`,
+  `ps2_gs.c` `ws_hud`, `ps2_vk_game_aspect` in `ps2_video.c`). AC5's camera patch targets
+  SLUS-20851 and is never applied here; PCSX2's AC4 entry (one word at 0040DACC, 769.15 ->
+  627.87) only shortens one camera's focal length. Every AC4 camera goes through
+  `sceVu0ViewScreenMatrix` (00263718). The camera object keeps the size of its virtual
+  screen at +352/+356 (640 x 480), focal length at +360, viewport at +392..+398 (512 x 448 in
+  flight) and ax/ay = viewport / virtual size at +384/+388; the view cone that culls the world
+  and clips the sea-glare fan is worked out from +352/+356 (sub_00102798). A hook before
+  00263718 widens +352 for the on-screen cameras (called from 00102AC0, 00142200, 00246CE8;
+  the matrix is camera + 96) to 640 x aspect / (4/3), 853.33 at 16:9, and scales this call's
+  ax to match. Cameras copy these fields between each other, so a value the hook wrote is
+  recognised and never widened twice; turning widescreen off writes 640 back. Widening only
+  the ax argument left a jagged unlit band at the bottom corners (the sea-glare fan stayed
+  clipped to the 4:3 cone). The self-shadow projection (called from 001146BC) is left alone.
+  The HUD: 2D draws (not PATH1) into a display-sized target (at least 480 x 400) whose
+  vertices all sit at Z max (flight HUD) or Z 0 (menus, captions, movies) with the depth test
+  off (or ZTE 0) are pulled towards the centre by (4/3) / aspect, scissor included. Left
+  alone: depth-tested draws (target boxes, their dotted trails and FRND/TGT labels are drawn
+  with ZTST GREATER, even the parts at Z max, and were already placed by the widened camera),
+  draws with real depth (sun flare, lens ghosts), full-width draws, untextured full-height
+  ones (fades and clears, drawn in 64-pixel strips), render-target copies and off-screen
+  targets (the 512 x 128 cloud target). Movies and menus come out pillarboxed 4:3. With
+  widescreen off nothing changes: the 12 captures replay pixel-identical. The lock-on arrow
+  and seeker diamond are small untextured shapes placed at the target but drawn without the
+  depth test; they are left in place when they touch a target box of this or the previous
+  frame (the boxes come later in the frame), axis-aligned tape ticks excepted. HUD layout 2
+  (`hud_layout = 2`, AC4's default, "corners at the screen edges") anchors the flight HUD's
+  corner blocks to the sides instead of the centre: PTS/TGT and the radar (and the enlarged
+  map, everything clipped to the radar's scissor at the left) left, TIME and the
+  weapon/damage block right, recognised by position on the 512 x 448 layout (`ws_hud`);
+  the speed/altitude tape numbers scroll into the radar's and weapon list's rows, so there
+  only pieces the tapes never have count. The pitch ladder turns within ~150 px of the
+  centre and never reaches a block. Captions, tapes, ladder and menus stay centred. `PS2_TRACE_VSM=1`
+  logs the distinct calls of 00263718 and the on-screen cameras' fields; `PS2_VSM_SKIP=ra,...`
+  leaves more callers (return addresses, hex) alone; `PS2_TRACE_WS=N[:M]` logs each primitive
+  kept 4:3 in fields N..M. When the frame's squeezed Z-0 textured draws cover more than 35%
+  of the target (a menu, briefing, hangar overlay or movie), the presentation scissors the
+  picture to the 4:3 middle for that and the next 12 fields (`ps2_ws_pillar_frame`), so the
+  sides show black instead of stretched leftovers and half-covered 3D.
+- High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
-  the graphics machine stays on the EE thread (`PS2_ASYNC_GFX=1` brings the async thread
-  back, with intermittent stray-triangle frames in flight).
+  the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the
+  async thread back; see below).
 
 General fixes that AC4 exposed:
 
@@ -74,11 +114,16 @@ General fixes that AC4 exposed:
   AC4 uploads its font CLUTs as CT24 to keep their alpha bytes; read as 4 bytes a pixel
   the last 4 CLUT entries -- the stroke centres -- stayed black, giving hollow, smudged
   text, and the menu glow textures came out far too bright.
-- **upscaled sprites**: a bilinear sprite carries the texel range it samples at native
+- **upscaled sprites**: a sprite (bilinear, or point-sampled under smoothed UI) carries the texel range it samples at native
   resolution (`PS2_VK_RUV_CLAMP`, `clamp_u`/`clamp_v`, vertex attribute 5) and gs.frag keeps
   upscaled sub-pixels inside it, so text boxes, subtitles and HUD labels no longer pick up
   neighbouring texels as thin lines along their edges (PCSX2 needs "round sprite" for this game).
   Native-resolution output is unchanged.
+- **GIF Q reset per tag** (`ps2_hw.c` `gif_feed`): the GIF's internal Q (what a packed RGBA
+  writes into RGBAQ.Q) is reset to 1.0 at every GIFtag. AC4's enlarged radar map (Square) is
+  an STQ sprite with S,T in 0..1 sent without a Q of its own; the Q left over from the last
+  3D packet (~2e-5) tiled its 128 x 128 map texture tens of thousands of times, so the map
+  showed a dot pattern instead of the islands. The 12 captures replay pixel-identical.
 - **no dropped fields** (`ps2_video.c`): a field the renderer had not started used to be
   replaced by the next one, so its draws never ran. AC4 carries render targets from field to
   field (the frame copy, haze and glow buffers), and the field after a drop flashed. The EE
@@ -114,25 +159,70 @@ General fixes that AC4 exposed:
   and read level 0 otherwise. AC4's terrain (TEX0 0x2900, 512x512 PSMT8, MXL 3, MTBA,
   K -13.5) is a texture cache: near tiles own slots 0-63 by position, distant tiles get
   slots 64+ that alias the same squares and are uploaded only to levels 1-3 (0x2D00,
-  0x2E00, 0x2E40), so level 0 showed a near tile's texture on the distant island. The level
-  is now taken per primitive from the mean vertex LOD (rounded, clamped to MXL) and fed to
-  the existing fixed-level decode; it is part of the draw-state memo key.
-  `PS2_NO_DYN_MIP=1` turns it off. Real time at 6x stays at 60 fields/s.
+  0x2E00, 0x2E40), so level 0 showed a near tile's texture on the distant island.
+  Triangles get the level per pixel (`gs_tri_mip_range`, `gs_dyn_mip`, ps2_vk_state.mip):
+  Q is affine in screen space, so a triangle's LOD lies between its vertices' values. It is
+  drawn once for each level that range touches (with 1/64 slack), with that level decoded as
+  usual; gs.frag works LOD out per pixel from the interpolated Q, discards the pixels that
+  belong to another level's draw (the two ends open), and for MMIN 3/5 blends towards the
+  next level, decoded too and bound in set 3. AC4's terrain asks for MMIN 5 (trilinear).
+  Every pixel is still written once with the triangle's own depth; batching is unchanged
+  because the state depends only on the level. A per-triangle choice showed seams where
+  neighbouring tiles landed on different levels. Sprites, lines and points keep the
+  per-primitive mean (`gs_prim_lod`). `PS2_NO_MIP_BLEND=1` uses the nearest level per pixel,
+  `PS2_NO_PIXEL_MIP=1` goes back to one level per triangle, `PS2_NO_DYN_MIP=1` turns
+  both off. The native-resolution captures change by at most 4/255 (distant terrain only);
+  real time at 6x stays at 60 fields/s.
+- **PSMT8H indices from a render target** (`ps2_gs.c` `index_rt`/`clut_palette_texture`,
+  gs.frag `flags.y` bit 1): in flight AC4 remaps the back buffer's alpha through a CLUT
+  (TEX0 tbp 0, PSMT8H, FBMSK 00FFFFFF; entries `0x80 - i` below 128) and then blends its
+  haze/sea-detail layer by destination alpha. The indices are read from the target (a
+  self-read snapshot) and looked up in a 256x1 palette texture bound in set 3. Targets
+  track when their alpha was last written (`gs_rt_aepoch`): AC4 also packs the aircraft's
+  PSMT8H texture into the display buffer's alpha bytes, which draws there mask, so VRAM
+  stays the source for it. `PS2_NO_INDEX_RT=1` turns it off; `PS2_TRACE_INDEX_RT=1` logs
+  each use; `PS2_LOG_CLUT=<cbp>` dumps a CLUT.
 - **vibration** (`ps2_hle_pad.c` SetActAlign/SetActDirect, `ps2_video.c` `apply_rumble`):
   the EE side records the motor levels (small on/off, large 0..255, mapped by the align
   bytes; AC4 aligns 00 01 FF..), and the renderer thread, which owns the SDL gamepad,
   drives `SDL_RumbleGamepad`, renewing a running effect each second. `vibration = 0` in
-  `[input]` (F4 > Vibration) turns it off; `PS2_TRACE_RUMBLE=1` logs the setup and changes.
+  `[input]` (F4 > Vibration) turns it off; `vibration_strength` (0..1, default 0.65, F4 >
+  Vibration strength) scales both motors; `PS2_TRACE_RUMBLE=1` logs the setup and changes.
 - **review fixes**: the exit screenshot (`ps2_frame.ppm`) is only written for bounded runs
   (`--vblanks N`) or with `PS2_EXIT_SHOT=1`; the 2D overlay's empty-box sentinel survives a
   signed/unsigned compare; the CLUT-in-render-target lookup requires a PSMCT32/24 target;
   the VAG module no longer logs from the audio thread. Saving and loading were exercised
   (pre-mission SAVE, title LOAD -> CONTINUE).
-- **settings/mod menu** uses AC4's navy and light-blue colours (`ps2_ui.cpp`, `PS2_GAME_AC4`).
+- **settings/mod menu** uses AC4's navy and light-blue colours (`ps2_ui.cpp`).
 - **channel shuffles**: the CT16-over-CT32 shuffle sprite is also recognised when its
   64-pixel strips end exactly on the boundary (AC5 ends them half a pixel short). AC4's
   aircraft self-shadow (shadow volumes counted into a half-size buffer, shuffled into
   alpha, then `Cd*(1-Ad)`) missed the match, so the whole aircraft was darkened to black.
+- **replacement ("HD") textures** (`ps2_texpack.c`, `ps2_video.c` `texture_hd`/`hd_resolve`/
+  `ps2_vk_texture_ext`, gs.frag `sample_hd`; started by reviewer Astra): a texture is
+  identified by an FNV-1a hash of its decoded RGBA and size, never its VRAM address, and a
+  pack is a folder of `<id>_<w>x<h>.pam` files at an integer scale (1-8x). AC4's terrain is
+  matched per atlas window (the REGION_CLAMP/REPEAT rectangle of each 64x64 tile and its mip
+  levels, which must be a power of two aligned to its size), everything else as the whole
+  decode. Only recorded draws bind replacements; the GS keeps its own decode. The pack is
+  indexed at start-up (`textures/hd`, subfolders after the files directly in it, so a
+  hand-made file wins over `textures/hd/upscaled`); a replacement is read on a loader thread
+  the first time it is drawn (the original stands in until then), kept for the session and
+  bound without a copy (`ps2_vk_texture_ext`: full mip chain, recycled only among such
+  textures, outside the 512 MB decode budget), up to `PS2_TEXTURE_PACK_MB` (4096). New
+  uploads are limited to 48 MB a field. gs.frag samples a replacement in GS texel units for
+  each bilinear tap (CLAMP, REGION_CLAMP and REGION_REPEAT as on the GS) and steps down its
+  mip chain with the screen footprint, as far as the original's resolution, so the detail
+  fades with distance instead of shimmering. The per-pixel mip blend binds the next level's
+  replacement too. F4 > Rendering: "HD texture pack" (`[graphics] hd_textures`) and "Save
+  textures for upscaling" (`textures/dump`, or `PS2_TEXTURE_DUMP=<dir>`): a picture is saved
+  the first time it is drawn in a field after the one it appeared in (movie frames are not),
+  with its wrap modes in `dump_info.tsv`. `tools/texture_pack.py upscale` runs Real-ESRGAN
+  (ncnn Vulkan) over a dump: the general model for photographic textures, the anime model
+  for few-colour art and for cut-out alpha (text, decals), borders padded the way the GS
+  wraps or clamps, 4x up to 512 px and 2x up to 1024, skipping textures without detail to
+  gain and the narrow strips AC4 decodes past their picture (64x1024). `MAKE_HD_TEXTURES.bat`
+  wraps it. With no pack and dumping off, every capture replays pixel-identical.
 
 Debug switches added: `PS2_SNAP_AT=<field>` (state snapshot at a field), `PS2_TRACE_DMA4`,
 `PS2_TRACE_MC`, `PS2_IPU_STATS`, `PS2_TRACE_AT_FIELD=<field,...>` (draw trace of the frame
@@ -161,6 +251,16 @@ Verified start to finish: boot, memory card detection, opening FMV, title, menus
 with sound, Mission 01 briefing, and Mission 01 in flight with HUD, radio, music, voices and
 sound effects at full speed -- cockpit, HUD-only and external views, with the player's and
 the wingmen's aircraft textured and self-shadowed -- at native resolution and at internal
-resolution 6. Saving (pre-mission menu) and loading (title menu) are verified. Not yet exercised: later
-missions. `PS2_ASYNC_GFX=1` has not been re-tested since the VU pair fix; the stray
-triangles seen with it may have been that bug.
+resolution 6. Saving (pre-mission menu) and loading (title menu) are verified. Left at the title,
+the game cycles its DEMONSTRATION flights, recorded in later missions (snowy mountains with a radar
+dome, an F-14 in cloud, a bridge, a low pass between a city's towers, the cockpit view, a bomb
+camera over a base); ten minutes of them rendered correctly. Not yet played: later missions.
+
+`PS2_ASYNC_GFX=1` (graphics machine on its own thread) was re-tested after the VU pair fix:
+Mission 01 flight at full speed, 1,470 consecutive fields and 1,000 fields sampled every 6th
+over 6,000, checked for single-frame outliers against their neighbours, showed none of the
+stray triangles seen before, which were most likely that bug. `PS2_TRAP_VU1_EE=1` (leaves
+VU1's memory unmapped for the EE and logs every access) found no EE access to VU1 memory from
+boot through flight, and the interrupt status the graphics thread raises VIF interrupts into is
+now updated atomically. AC4 still defaults to synchronous: the EE thread holds full speed at
+6x on a current CPU, and async is the thing to try on a slower one.

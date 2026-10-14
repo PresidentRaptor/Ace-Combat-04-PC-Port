@@ -24,6 +24,24 @@ For a bug, send last-play.log (replaced on each launch) with the mission,
 what happened and how to reproduce it. DIAGNOSTICS.bat writes a more
 detailed diagnostics.log.
 
+HD textures
+-----------
+The game's textures can be replaced with sharper, upscaled versions (the
+aircraft, the hangar, terrain, menus). Packs are made on your PC from your
+own copy of the game; none are included.
+
+1. In the game press F4, open Rendering and tick "Save textures for
+   upscaling", then play the parts you want covered. Textures are saved
+   once each into textures\dump.
+2. Run MAKE_HD_TEXTURES.bat. It needs Python 3 with Pillow
+   (py -m pip install Pillow) and Real-ESRGAN (the Windows
+   realesrgan-ncnn-vulkan zip from
+   https://github.com/xinntao/Real-ESRGAN/releases, unpacked into
+   tools\realesrgan). The pack goes to textures\hd\upscaled; running it
+   again only adds new textures.
+3. Restart the game. F4 > Rendering > "HD texture pack" switches it on and
+   off for comparison.
+
 What works
 ----------
 Boot, memory card detection, the opening FMV and title, menus, the story
@@ -69,38 +87,60 @@ Fixed in this build
   game keeps distant terrain in the small mipmap levels of its terrain
   texture cache and lets the graphics chip pick the level by distance;
   that choice was missing, so the full-size level was read. The level is
-  now chosen for each triangle from its distance, and distant islands
-  show their real coastline and terrain.
+  now chosen for every pixel from its distance and blended between levels
+  the way the game asks, so distant islands show their real coastline and
+  terrain without seams between neighbouring patches of ground.
+- Haze in flight: the game turns each pixel's alpha into a haze strength
+  through a lookup table before drawing its haze and sea-detail layer. That
+  step read stale data, so the haze was the same everywhere and the sea
+  looked almost black from above. It now reads the real frame: haze grows
+  with distance and the sea shows its wave texture.
 - Controller vibration now works: the game's rumble commands drive the
   controller's motors. It can be switched off under Input in the F4 menu
-  ("Vibration").
+  ("Vibration"), and "Vibration strength" there sets how hard it shakes
+  (65% by default; full strength felt too strong).
 - Saving and loading were checked: SAVE from the pre-mission menu writes
   the save file (MISSION 01 / SITTING DUCK), and LOAD from the title menu
   reads it back.
 - Quitting no longer leaves a 25 MB ps2_frame.ppm screenshot in this
   folder (an older one can be deleted).
-- Esc no longer ends the game on the spot: it asks first. The settings
+- Esc no longer ends the game on the spot: it asks first, with just a
+  small "Quit?" box (the settings menu no longer opens behind it). The settings
   menu (F4) gained a master volume, "mute in the background" and a Quit
   button, and lost the widescreen option that only applied to AC5. The
   F6-F10 debugging keys only work in DIAGNOSTICS.bat now, so a stray key
   press can't fill the folder with capture files.
+- 16:9 widescreen: F4 > Display > "Widescreen (16:9)" (off by default).
+  The game's own camera is widened, so flight, the carrier deck, the
+  hangar and the opening show more at the sides instead of being
+  stretched. The HUD keeps its 4:3 shapes: by default its corner blocks
+  (score, radar, time, weapons) sit at the screen's edges while the tapes,
+  pitch ladder and captions stay in the middle ("HUD layout" in F4 also
+  offers everything 4:3 in the centre). Menus, briefings and story movies
+  stay 4:3 in the middle; target boxes, FRND/TGT labels and the lock-on
+  arrow and diamond stay on their aircraft. Keep "Aspect ratio" on Auto
+  (or 16:9).
+
+- The enlarged radar map (Square) showed a dotted pattern instead of the
+  map: a leftover value from the 3D drawing made the map picture repeat
+  thousands of times across the panel. It now shows the islands.
 
 Known limits
 ------------
 - Graphics run through the emulated GS. The native renderer the AC5 port
-  uses was written for AC5's VU1 programs and is off. Higher internal
+  uses was written for AC5's VU1 programs and is not included. Higher internal
   resolutions (F4) work; resolution 6 was checked through Mission 01.
-- The picture defaults to an undistorted 4:3 image in wide windows. AC5's
-  16:9 camera patch is not used because it targets a different executable;
-  AC4 still needs a verified game-specific camera patch for expanded 16:9 play.
-- F4's 4K graphics preset selects an internal resolution to cover the current
-  display (up to 8x if the GPU allows), with sharper scaling and 16x
-  anisotropic filtering. It also smooths enlarged screen-space map and HUD
-  art; game textures remain at their original PS2 detail.
-- The graphics machine runs on the game thread (an AC4-specific race shows
-  up when it runs on its own thread); a modern CPU holds full speed.
-- Only Mission 01 has been played through so far; later missions have not
-  been checked yet.
+- Widescreen: target boxes and their labels keep the 4:3 HUD's shape, so
+  they look a little wide. On the weapon select screen the tinted panel
+  behind the text covers only the 4:3 middle.
+- The graphics machine runs on the game thread by default; a modern CPU
+  holds full speed. On a slower CPU, PS2_ASYNC_GFX=1 runs it on its own
+  thread (re-tested in Mission 01 without the stray triangles it used to
+  show).
+- Only Mission 01 has been played through so far. The demonstration
+  flights the title screen plays (recorded in later missions: snowy
+  mountains, a bridge, a city) all look right, but the later missions
+  themselves have not been played yet.
 
 Rebuilding
 ----------

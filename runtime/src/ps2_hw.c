@@ -2,7 +2,6 @@
 #include "ps2_hle.h"
 #include "ps2_capture.h"
 #include "ps2_gfxq.h"
-#include "rn.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -212,8 +211,10 @@ static u64 gs_imr = 0x7F00ull;
 
 u32 ps2_intc_stat(void) { return intc_stat; }
 u32 ps2_intc_mask(void) { return intc_mask; }
-void ps2_intc_raise(int irq) { intc_stat |= 1u << irq; }
-void ps2_intc_ack(int irq) { intc_stat &= ~(1u << irq); }
+/* atomic: with PS2_ASYNC_GFX the graphics thread raises VIF interrupts while
+   the EE acknowledges others */
+void ps2_intc_raise(int irq) { __atomic_fetch_or(&intc_stat, 1u << irq, __ATOMIC_RELAXED); }
+void ps2_intc_ack(int irq) { __atomic_fetch_and(&intc_stat, ~(1u << irq), __ATOMIC_RELAXED); }
 u32 ps2_intc_pending(void) {
     return intc_stat & intc_mask & ~0x0Cu;
 }
@@ -371,6 +372,12 @@ static void gif_feed(const ps2_reg128 *q) {
         gif.regs = q->ud[1];
         if (gif.nreg == 0) gif.nreg = 16;
         if (pre && gif.flg == 0) ps2_gs_write_reg(0x00, prim);
+        /* the GIF resets its internal Q to 1.0 at every tag, so a packed
+           RGBA before any packed ST gets Q = 1 (AC4's enlarged radar map
+           is an STQ sprite with S,T in 0..1 and no ST-carried Q; a Q left
+           over from a 3D packet tiled its map texture tens of thousands of
+           times) */
+        gif_q_latch = 0x3F800000u;
         gif_tag_hist[gif.flg]++;
         gif_tag_qwc[gif.flg] += gif.nloop;
         {
@@ -668,7 +675,6 @@ static void dma_to_peripheral(int ch, u32 madr, u32 qwc) {
             qwc = room;
         }
     }
-    if (ch == 1 || ch == 2) rn_dma_transfer(ch, madr, qwc, 0);
     if (g_cap_deep) {
         if (ch == 0 || ch == 1) ps2_cap_vif_qw(ch, src, qwc);
         else if (ch == 2)       ps2_cap_gif_qw(src, qwc);
@@ -676,11 +682,9 @@ static void dma_to_peripheral(int ch, u32 madr, u32 qwc) {
     switch (ch) {
     case 0: case 1:
         ps2_gfxq_vif_qw(ch, src, qwc);
-        if (ch == 1) rn_dma_transfer(ch, madr, qwc, 1);
         break;
     case 2:
         ps2_gfxq_gif_qw(src, qwc);
-        rn_dma_transfer(ch, madr, qwc, 1);
         break;
     case 4:
         ps2_ipu_dma_in(src, qwc);
@@ -791,8 +795,6 @@ static void dma_run_chain(int ch) {
                     ps2_state_dump_numbered("badtag");
             }
         }
-        if ((ch == 1 || ch == 2) && (qwc || (tte && ch == 1)))
-            rn_dma_attrib(ch, dma[ch].tadr);
         if (tte && (ch == 0 || ch == 1)) {
             u64 hi = tagq->ud[1];
             if (g_cap_deep) {
@@ -860,7 +862,6 @@ static void dma_run_chain(int ch) {
         if (irq && tie) break;
         if (guard >= 0x40000) break;
     }
-    if (ch == 1 || ch == 2) rn_dma_attrib(ch, 0u);
 }
 
 #define IPU_OUT_LOG 64
@@ -1106,8 +1107,26 @@ static int dma_channel_of(u32 a) {
     }
 }
 
+/* EE access to VU1 memory with PS2_TRAP_VU1_EE (see ps2_mem_init) */
+u8 *ps2_vu1_microcode(void);
+static u8 *vu1_ee_access(u32 a, u32 v, int write) {
+    static u32 logged;
+    u8 *base = a >= 0x1100C000u ? ps2_vu1_memory() : ps2_vu1_microcode();
+    if (logged < 200u) {
+        logged++;
+        ps2_log("vu1-ee: EE %s VU1 %s +%04X = %08X", write ? "writes" : "reads",
+                a >= 0x1100C000u ? "data" : "micro", a & 0x3FFFu, v);
+    }
+    return base + (a & 0x3FFCu);
+}
+
 static u32 hw_read32(u32 a) {
     int ch;
+    if (PS2_UNLIKELY(a >= 0x11008000u && a < 0x11010000u)) {
+        u32 v;
+        memcpy(&v, vu1_ee_access(a, 0, 0), 4);
+        return v;
+    }
     switch (a) {
     case 0x10000000u: case 0x10000800u: case 0x10001000u: case 0x10001800u: {
         int t = (int)((a >> 11) & 3u);
@@ -1165,6 +1184,10 @@ static u32 hw_read32(u32 a) {
 
 static void hw_write32(u32 a, u32 v) {
     int ch;
+    if (PS2_UNLIKELY(a >= 0x11008000u && a < 0x11010000u)) {
+        memcpy(vu1_ee_access(a, v, 1), &v, 4);
+        return;
+    }
     switch (a) {
     case 0x10000000u: case 0x10000800u: case 0x10001000u: case 0x10001800u: {
         int t = (int)((a >> 11) & 3u);
@@ -1194,7 +1217,7 @@ static void hw_write32(u32 a, u32 v) {
     case 0x1000E040u: d_rbsr = v; return;
     case 0x1000E050u: d_rbor = v; return;
     case 0x1000E060u: d_stadr = v; return;
-    case 0x1000F000u: intc_stat &= ~v; return;
+    case 0x1000F000u: __atomic_fetch_and(&intc_stat, ~v, __ATOMIC_RELAXED); return;
     case 0x1000F010u: intc_mask ^= v; return;
     case 0x1000F520u: d_enable = v; return;
     case 0x1000F590u: d_enable = v; return;

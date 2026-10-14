@@ -56,8 +56,6 @@ typedef struct ps2_pad_state {
 extern ps2_pad_state ps2_pad_host[PS2_PAD_PORTS];
 
 void ps2_dbc_report(u32 obj, u32 recv, int rsize);
-void ps2_stop_scene(int major, int minor, int frames);
-void ps2_stop_scene_check(unsigned major, unsigned minor);
 void ps2_pad_init(void);
 void ps2_pad_report(void);
 void ps2_pad_io_report(void);
@@ -65,9 +63,6 @@ void ps2_pad_autoplay(int on);
 void ps2_gs_deinterlace(int off);
 void ps2_cdvd_rpc_register(void);
 void ps2_iop_services_register(void);
-void ps2_nufile_report(void);
-void ps2_nusound_report(void);
-void ps2_nusndstr_report(void);
 void ps2_ac4_services_register(void);
 void ps2_ac4_report(void);
 void ps2_ac4_iop_fill(u32 addr, u32 size);

@@ -6,7 +6,6 @@ extern int ps2_gif_path;
 #include "ps2_statecap.h"
 #include "ps2_capture.h"
 #include "rn.h"
-#include "rn/rn_int.h"
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
@@ -14,6 +13,7 @@ extern int ps2_gif_path;
 
 u64  ps2_gs_priv_read(u32 addr);
 void ps2_gs_priv_write(u32 addr, u64 val);
+void ps2_gs_write_reg(u32 reg, u64 val);
 void ps2_gfxq_drain(void);
 int  ps2_gfxq_field(void);
 extern int ps2_gfxq_on;
@@ -62,7 +62,7 @@ enum {
 #define PRIM_CTXT2 (1u << 9)
 
 typedef struct { s32 x, y; u32 z; u32 rgba; float s, t, q; u16 u, v;
-                 float fog; float fx, fy, fzn; u8 nat; } gs_vtx;
+                 float fog; } gs_vtx;
 
 static u8 *gs_vram;
 static u64 gs_reg[0x64];
@@ -79,6 +79,7 @@ static u64 gs_stat_prims, gs_stat_pixels, gs_stat_regs;
 u64 ps2_gs_vtx_draw, ps2_gs_vtx_adc;
 static u64 gs_stat_trx, gs_stat_trxpix;
 static u64 gs_stat_deint;
+static u64 gs_stat_ws_hud, gs_stat_ws_cue;
 static int no_deinterlace;
 static u64 gs_reg_hist[0x64];
 
@@ -335,7 +336,6 @@ void ps2_gs_init(void) {
     gs_vram = (u8 *)calloc(1, GS_VRAM_SIZE);
     if (!gs_vram) ps2_fatal("cannot allocate GS VRAM");
     gs_reg[GS_PRMODECONT] = 1;
-    rn_claims_init();
 }
 
 #define PSM_CT32   0
@@ -634,11 +634,6 @@ static u32 fb_mask(void) { return (u32)(frame_reg() >> 32); }
 static u32 zb_base(void) { return (u32)(zbuf_reg() & 0x1FFull) * 2048u * 4u; }
 static u32 zb_enabled(void) { return ((zbuf_reg() >> 32) & 1ull) == 0ull; }
 
-u64 ps2_gs_cur_tex0(void) { return tex0_reg(); }
-u64 ps2_gs_cur_frame(void) { return frame_reg(); }
-u64 ps2_gs_cur_zbuf(void) { return zbuf_reg(); }
-u64 ps2_gs_cur_test(void) { return test_reg(); }
-
 /* The mip level of the primitive being drawn when TEX1.LCM is 0 -- the GS
    then works LOD out per pixel from Q: (log2(1/|Q|) << L) + K.  Here it is
    taken once per primitive from its vertices (a level the texture cache can
@@ -676,6 +671,66 @@ static void gs_prim_lod(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
     lod = sum / (float)n;
     gs_dyn_lod = lod <= 0.0f ? 0 : (int)(lod + 0.5f);
     if (gs_dyn_lod > (int)mxl) gs_dyn_lod = (int)mxl;
+}
+
+/* Triangles get the GS's own per-pixel choice.  Q is affine in screen space,
+   so a triangle's LOD runs between its vertices' values; it is drawn once for
+   each level that range touches, and gs.frag works LOD out for every pixel,
+   keeps the pixels that belong to the level of that draw and, for MMIN 3/5,
+   blends in the next level (AC4's terrain asks for trilinear).  Every pixel is
+   still written once, with the triangle's own depth.  gs_dyn_mip is the
+   ps2_vk_state.mip word for the draw being made; 0 = not per pixel. */
+static u32 gs_dyn_mip;
+
+static int gs_tri_mip_range(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c,
+                            int *lo, int *hi) {
+    u64 t1 = tex1_reg();
+    u32 mxl = (u32)((t1 >> 2) & 7ull), mmin = (u32)((t1 >> 6) & 7ull);
+    u32 l = (u32)((t1 >> 19) & 3ull);
+    s32 k = (s32)((t1 >> 32) & 0xFFFull);
+    int blend, last;
+    float mn = 1e30f, mx = -1e30f, bias;
+    const gs_vtx *vv[3] = { a, b, c };
+    static int off = -1, no_blend, said;
+    if (off < 0) {
+        const char *e = getenv("PS2_NO_PIXEL_MIP");
+        off = ((e && *e && *e != '0') || getenv("PS2_NO_DYN_MIP")) ? 1 : 0;
+        if (off) ps2_log("GS: mip levels are not chosen per pixel (PS2_NO_PIXEL_MIP)");
+        e = getenv("PS2_NO_MIP_BLEND");
+        no_blend = (e && *e && *e != '0') ? 1 : 0;
+        if (no_blend) ps2_log("GS: no blending between mip levels, the nearest is "
+                              "used (PS2_NO_MIP_BLEND)");
+    }
+    gs_dyn_mip = 0;
+    if (off || !(gs_prim & PRIM_TME) || (gs_prim & PRIM_FST) || (t1 & 1ull)
+        || !mxl || mmin < 2u)
+        return 0;
+    blend = !no_blend && (mmin == 3u || mmin == 5u);
+    last = blend ? (int)mxl - 1 : (int)mxl;
+    bias = blend ? 0.0f : 0.5f;
+    if (!said) {
+        said = 1;
+        ps2_log("GS: mip level chosen per pixel%s (first: TEX1 %016llX)",
+                blend ? ", blended between levels" : "", (unsigned long long)t1);
+    }
+    if (k & 0x800) k -= 0x1000;
+    for (u32 i = 0; i < 3u; i++) {
+        float q = vv[i]->q, lod;
+        if (!(fabsf(q) > 1e-30f) || (q < 0.0f) != (a->q < 0.0f)) return 0;
+        lod = -log2f(fabsf(q)) * (float)(1u << l) + (float)k / 16.0f;
+        if (lod < mn) mn = lod;
+        if (lod > mx) mx = lod;
+    }
+    /* with slack, so the GPU's LOD never lands on a level with no draw */
+    *lo = (int)floorf(mn + bias - 1.0f / 64.0f);
+    *hi = (int)floorf(mx + bias + 1.0f / 64.0f);
+    if (*lo < 0) *lo = 0;
+    if (*lo > last) *lo = last;
+    if (*hi < *lo) *hi = *lo;
+    if (*hi > last) *hi = last;
+    gs_dyn_mip = ((u32)k & 0xFFFu) | (l << 12) | (mxl << 17) | (1u << 20)
+               | (blend ? 1u << 21 : 1u << 22);
+    return 1;
 }
 
 static u32 gs_tex_lod(void) {
@@ -902,28 +957,10 @@ static void vertex_kick(s32 x, s32 y, u32 z, int draw) {
     v.x = x - (s32)(off & 0xFFFFull);
     v.y = y - (s32)((off >> 32) & 0xFFFFull);
     v.z = z;
-    v.nat = 0;
     vertex_push(v, draw);
 }
 
 static float z_norm(u32 z);
-static float z_norm_d(double z, int z32);
-
-void ps2_gs_native_vertex(float x, float y, double z, float fog, int kind, int adc) {
-    u64 off = xyoff_reg();
-    float ox = (float)(off & 0xFFFFull) / 16.0f;
-    float oy = (float)((off >> 32) & 0xFFFFull) / 16.0f;
-    gs_vtx v;
-    if (kind == 0) gs_fog = fog / 255.0f;
-    v.fx = x - ox;
-    v.fy = y - oy;
-    v.x = (s32)(x * 16.0f) - (s32)(off & 0xFFFFull);
-    v.y = (s32)(y * 16.0f) - (s32)((off >> 32) & 0xFFFFull);
-    v.z = z <= 0.0 ? 0u : (z >= 4294967295.0 ? 0xFFFFFFFFu : (u32)z);
-    v.fzn = z_norm_d(z, kind == 1);
-    v.nat = 1;
-    vertex_push(v, !adc);
-}
 
 static void vertex_push(gs_vtx v, int draw) {
     if (draw) ps2_gs_vtx_draw++; else ps2_gs_vtx_adc++;
@@ -1092,49 +1129,13 @@ void ps2_gs_fill_report(void) {
     }
 }
 
-#define GS_BLOCKS (GS_VRAM_SIZE / 256u)
-static u32 blk_owner[GS_BLOCKS];
-static u16 blk_slot[GS_BLOCKS];
-static u32 blk_marking = 0xFFFFFFFFu;
-static u32 blk_marking_slot;
-static void uprec_block_lost(u32 slot, u32 id);
-
 static void gs_psm_geom(u32 psm, gs_geom *g);
-static inline u64 vram_bit_g(const gs_geom *g, u32 base, u32 ppr, u32 x, u32 y);
-
-static int blk_walk(u32 dbp, u32 dbw, u32 dpsm, u32 x, u32 y, u32 w, u32 h,
-                    int (*fn)(u32 blk, void *u), void *u) {
-    gs_geom g;
-    u32 ppr, bx, by;
-    gs_psm_geom(dpsm, &g);
-    if (!dbw) dbw = g.pw;
-    ppr = dbw / g.pw;
-    if (!ppr) ppr = 1;
-    for (by = y & ~g.bhmask; by < y + h; by += g.bh)
-        for (bx = x & ~g.bwmask; bx < x + w; bx += g.bw) {
-            u64 bit = vram_bit_g(&g, dbp, ppr, bx, by);
-            u32 blk = (u32)(bit >> 11);
-            if (blk < GS_BLOCKS && fn(blk, u)) return 1;
-        }
-    return 0;
-}
-
-static int blk_mark(u32 blk, void *u) {
-    u32 old = blk_owner[blk];
-    (void)u;
-    if (old != blk_marking && old != 0u && old != 0xFFFFFFFFu)
-        uprec_block_lost(blk_slot[blk], old);
-    blk_owner[blk] = blk_marking;
-    blk_slot[blk] = (u16)blk_marking_slot;
-    return 0;
-}
 
 static void gs_dirty_rect(u32 dbp, u32 dbw, u32 dpsm, u32 x, u32 y,
                           u32 w, u32 h) {
     gs_geom g;
     u32 ppr, first, last;
     if (!w || !h) return;
-    blk_walk(dbp, dbw, dpsm, x, y, w, h, blk_mark, NULL);
     gs_psm_geom(dpsm, &g);
     if (!dbw) dbw = g.pw;
     ppr = dbw / g.pw;
@@ -1236,196 +1237,9 @@ static void trx_geom_sync(void) {
     trx_npix = trx_pixels_per_qw(trx_dpsm);
 }
 
-#define UPREC_N 4096u
-#define UPREC_HASH 1024u
-typedef struct {
-    u32 dbp, dbw, dpsm, x, y, w, h;
-    u32 epoch, hash, need, pos;
-    u8 *bytes;
-    u32 cap;
-    int valid;
-    u64 seq;
-    u32 id;
-    int lost;
-    s32 next, prev;
-    int chained;
-    s32 lru_prev, lru_next;
-    int hashed;
-} uprec;
-static uprec uprecs[UPREC_N];
-static u32 uprec_n;
-static s32 uprec_lru_head = -1, uprec_lru_tail = -1;
-
-static void uprec_lru_unlink(u32 i) {
-    uprec *r = &uprecs[i];
-    if (r->lru_prev >= 0) uprecs[r->lru_prev].lru_next = r->lru_next;
-    else uprec_lru_head = r->lru_next;
-    if (r->lru_next >= 0) uprecs[r->lru_next].lru_prev = r->lru_prev;
-    else uprec_lru_tail = r->lru_prev;
-    r->lru_prev = r->lru_next = -1;
-}
-
-static void uprec_lru_push(u32 i, int newest) {
-    uprec *r = &uprecs[i];
-    if (newest) {
-        r->lru_prev = uprec_lru_tail;
-        r->lru_next = -1;
-        if (uprec_lru_tail >= 0) uprecs[uprec_lru_tail].lru_next = (s32)i;
-        else uprec_lru_head = (s32)i;
-        uprec_lru_tail = (s32)i;
-    } else {
-        r->lru_next = uprec_lru_head;
-        r->lru_prev = -1;
-        if (uprec_lru_head >= 0) uprecs[uprec_lru_head].lru_prev = (s32)i;
-        else uprec_lru_tail = (s32)i;
-        uprec_lru_head = (s32)i;
-    }
-}
-static int uprec_cur = -1;
-static u64 uprec_seq;
-static u32 uprec_id;
-static s32 uprec_head[UPREC_HASH];
-static int uprec_heads_ready;
-static u64 uprec_evicted;
-
-static u32 uprec_bucket(u32 dbp) { return (dbp / 256u * 2654435761u) >> 22; }
-
-static void uprec_unlink(u32 slot) {
-    uprec *r = &uprecs[slot];
-    if (!r->chained) return;
-    if (r->prev >= 0) uprecs[r->prev].next = r->next;
-    else uprec_head[uprec_bucket(r->dbp)] = r->next;
-    if (r->next >= 0) uprecs[r->next].prev = r->prev;
-    r->chained = 0;
-}
-
-static void uprec_link(u32 slot) {
-    uprec *r = &uprecs[slot];
-    u32 b = uprec_bucket(r->dbp);
-    r->prev = -1;
-    r->next = uprec_head[b];
-    if (r->next >= 0) uprecs[r->next].prev = (s32)slot;
-    uprec_head[b] = (s32)slot;
-    r->chained = 1;
-}
-
-static u32 psm_upload_bits(u32 psm) {
-    switch (psm) {
-    case 0: return 32; case 1: return 24; case 2: case 10: return 16;
-    case 0x13: case 0x1B: return 8;
-    case 0x14: case 0x24: case 0x2C: return 4;
-    default: return 0;
-    }
-}
-
-static void uprec_begin(u32 dbp, u32 dbw, u32 dpsm, u32 x, u32 y, u32 w, u32 h) {
-    u32 bits = psm_upload_bits(dpsm), i, slot = UPREC_N;
-    uprec_cur = -1;
-    blk_marking = 0xFFFFFFFFu;
-    if (!uprec_heads_ready) {
-        for (i = 0; i < UPREC_HASH; i++) uprec_head[i] = -1;
-        uprec_heads_ready = 1;
-    }
-    if (!bits || !w || !h || w * h > 4096u * 4096u) return;
-    for (s32 k = uprec_head[uprec_bucket(dbp)]; k >= 0; k = uprecs[k].next) {
-        uprec *r = &uprecs[k];
-        if (r->dbp == dbp && r->dbw == dbw && r->dpsm == dpsm && r->x == x && r->y == y
-            && r->w == w && r->h == h) { slot = (u32)k; break; }
-    }
-    if (slot == UPREC_N) {
-        if (uprec_n < UPREC_N) {
-            slot = uprec_n++;
-            uprec_lru_push(slot, 0);
-        } else {
-            slot = (u32)uprec_lru_head;
-            uprec_evicted++;
-        }
-        uprec_unlink(slot);
-        uprecs[slot].dbp = dbp;
-        uprec_link(slot);
-    }
-    {
-        uprec *r = &uprecs[slot];
-        u32 need = (u32)(((u64)w * h * bits + 7u) / 8u);
-        if (need > r->cap) {
-            u8 *nb = (u8 *)realloc(r->bytes, need);
-            if (!nb) return;
-            r->bytes = nb;
-            r->cap = need;
-        }
-        r->dbp = dbp; r->dbw = dbw; r->dpsm = dpsm;
-        r->x = x; r->y = y; r->w = w; r->h = h;
-        r->need = need;
-        r->pos = 0;
-        r->valid = 0;
-        r->seq = ++uprec_seq;
-        uprec_lru_unlink(slot);
-        uprec_lru_push(slot, 1);
-        r->id = ++uprec_id;
-        if (r->id == 0xFFFFFFFFu) r->id = ++uprec_id;
-        r->lost = 0;
-        blk_marking = r->id;
-        blk_marking_slot = slot;
-        uprec_cur = (int)slot;
-    }
-}
-
-static void uprec_feed(u64 qw) {
-    uprec *r = &uprecs[uprec_cur];
-    u32 n = r->need - r->pos;
-    if (n > 8u) n = 8u;
-    memcpy(r->bytes + r->pos, &qw, n);
-    r->pos += n;
-}
-
-static void uprec_finish(void) {
-    uprec *r = &uprecs[uprec_cur];
-    uprec_cur = -1;
-    blk_marking = 0xFFFFFFFFu;
-    if (r->pos < r->need) return;
-    r->hashed = 0;
-    r->epoch = gs_epoch_seq;
-    r->valid = 1;
-}
-
-static u32 uprec_hash(uprec *r) {
-    if (!r->hashed) {
-        u32 h = 2166136261u;
-        for (u32 i = 0; i < r->need; i++) h = (h ^ r->bytes[i]) * 16777619u;
-        r->hash = h;
-        r->hashed = 1;
-    }
-    return r->hash;
-}
-
-static void uprec_block_lost(u32 slot, u32 id) {
-    if (slot < UPREC_N && uprecs[slot].id == id) uprecs[slot].lost = 1;
-}
-
-static int uprec_current(uprec *r) {
-    return !r->lost;
-}
-
-static uprec *uprec_find(u32 dbp, u32 dbw, u32 dpsm, u32 need_w, u32 need_h) {
-    uprec *best = NULL;
-    if (!uprec_heads_ready) return NULL;
-    for (s32 k = uprec_head[uprec_bucket(dbp)]; k >= 0; k = uprecs[k].next) {
-        uprec *r = &uprecs[k];
-        if (!r->valid || r->dbp != dbp || r->dpsm != dpsm || r->x || r->y) continue;
-        if (dbw && r->dbw != dbw) continue;
-        if (r->w < need_w || r->h < need_h) continue;
-        if (!best || r->seq > best->seq) best = r;
-    }
-    return best;
-}
-
 static void trx_begin(void) {
     u64 pos = gs_reg[GS_TRXPOS], rg = gs_reg[GS_TRXREG];
     u64 bbc = gs_reg[GS_BITBLTBUF];
-    uprec_begin((u32)((bbc >> 32) & 0x3FFFull) * 256u, (u32)((bbc >> 48) & 0x3Full) * 64u,
-                (u32)((bbc >> 56) & 0x3Full), (u32)((pos >> 32) & 0x7FFull),
-                (u32)((pos >> 48) & 0x7FFull), (u32)(rg & 0xFFFull),
-                (u32)((rg >> 32) & 0xFFFull));
     trx_sum = 2166136261u;
     trx_geom_sync();
     {   /* debugging: PS2_TRACE_TRX_RANGE=lo:hi logs host->local transfers whose
@@ -1532,7 +1346,6 @@ static void trx_local(void) {
                     sbp, sbw, spsm, ssax, ssay, dbp, dbw, dpsm, dsax, dsay, w, h);
         }
     }
-    blk_marking = 0xFFFFFFFFu;
     gs_dirty_rect(dbp, dbw, dpsm, dsax, dsay, w, h);
     gs_stat_trxlocal++;
     for (iy = 0; iy < h; iy++) {
@@ -1578,7 +1391,6 @@ static void trx_data_inner(u64 qw) {
     if (!trx_left) trx24_n = 0;
 }
 static void trx_data_px(u64 qw) {
-    if (uprec_cur >= 0) uprec_feed(qw);
     if (trxc_cur >= 0 && trxc[trxc_cur].got < 4) {
         trxc[trxc_cur].first[trxc[trxc_cur].got++] = (u32)qw;
         if (trxc[trxc_cur].got < 4)
@@ -1670,7 +1482,6 @@ static void trx_data_px(u64 qw) {
                       (u32)((gs_reg[GS_TRXPOS] >> 32) & 0x7FFull),
                       (u32)((gs_reg[GS_TRXPOS] >> 48) & 0x7FFull),
                       rrw, (u32)((gs_reg[GS_TRXREG] >> 32) & 0xFFFull));
-    if (uprec_cur >= 0 && !trx_left) uprec_finish();
 }
 
 static u32 clut_entry_at(u32 cbp, u32 cpsm, u32 csm, u32 csa, u32 psm, u32 idx);
@@ -1682,21 +1493,25 @@ static u32 clut_entry(u32 idx) {
                          idx);
 }
 
-int ps2_gs_decode_indexed(u32 tbp, u32 tbw, u32 psm, u32 w, u32 h, u32 cbp,
-                          u32 cpsm, u8 *rgba) {
-    u32 bw = tbw ? tbw * 64u : 64u;
-    if (psm != PSM_T8 && psm != PSM_T4 && psm != PSM_T8H && psm != PSM_T4HL
-        && psm != PSM_T4HH)
-        return -1;
-    for (u32 y = 0; y < h; y++)
-        for (u32 x = 0; x < w; x++) {
-            u32 idx = vram_get(tbp, bw, x, y, psm);
-            u32 c = clut_entry_at(cbp, cpsm, 0u, 0u, psm, idx);
-            u8 *o = rgba + ((size_t)y * w + x) * 4u;
-            o[0] = (u8)c; o[1] = (u8)(c >> 8); o[2] = (u8)(c >> 16);
-            o[3] = (u8)(c >> 24);
-        }
-    return 0;
+/* The current 256-entry CLUT as a 256x1 texture, colours converted the way
+   the texture decoder converts them (alpha 0x80 -> 255).  For PSMT8H draws
+   whose indices live in a render target: gs.frag reads them there. */
+static u32 clut_palette_texture(u64 t0) {
+    u8 rgba[256 * 4];
+    u32 hash = 2166136261u, e;
+    u64 key;
+    for (e = 0; e < 256u; e++) {
+        u32 c = clut_entry(e);
+        u32 a = (c >> 24) & 0xFFu;
+        a = a >= 128u ? 255u : a * 2u;
+        c = (c & 0x00FFFFFFu) | (a << 24);
+        memcpy(rgba + e * 4u, &c, 4);
+        hash = (hash ^ c) * 16777619u;
+    }
+    /* psm field 0x3E marks a palette: no GS texture format uses it */
+    key = ((u64)((t0 >> 37) & 0x3FFFull) << 40) | ((u64)((t0 >> 51) & 0x1FFull) << 28)
+        | (0x3Eull << 20) | (256u << 4) | 1u;
+    return ps2_vk_texture(key, hash, rgba, 256u, 1u);
 }
 
 static u32 clut_entry_at(u32 cbp, u32 cpsm, u32 csm, u32 csa, u32 psm, u32 idx) {
@@ -2082,22 +1897,6 @@ static u32 current_texture(float *out_w, float *out_h) {
     return r;
 }
 
-static int texture_peek(float *out_w, float *out_h, u32 *idx, u32 *dw, u32 *dh) {
-    u64 t0 = tex0_reg();
-    u32 tbp = (u32)(t0 & 0x3FFFull) * 256u;
-    u32 tbw = (u32)((t0 >> 14) & 0x3Full) * 64u;
-    u32 tw = 1u << ((t0 >> 26) & 0xFull);
-    u32 th = 1u << ((t0 >> 30) & 0xFull);
-    u32 lod = gs_tex_lod();
-    if (!gs_vram) { *idx = 0xFFFFFFFFu; return 1; }
-    if (!tex_nocache()
-        && texcache_find(t0, gs_reg[GS_TEXCLUT], lod, idx, out_w, out_h))
-        return 1;
-    tex_extent(t0, lod, &tbp, &tbw, &tw, &th, out_w, out_h);
-    *dw = tw;
-    *dh = th;
-    return 0;
-}
 static u32 current_texture_inner(float *out_w, float *out_h) {
     u64 t0 = tex0_reg();
     u32 tbp = (u32)(t0 & 0x3FFFull) * 256u;
@@ -2535,18 +2334,6 @@ static float z_norm(u32 z) {
     return (float)v;
 }
 
-static float z_norm_d(double z, int z32) {
-    u32 psm = (u32)((zbuf_reg() >> 24) & 0xFull);
-    double m = (psm == 1) ? 16777215.0 : (psm >= 2 ? 65535.0 : 4294967295.0);
-    double lim = z32 ? 4294967295.0 : 16777215.0;
-    double v;
-    if (z > lim) z = lim;
-    v = z / m;
-    if (v > 1.0) v = 1.0;
-    if (v < 0.0) v = 0.0;
-    return (float)v;
-}
-
 #define GS_RT_SLOTS 32
 static u32 gs_rt_base[GS_RT_SLOTS];
 static u32 gs_rt_n;
@@ -2554,6 +2341,10 @@ static u32 gs_rt_epoch[GS_RT_SLOTS];
 static u32 gs_rt_pages[GS_RT_SLOTS];
 static u32 gs_rt_fbw[GS_RT_SLOTS];      /* buffer width (pixels) of the last draw */
 static u8  gs_rt_psm[GS_RT_SLOTS];      /* frame format of the last draw */
+/* the epoch of the last draw that could write the target's alpha (FBMSK left
+   it open): PSMT8H data packed into the alpha bytes survives draws that mask
+   alpha, so only these make the render target the newer copy of it */
+static u32 gs_rt_aepoch[GS_RT_SLOTS];
 static u32 gs_rt_zbase[GS_RT_SLOTS];
 static u32 gs_rt_zepoch[GS_RT_SLOTS];
 static u8 gs_rt_zframe[GS_RT_SLOTS];
@@ -2572,6 +2363,7 @@ static u32 rt_slot(u32 base) {
         gs_rt_base[gs_rt_n] = base;
         gs_rt_pages[gs_rt_n] = 0;
         gs_rt_zframe[gs_rt_n] = 0;
+        gs_rt_aepoch[gs_rt_n] = 0;
         return gs_rt_n++;
     }
     for (i = 0; i < gs_rt_n; i++) {
@@ -2592,6 +2384,7 @@ static u32 rt_slot(u32 base) {
     gs_rt_epoch[victim] = 0;
     gs_rt_pages[victim] = 0;
     gs_rt_zframe[victim] = 0;
+    gs_rt_aepoch[victim] = 0;
     return victim;
 }
 
@@ -2775,6 +2568,7 @@ void ps2_gs_cap_load(const ps2_gs_capstate *st) {
     memcpy(gs_rt_zbase,  st->rt_zbase,  sizeof gs_rt_zbase);
     memcpy(gs_rt_zepoch, st->rt_zepoch, sizeof gs_rt_zepoch);
     memset(gs_rt_zframe, 0, sizeof gs_rt_zframe);
+    memset(gs_rt_aepoch, 0, sizeof gs_rt_aepoch);
     gs_rt_n = st->rt_n < GS_RT_SLOTS ? st->rt_n : GS_RT_SLOTS;
     gs_disp_base = st->disp_base;
     gs_epoch_seq = st->epoch_seq;
@@ -2995,6 +2789,9 @@ void ps2_gs_rt_report(void) {
     }
     ps2_log("GS field blits deinterlaced: %llu",
             (unsigned long long)gs_stat_deint);
+    if (gs_stat_ws_hud)
+        ps2_log("GS widescreen: %llu 2D primitives kept 4:3, %llu lock cues left on their "
+                "target", (unsigned long long)gs_stat_ws_hud, (unsigned long long)gs_stat_ws_cue);
     ps2_log("GS DISPFB base %u -> slot %d,  PMODE %llX  DISPFB1 %llX DISPFB2 %llX",
             gs_disp_base, rt_find(gs_disp_base),
             (unsigned long long)ps2_gs_priv_read(0x12000000u),
@@ -3030,16 +2827,13 @@ static void fill_state_count(const ps2_vk_state *st) {
     }
 }
 
-#define GS_TEX_DEFERRED 0xFFFFFFFEu
-static int fill_defer_tex;
-static u32 fill_defer_w, fill_defer_h;
 static int fill_no_memo;
 static struct {
-    int valid, defer;
+    int valid;
     u64 ver, validation_seq;
-    u32 prim, epoch_seq, frame, emitter, disp_base;
-    u32 defer_w, defer_h;
+    u32 prim, epoch_seq, frame, disp_base;
     int dyn_lod;
+    u32 dyn_mip;
     u8 tex_hit, rt_tex_draw, rt_tex_missed, rt_ztex_draw;
     ps2_vk_state st;
 } fs_memo;
@@ -3063,17 +2857,15 @@ static void fill_state(ps2_vk_state *st) {
     if (memo_on && fs_memo.valid && fs_memo.ver == gs_state_ver
         && fs_memo.prim == gs_prim && fs_memo.epoch_seq == gs_epoch_seq
         && fs_memo.validation_seq == gs_validation_seq
-        && fs_memo.frame == ps2_gs_frame_count && fs_memo.emitter == rn_gs_emitter
-        && fs_memo.disp_base == gs_disp_base && fs_memo.defer == fill_defer_tex
-        && fs_memo.dyn_lod == gs_dyn_lod) {
+        && fs_memo.frame == ps2_gs_frame_count
+        && fs_memo.disp_base == gs_disp_base
+        && fs_memo.dyn_lod == gs_dyn_lod && fs_memo.dyn_mip == gs_dyn_mip) {
         *st = fs_memo.st;
         fill_state_count(st);
         texcache_hits += fs_memo.tex_hit;
         gs_rt_tex_draws += fs_memo.rt_tex_draw;
         gs_rt_tex_missed += fs_memo.rt_tex_missed;
         gs_rt_ztex_draws += fs_memo.rt_ztex_draw;
-        fill_defer_w = fs_memo.defer_w;
-        fill_defer_h = fs_memo.defer_h;
         fs_memo_hits++;
         return;
     }
@@ -3084,17 +2876,14 @@ static void fill_state(ps2_vk_state *st) {
     fs_memo_misses++;
     if (!memo_on) return;
     fs_memo.valid = !fill_no_memo;
-    fs_memo.defer = fill_defer_tex;
     fs_memo.ver = gs_state_ver;
     fs_memo.prim = gs_prim;
     fs_memo.epoch_seq = gs_epoch_seq;
     fs_memo.validation_seq = gs_validation_seq;
     fs_memo.frame = ps2_gs_frame_count;
-    fs_memo.emitter = rn_gs_emitter;
     fs_memo.disp_base = gs_disp_base;
     fs_memo.dyn_lod = gs_dyn_lod;
-    fs_memo.defer_w = fill_defer_w;
-    fs_memo.defer_h = fill_defer_h;
+    fs_memo.dyn_mip = gs_dyn_mip;
     fs_memo.tex_hit = (u8)(texcache_hits + texcache_misses != h0);
     fs_memo.rt_tex_draw = (u8)(gs_rt_tex_draws - rtd0);
     fs_memo.rt_tex_missed = (u8)(gs_rt_tex_missed - rtm0);
@@ -3151,6 +2940,7 @@ static void fill_state_compute(ps2_vk_state *st) {
     fill_state_count(st);
     st->fst = (gs_prim & PRIM_FST) ? 1 : 0;
     st->tex_lod = gs_tex_lod();
+    st->mip = gs_dyn_mip;
     st->tex_point = ((tex1_reg() >> 5) & 1ull) ? 0 : 1;
     st->wms  = (u32)(cl & 3ull);
     st->wmt  = (u32)((cl >> 2) & 3ull);
@@ -3173,10 +2963,13 @@ static void fill_state_compute(ps2_vk_state *st) {
         in_disp = now_disp;
     }
     u32 rt_epoch_before = st->rt < GS_RT_SLOTS ? gs_rt_epoch[st->rt] : 0u;
+    u32 rt_aepoch_before = st->rt < GS_RT_SLOTS ? gs_rt_aepoch[st->rt] : 0u;
     if (st->rt < GS_RT_SLOTS) {
         gs_rt_epoch[st->rt] = gs_epoch_seq;
         gs_rt_fbw[st->rt] = st->fb_w;
         gs_rt_psm[st->rt] = (u8)st->fb_psm;
+        if (st->fb_psm == PSM_CT32 && (st->fb_mask >> 24) != 0xFFu)
+            gs_rt_aepoch[st->rt] = gs_epoch_seq;
         {   gs_geom fg;
             u32 pages;
             gs_psm_geom(st->fb_psm, &fg);
@@ -3190,12 +2983,26 @@ static void fill_state_compute(ps2_vk_state *st) {
         if (st->zwrite) gs_rt_zepoch[st->rt] = gs_epoch_seq;
     }
     st->tex_rt = 0;
+    st->index_rt = 0;
+    st->clut_tex = 0;
     if (st->tme) {
         u32 tbp = (u32)(t0 & 0x3FFFull) * 256u;
         u32 tpsm = (u32)((t0 >> 20) & 0x3Full);
         int slot = rt_find(tbp);
         int use_rt = 0;
-        if (slot >= 0 && !psm_is_indexed(tpsm)) {
+        static int index_rt_off = -1;
+        if (index_rt_off < 0) {
+            const char *e = getenv("PS2_NO_INDEX_RT");
+            index_rt_off = (e && *e && *e != '0') ? 1 : 0;
+            if (index_rt_off) ps2_log("GS: PSMT8H indices are always read from VRAM "
+                                      "(PS2_NO_INDEX_RT)");
+        }
+        /* PSMT8H reads the alpha byte of 32-bit pixels: AC4 remaps the back
+           buffer's alpha through a CLUT (its haze strength) before the haze
+           pass blends with destination alpha.  The frame is only on the GPU. */
+        if (slot >= 0 && (!psm_is_indexed(tpsm)
+                          || (tpsm == PSM_T8H && !index_rt_off
+                              && ((t0 >> 51) & 0xFull) == PSM_CT32))) {
             gs_geom g;
             u32 tbw = (u32)((t0 >> 14) & 0x3Full) * 64u;
             u32 tw  = 1u << ((t0 >> 26) & 0xFull);
@@ -3228,6 +3035,42 @@ static void fill_state_compute(ps2_vk_state *st) {
                                                    : "one address");
                 }
                 if (no_rt && (no_rt == 1u || no_rt == tbp)) use_rt = 0;
+            }
+            if (tpsm == PSM_T8H) {
+                /* indices in the alpha bytes: the target counts only if a draw
+                   wrote its alpha after VRAM last did */
+                u32 ae = (u32)slot == st->rt ? rt_aepoch_before : gs_rt_aepoch[slot];
+                use_rt = use_rt && ae && gs_range_epoch(tbp, hi) <= ae;
+            }
+            if (use_rt && tpsm == PSM_T8H) {
+                /* the palette must be current in VRAM; one drawn by the GPU
+                   is not handled together with indices from a target */
+                u32 cbp = (u32)((t0 >> 37) & 0x3FFFull) * 256u, pidx;
+                int cs = rt_covering(cbp);
+                if (cs >= 0 && gs_range_epoch(cbp, cbp + 1u) <= gs_rt_epoch[cs]) {
+                    use_rt = 0;
+                } else if ((pidx = clut_palette_texture(t0)) == 0xFFFFFFFFu) {
+                    use_rt = 0;
+                } else {
+                    st->index_rt = 1;
+                    st->clut_tex = pidx + 1u;
+                    fill_no_memo = 1;
+                    if (PS2_ENV("PS2_TRACE_INDEX_RT")) {
+                        static u32 seen[32], ns;
+                        u32 k, key = tbp ^ (cbp << 1) ^ ((u32)st->rt << 28);
+                        for (k = 0; k < ns && seen[k] != key; k++) {}
+                        if (k == ns && ns < 32u) {
+                            seen[ns++] = key;
+                            ps2_log("index-rt: field %u tbp=%u (rt%d psm %u fbw %u) "
+                                    "cbp=%u into rt%u fbp=%u psm %u self=%d %ux%u",
+                                    ps2_gs_frame_count, tbp, slot,
+                                    (u32)gs_rt_psm[slot], gs_rt_fbw[slot], cbp,
+                                    st->rt, fb_base(), st->fb_psm, st->tex_self,
+                                    1u << ((t0 >> 26) & 0xFull),
+                                    1u << ((t0 >> 30) & 0xFull));
+                        }
+                    }
+                }
             }
             if (!use_rt) {
                 gs_rt_tex_missed++;
@@ -3280,7 +3123,7 @@ static void fill_state_compute(ps2_vk_state *st) {
                     const char *e = getenv("PS2_NO_CLUT_RT");
                     off = (e && *e && *e != '0') ? 1 : 0;
                 }
-                if (!off && !fill_defer_tex && psm_is_indexed(tpsm)
+                if (!off && psm_is_indexed(tpsm)
                     && ((t0 >> 51) & 0xFull) == PSM_CT32 && !((t0 >> 55) & 1ull)
                     && (cs = rt_covering(cbp)) >= 0 && (u32)cs != st->rt
                     && gs_range_epoch(cbp, cbp + 1u) <= gs_rt_epoch[cs]
@@ -3290,19 +3133,26 @@ static void fill_state_compute(ps2_vk_state *st) {
                     fill_no_memo = 1;
                 }
             }
-            if (fill_defer_tex) {
-                u32 idx;
-                st->tex_index = texture_peek(&st->tex_w, &st->tex_h, &idx,
-                                             &fill_defer_w, &fill_defer_h)
-                              ? idx : GS_TEX_DEFERRED;
-            } else {
-                tex_index_mode = st->clut_rt != 0;
-                st->tex_index = current_texture(&st->tex_w, &st->tex_h);
-                tex_index_mode = 0;
+            tex_index_mode = st->clut_rt != 0;
+            st->tex_index = current_texture(&st->tex_w, &st->tex_h);
+            tex_index_mode = 0;
+            if ((st->mip & (1u << 21)) && !st->clut_rt
+                && st->tex_index != 0xFFFFFFFFu) {
+                /* the next level, blended in per pixel by gs.frag */
+                float w2, h2;
+                u32 idx2;
+                gs_dyn_lod++;
+                idx2 = current_texture(&w2, &h2);
+                gs_dyn_lod--;
+                if (idx2 != 0xFFFFFFFFu && idx2 != st->tex_index)
+                    st->clut_tex = idx2 + 1u;
             }
             if (st->tex_index == 0xFFFFFFFFu) st->tme = 0;
         }
     }
+    if ((st->mip & (1u << 21))
+        && (!st->tme || st->tex_rt || st->index_rt || st->clut_rt || !st->clut_tex))
+        st->mip &= ~(1u << 21);
     {   static int off = -1;
         int zs;
         if (off < 0) {
@@ -3351,7 +3201,6 @@ static void fill_state_compute(ps2_vk_state *st) {
             }
         }
     }
-    st->emitter = rn_gs_emitter;
     {   /* debugging: PS2_TRACE_GSREGS=N logs every distinct GS draw state of the
            N-th field after the first draw (pair it with PS2_GS_STATE_MEMO=0) */
         static int want = -2;
@@ -3719,15 +3568,9 @@ static void draw_census(const ps2_vk_state *st, const ps2_vk_vertex *v, int n) {
 static void vk_vertex(ps2_vk_vertex *o, const gs_vtx *v, int iip,
                       const gs_vtx *flat, int fst, u32 lod) {
     const gs_vtx *c = iip ? v : flat;
-    if (v->nat) {
-        o->x = v->fx + 0.5f;
-        o->y = v->fy + 0.5f;
-        o->z = v->fzn;
-    } else {
-        o->x = (float)v->x / 16.0f + 0.5f;
-        o->y = (float)v->y / 16.0f + 0.5f;
-        o->z = z_norm(v->z);
-    }
+    o->x = (float)v->x / 16.0f + 0.5f;
+    o->y = (float)v->y / 16.0f + 0.5f;
+    o->z = z_norm(v->z);
     o->r = (float)((c->rgba >> 0) & 0xFF);
     o->g = (float)((c->rgba >> 8) & 0xFF);
     o->b = (float)((c->rgba >> 16) & 0xFF);
@@ -3771,253 +3614,218 @@ static u32 sprite_round_axis(s32 p0, s32 p1, u32 t0, u32 t1) {
     return dt <= 0 || !(span & (span - 1u)) ? 1u : 2u;
 }
 
-static void vk_triangle(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
+u64 ps2_kernel_vblank_count(void);
+
+/* AC4 widescreen: the camera is widened in the EE (ps2_hook.c), so the 4:3
+   frame buffer holds a 16:9 view that the presentation stretches.  The HUD,
+   text and menus are 2D draws the game places at the far Z plane (menus: at
+   Z 0) with the depth test off; they are pulled towards the centre so they
+   keep their 4:3 shape.  Markers that follow the world were projected through the widened
+   camera and stay where they are: the sun flare and lens ghosts carry real
+   depth, and target boxes and their labels are drawn depth-tested (GREATER),
+   even the parts at the far plane.  Full-width draws, untextured full-height
+   ones (fades and clears, which AC4 draws in 64-pixel strips), off-screen
+   targets and render-target copies stay too. */
+static float ws_area;
+static u32 ws_area_frame = ~0u;
+u32 ps2_ws_pillar_frame = 0x80000000u;
+
+#define WS_MARKERS 256
+static float ws_marker[2][WS_MARKERS][4];
+static u32 ws_nmarker[2], ws_mcur, ws_marker_frame = ~0u, ws_bigmap_frame = 0x80000000u;
+
+/* x pulled to 4:3 about the centre (edge 0) or the left/right side (-1/1) */
+static float ws_map(float x, int edge, float s, float cx, float w) {
+    if (edge < 0) return x * s;
+    if (edge > 0) return w - (w - x) * s;
+    return cx + (x - cx) * s;
+}
+
+static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, s, cx, gx, l, r, aspect;
+    int k, edge;
+    if (!ps2_cfg.widescreen || ps2_cfg.hud_layout == PS2_HUD_STRETCHED) return;
+    if (ps2_gif_path == 1 || st->tex_rt || st->fb_w < 480u || st->fb_h < 400u) return;
+    aspect = ps2_vk_game_aspect();
+    if (!(aspect > 1.34f)) return;
+    {   int realz = 0;
+        for (k = 0; k < n; k++) {
+            if (v[k].z < 0.99999f && v[k].z != 0.0f) realz = 1;
+            if (v[k].x < x0) x0 = v[k].x;
+            if (v[k].x > x1) x1 = v[k].x;
+            if (v[k].y < y0) y0 = v[k].y;
+            if (v[k].y > y1) y1 = v[k].y;
+        }
+        if (ws_marker_frame != ps2_gs_frame_count) {
+            ws_marker_frame = ps2_gs_frame_count;
+            ws_mcur ^= 1u;
+            ws_nmarker[ws_mcur] = 0;
+        }
+        if (st->zte && st->ztst != 1u) {
+            /* a target box or label (at the far plane or at the target's own
+               depth): placed by the widened camera, left alone; remembered
+               so the lock cues beside it stay with it */
+            u32 m = ws_nmarker[ws_mcur];
+            if (m < WS_MARKERS && v[0].z != 0.0f && x1 - x0 <= 128.0f && y1 - y0 <= 128.0f
+                && (!realz || (n == 2 && !st->tme))) {   /* at depth: box lines only */
+                ws_marker[ws_mcur][m][0] = x0; ws_marker[ws_mcur][m][1] = x1;
+                ws_marker[ws_mcur][m][2] = y0; ws_marker[ws_mcur][m][3] = y1;
+                ws_nmarker[ws_mcur] = m + 1u;
+            }
+            return;
+        }
+        if (realz) return;
+    }
+    /* The lock-on arrow and seeker diamond are drawn at the target's
+       projected position but without the depth test, so nothing else marks
+       them as world-anchored.  The diamond is red (lines, triangles or a
+       sprite, depending on the view) wherever it is on its way from the
+       centre to the target; the radar's red shapes are scissored, and red
+       text (captions, speaker names, the WARNING sign) is drawn with sprites. */
+    {   float sx = 512.0f / (float)st->fb_w, cyn = (y0 + y1) * 0.5f, cxn = (x0 + x1) * 0.5f * sx;
+        int warning = n == 6 && cxn > 192.0f && cxn < 320.0f && cyn > 136.0f && cyn < 180.0f;
+        if (!(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
+            && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
+            && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && !(n == 6 && cyn < 104.0f) && !warning) {
+            gs_stat_ws_cue++;
+            return;
+        }
+    }
+    /* the arrow: small untextured shapes touching a target box of this frame
+       or the last (the boxes come later in the frame) */
+    if (!st->tme && n != 6 && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f && st->scissor[0] == 0
+        && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f)))   /* not tape ticks */
+        for (u32 b = 0; b < 2u; b++)
+            for (u32 m = 0; m < ws_nmarker[b]; m++) {
+                const float *r4 = ws_marker[b][m];
+                if (x1 >= r4[0] - 24.0f && x0 <= r4[1] + 24.0f
+                    && y1 >= r4[2] - 24.0f && y0 <= r4[3] + 24.0f) {
+                    gs_stat_ws_cue++;
+                    return;
+                }
+            }
+    gx = (float)st->fb_w * 0.5f;
+    if (x0 <= 1.0f && x1 >= (float)st->fb_w - 0.5f) return;
+    if (!st->tme && y0 <= 1.0f && y1 >= (float)st->fb_h - 0.5f) return;
+    s = (4.0f / 3.0f) / aspect;
+    cx = gx + 0.5f;
+    /* "corners at the edges": the flight HUD's corner blocks keep their 4:3
+       shape but sit against the screen's sides: score and target count and
+       the radar on the left, time, weapons and damage on the right.  The
+       tapes, pitch ladder, captions and menus (Z 0) stay centred.  The blocks
+       are recognised by where they sit on AC4's 512 x 448 layout; the speed
+       and altitude tapes' numbers scroll into the radar's and the weapon
+       list's rows, so there only pieces the tapes never have (their own
+       scissor, wide labels, the radar's 8 x 8 corners) or rows below the
+       tapes count.  The pitch ladder turns but stays within ~150 pixels of
+       the centre, short of every block. */
+    edge = 0;
+    if (ps2_cfg.hud_layout == PS2_HUD_EDGES && v[0].z != 0.0f) {
+        float sx = 512.0f / (float)st->fb_w;
+        float nx = (x0 + x1) * 0.5f * sx, ny = (y0 + y1) * 0.5f, w = (x1 - x0) * sx;
+        /* The radar and the enlarged radar map (Square) draw their contents
+           and frame clipped to their own scissor at the left; all of it goes
+           to the left edge together.  While the big map is up (this frame or
+           the last) the position rules for the small radar's unclipped
+           pieces are off, since the speed tape's numbers run past it. */
+        int clipped = st->scissor[0] > 0 && st->scissor[0] < 40 && st->scissor[1] < 256;
+        if (clipped && st->scissor[1] - st->scissor[0] > 140) ws_bigmap_frame = ps2_gs_frame_count;
+        int bigmap = ps2_gs_frame_count - ws_bigmap_frame <= 1u;
+        if (clipped) edge = -1;                                   /* radar, map */
+        else if (ny < 56.0f && nx < 165.0f) edge = -1;            /* PTS, TGT */
+        else if (ny < 46.0f && nx > 360.0f) edge = 1;             /* TIME */
+        else if (!bigmap && ny > 284.0f && nx < 140.0f
+                 && (nx < 90.0f || ny > 345.0f || st->scissor[0] > 0
+                     || (w >= 7.5f && w <= 8.5f && y1 - y0 >= 7.5f && y1 - y0 <= 8.5f
+                         && nx > 118.0f)))
+            edge = -1;                                            /* radar */
+        else if (ny > 288.0f && nx > 384.0f
+                 && (nx > 434.0f || ny > 345.0f || (st->tme && w > 20.0f)))
+            edge = 1;                                             /* weapons, damage */
+    }
+    if (n == 6 && st->tme && st->fst && !st->shuffle_rg && !(v[0].round_uv & PS2_VK_RUV_CLAMP)) {
+        /* A point-sampled sprite loses its pixel-exact placement here, so with
+           smoothed UI (or any filtering at the new size) it would pick up the
+           neighbouring glyphs of its font page as faint lines.  Keep it inside
+           the texels it covers at native resolution, as bilinear sprites are. */
+        u32 cu, cv;
+        if (sprite_clamp_axis(v[0].x, v[2].x, v[0].s, v[2].s, &cu)
+            && sprite_clamp_axis(v[0].y, v[2].y, v[0].t, v[2].t, &cv))
+            for (k = 0; k < n; k++) {
+                v[k].round_uv |= PS2_VK_RUV_CLAMP;
+                v[k].clamp_u = cu;
+                v[k].clamp_v = cv;
+            }
+    }
+    if (v[0].z == 0.0f && st->tme) {
+        /* a menu, briefing or movie fills the 4:3 middle with its own picture:
+           the presentation then shows black at the sides instead of whatever
+           was left there (ps2_video.c) */
+        if (ws_area_frame != ps2_gs_frame_count) {
+            ws_area_frame = ps2_gs_frame_count;
+            ws_area = 0.0f;
+        }
+        ws_area += (x1 - x0) * (y1 - y0);
+        if (ws_area > 0.35f * (float)st->fb_w * (float)st->fb_h)
+            ps2_ws_pillar_frame = ps2_gs_frame_count;
+    }
+    for (k = 0; k < n; k++) {
+        v[k].x = ws_map(v[k].x, edge, s, cx, (float)st->fb_w);
+        v[k].round_uv &= PS2_VK_RUV_SPRITE | PS2_VK_RUV_CLAMP;
+    }
+    if (st->tex_point) st->tex_point = 2;
+    {   /* debugging: PS2_TRACE_WS=N[:M] logs each primitive kept 4:3 in fields N..M */
+        static long at = -2, to;
+        u64 vb;
+        if (at == -2) {
+            const char *e = getenv("PS2_TRACE_WS");
+            char *end = NULL;
+            at = e ? strtol(e, &end, 0) : -1;
+            to = end && *end == ':' ? strtol(end + 1, NULL, 0) : at + 1;
+        }
+        vb = at >= 0 ? ps2_kernel_vblank_count() : 0u;
+        if (at >= 0 && vb >= (u64)at && vb <= (u64)to)
+            ps2_log("ws: v%llu path%d prim%u n%d tme%d tex0 %016llX x[%.1f..%.1f] y[%.1f..%.1f] "
+                    "z%.0f fb%ux%u", (unsigned long long)vb, ps2_gif_path,
+                    (unsigned)(gs_prim & 7u), n, st->tme, (unsigned long long)tex0_reg(),
+                    x0, x1, v[0].y, v[n - 1].y, v[0].z, st->fb_w, st->fb_h);
+    }
+    l = ws_map((float)st->scissor[0], edge, s, gx, (float)st->fb_w);
+    r = ws_map((float)st->scissor[1] + 1.0f, edge, s, gx, (float)st->fb_w);
+    st->scissor[0] = (s32)floorf(l);
+    st->scissor[1] = (s32)ceilf(r) - 1;
+    gs_stat_ws_hud++;
+}
+
+static void vk_triangle_draw(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
     ps2_vk_state st;
     ps2_vk_vertex v[3];
     int iip = (gs_prim & PRIM_IIP) ? 1 : 0;
-    gs_prim_lod(a, b, c);
     fill_state(&st);
-    gs_dyn_lod = -1;
     vk_vertex(&v[0], a, iip, c, st.fst, st.tex_lod);
     vk_vertex(&v[1], b, iip, c, st.fst, st.tex_lod);
     vk_vertex(&v[2], c, iip, c, st.fst, st.tex_lod);
     draw_census(&st, v, 3);
-    {
-        int claimed = rn_claim_prim(&st, RN_PRIM_TRI, v, 3);
-        rn_census_prim(&st, RN_PRIM_TRI, v, 3, claimed);
-        if (!claimed) ps2_vk_draw(PS2_VK_TRIANGLES, &st, v, 3);
+    ws_hud(&st, v, 3);
+    ps2_vk_draw(PS2_VK_TRIANGLES, &st, v, 3);
+}
+
+static void vk_triangle(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
+    int lo, hi;
+    if (gs_tri_mip_range(a, b, c, &lo, &hi)) {
+        u32 base = gs_dyn_mip;
+        for (int n = lo; n <= hi; n++) {
+            gs_dyn_lod = n;
+            gs_dyn_mip = base | ((u32)n << 14);
+            vk_triangle_draw(a, b, c);
+        }
+        gs_dyn_mip = 0;
+    } else {
+        gs_prim_lod(a, b, c);
+        vk_triangle_draw(a, b, c);
     }
+    gs_dyn_lod = -1;
     gs_stat_prims++;
-}
-
-static struct { u64 native, fallback, verified, mismatched; int shown; } st_uprec;
-enum { UPF_PSM, UPF_NOREC, UPF_STALE, UPF_NOCLUT, UPF_CLUTSTALE, UPF_N };
-static u64 st_upfail[UPF_N];
-
-void ps2_gs_native_tex_report(void) {
-    if (st_uprec.native || st_uprec.fallback)
-        ps2_log("rn: native textures -- %llu bindings decoded from the upload records, "
-                "%llu from the GS decode; verified %llu identical, %llu different; "
-                "%u records, %llu evicted",
-                (unsigned long long)st_uprec.native, (unsigned long long)st_uprec.fallback,
-                (unsigned long long)st_uprec.verified, (unsigned long long)st_uprec.mismatched,
-                uprec_n, (unsigned long long)uprec_evicted);
-    if (st_uprec.fallback)
-        ps2_log("rn:    not from the records -- format %llu, no transfer of that picture "
-                "%llu, written over %llu, no palette transfer %llu, palette written over %llu",
-                (unsigned long long)st_upfail[UPF_PSM], (unsigned long long)st_upfail[UPF_NOREC],
-                (unsigned long long)st_upfail[UPF_STALE], (unsigned long long)st_upfail[UPF_NOCLUT],
-                (unsigned long long)st_upfail[UPF_CLUTSTALE]);
-}
-
-typedef struct {
-    uprec *r, *pr;
-    u32 x0, y0, w, h, bits, psm, cpsm;
-    int four, indexed;
-} uprec_sel;
-
-static int uprec_pick(u32 x0, u32 y0, u32 w, u32 h, uprec_sel *p, u32 *hash_out) {
-    u64 t0 = tex0_reg();
-    u32 tbp = (u32)(t0 & 0x3FFFull) * 256u;
-    u32 tbw = (u32)((t0 >> 14) & 0x3Full) * 64u;
-    u32 psm = (u32)((t0 >> 20) & 0x3Full);
-    u32 cbp = (u32)((t0 >> 37) & 0x3FFFull) * 256u;
-    u32 cpsm = (u32)((t0 >> 51) & 0xFull);
-    u32 csm = (u32)((t0 >> 55) & 1ull);
-    u32 bits = psm_upload_bits(psm);
-    int four = psm == PSM_T4 || psm == PSM_T4HL || psm == PSM_T4HH;
-    int indexed = four || psm == PSM_T8 || psm == PSM_T8H;
-    uprec *r, *pr = NULL;
-    u32 hash;
-    if (!bits || csm || !tbw) {
-        static int shown = -1;
-        if (shown < 0) shown = getenv("PS2_RN_TEX_VERIFY") ? 0 : 6;
-        if (shown++ < 6)
-            ps2_log("rn-tex: format not decoded from records: psm %u csm %u tbw %u cpsm %u "
-                    "(TEX0 %016llX)", psm, csm, tbw, cpsm, (unsigned long long)t0);
-        st_upfail[UPF_PSM]++;
-        return 0;
-    }
-    r = uprec_find(tbp, tbw, psm, x0 + w, y0 + h);
-    if (!r) {
-        static int shown = -1;
-        st_upfail[UPF_NOREC]++;
-        if (shown < 0) shown = getenv("PS2_RN_TEX_VERIFY") ? 0 : 8;
-        if (shown < 8) {
-            shown++;
-            ps2_log("rn-tex: no transfer of tbp %u tbw %u psm %u window %u,%u %ux%u; "
-                    "its first block is owned by record id %u; transfers owning it:",
-                    tbp, tbw, psm, x0, y0, w, h, blk_owner[tbp / 256u]);
-            for (u32 i = 0; i < uprec_n; i++)
-                if (uprecs[i].id == blk_owner[tbp / 256u])
-                    ps2_log("rn-tex:    dbp %u dbw %u psm %u at %u,%u %ux%u valid %d",
-                            uprecs[i].dbp, uprecs[i].dbw, uprecs[i].dpsm, uprecs[i].x,
-                            uprecs[i].y, uprecs[i].w, uprecs[i].h, uprecs[i].valid);
-        }
-        return 0;
-    }
-    if (!uprec_current(r)) {
-        st_upfail[UPF_STALE]++;
-        return 0;
-    }
-    hash = uprec_hash(r) ^ (x0 * 73856093u) ^ (y0 * 19349663u) ^ (w * 83492791u) ^ h;
-    if (indexed) {
-        u32 pw = four ? 8u : 16u, ph = four ? 2u : 16u;
-        if (cpsm != PSM_CT32 && cpsm != PSM_CT16 && cpsm != PSM_CT16S) {
-            st_upfail[UPF_PSM]++;
-            return 0;
-        }
-        pr = uprec_find(cbp, 0, cpsm, pw, ph);
-        if (!pr) { st_upfail[UPF_NOCLUT]++; return 0; }
-        if (!uprec_current(pr)) {
-            st_upfail[UPF_CLUTSTALE]++;
-            return 0;
-        }
-        hash = (hash * 16777619u) ^ uprec_hash(pr);
-    } else if (psm != PSM_CT32) {
-        hash = (hash * 16777619u) ^ (u32)(gs_reg[GS_TEXA] ^ (gs_reg[GS_TEXA] >> 32));
-    }
-    p->r = r; p->pr = pr;
-    p->x0 = x0; p->y0 = y0; p->w = w; p->h = h;
-    p->bits = bits; p->psm = psm; p->cpsm = cpsm;
-    p->four = four; p->indexed = indexed;
-    *hash_out = hash;
-    return 1;
-}
-
-static void uprec_fill(const uprec_sel *p, u8 *out) {
-    const uprec *r = p->r, *pr = p->pr;
-    u32 pal[256];
-    if (p->indexed) {
-        u32 n = p->four ? 16u : 256u;
-        u32 pw = p->four ? 8u : 16u;
-        for (u32 e = 0; e < n; e++) {
-            u32 q = p->four ? e : ((e & ~0x18u) | ((e & 0x08u) << 1) | ((e & 0x10u) >> 1));
-            u32 cx = q % pw, cy = q / pw, c;
-            if (p->cpsm == PSM_CT32) {
-                memcpy(&c, pr->bytes + ((size_t)cy * pr->w + cx) * 4u, 4);
-            } else {
-                u16 raw16;
-                u32 rr, gg, bb, aa;
-                memcpy(&raw16, pr->bytes + ((size_t)cy * pr->w + cx) * 2u, 2);
-                rr = (raw16 & 0x1Fu) << 3;
-                gg = ((raw16 >> 5) & 0x1Fu) << 3;
-                bb = ((raw16 >> 10) & 0x1Fu) << 3;
-                aa = (raw16 >> 15) & 1u ? 0x80u : 0u;
-                c = rr | (gg << 8) | (bb << 16) | (aa << 24);
-            }
-            {
-                u32 a = (c >> 24) & 0xFFu;
-                a = a >= 128u ? 255u : a * 2u;
-                pal[e] = (c & 0x00FFFFFFu) | (a << 24);
-            }
-        }
-    }
-    for (u32 y = 0; y < p->h; y++) {
-        u8 *row = out + (size_t)y * p->w * 4u;
-        for (u32 x = 0; x < p->w; x++) {
-            u32 sx = p->x0 + x, sy = p->y0 + y, raw, px;
-            size_t k = (size_t)sy * r->w + sx;
-            switch (p->bits) {
-            case 4:  raw = (r->bytes[k >> 1] >> ((k & 1u) * 4u)) & 0xFu; break;
-            case 8:  raw = r->bytes[k]; break;
-            case 16: { u16 v; memcpy(&v, r->bytes + k * 2u, 2); raw = v; break; }
-            case 24: raw = (u32)r->bytes[k * 3u] | ((u32)r->bytes[k * 3u + 1u] << 8)
-                         | ((u32)r->bytes[k * 3u + 2u] << 16); break;
-            default: memcpy(&raw, r->bytes + k * 4u, 4); break;
-            }
-            px = p->indexed ? pal[raw & 0xFFu] : texel_rgba(raw, p->psm);
-            memcpy(row + x * 4u, &px, 4);
-        }
-    }
-}
-
-static void native_state_decode(ps2_vk_state *st) {
-    st->tex_index = current_texture(&st->tex_w, &st->tex_h);
-    if (st->tex_index == 0xFFFFFFFFu) st->tme = 0;
-}
-
-void ps2_gs_native_state(ps2_vk_state *st) {
-    static int sw = -1, verify = -1;
-    if (sw < 0) {
-        const char *e = getenv("PS2_RN_TEX");
-        sw = !(e && *e == '0');
-        e = getenv("PS2_RN_TEX_VERIFY");
-        verify = e && *e && *e != '0';
-    }
-    fill_defer_tex = sw && !verify;
-    fill_state(st);
-    fill_defer_tex = 0;
-    if (sw && st->tme && !st->tex_rt && st->tex_index != 0xFFFFFFFFu && st->tex_lod == 0u
-        && ps2_vk_enabled() && ps2_vk_mesh_material_ok(st)) {
-        u32 iw, ih, x0 = 0, y0 = 0, w, h, idx;
-        if (st->tex_index == GS_TEX_DEFERRED) { iw = fill_defer_w; ih = fill_defer_h; }
-        else ps2_vk_texture_size(st->tex_index, &iw, &ih);
-        w = iw;
-        h = ih;
-        if (st->wms == 2u && st->minu <= st->maxu) { x0 = st->minu; w = st->maxu - st->minu + 1u; }
-        if (st->wmt == 2u && st->minv <= st->maxv) { y0 = st->minv; h = st->maxv - st->minv + 1u; }
-        if (x0 >= iw || y0 >= ih) {
-            if (st->tex_index == GS_TEX_DEFERRED) native_state_decode(st);
-            return;
-        }
-        if (w > iw - x0) w = iw - x0;
-        if (h > ih - y0) h = ih - y0;
-        idx = 0xFFFFFFFFu;
-        {
-            static u8 *buf;
-            static size_t cap;
-            u32 hash;
-            if ((size_t)w * h * 4u > cap) {
-                u8 *nb = (u8 *)realloc(buf, (size_t)w * h * 4u);
-                if (nb) { buf = nb; cap = (size_t)w * h * 4u; }
-            }
-            uprec_sel sel;
-            if ((size_t)w * h * 4u <= cap && uprec_pick(x0, y0, w, h, &sel, &hash)) {
-                u64 key = ((u64)hash << 20) ^ ((u64)w << 10) ^ h;
-                idx = verify ? 0xFFFFFFFFu : ps2_vk_texture_native_find(key, hash, w, h);
-                if (idx == 0xFFFFFFFFu) uprec_fill(&sel, buf);
-                if (verify) {
-                    const u8 *src = ps2_vk_texture_pixels(st->tex_index);
-                    int same = src != NULL;
-                    for (u32 r = 0; same && r < h; r++)
-                        same = !memcmp(buf + (size_t)r * w * 4u,
-                                       src + ((size_t)(y0 + r) * iw + x0) * 4u,
-                                       (size_t)w * 4u);
-                    if (same) st_uprec.verified++;
-                    else {
-                        st_uprec.mismatched++;
-                        if (st_uprec.shown++ < 8)
-                            ps2_log("rn-tex: upload records disagree with the GS decode: "
-                                    "TEX0 %016llX window %u,%u %ux%u",
-                                    (unsigned long long)tex0_reg(), x0, y0, w, h);
-                    }
-                }
-                if (idx == 0xFFFFFFFFu)
-                    idx = ps2_vk_texture_native_rgba(key, hash, buf, w, h);
-                if (idx != 0xFFFFFFFFu) st_uprec.native++;
-            }
-        }
-        if (idx == 0xFFFFFFFFu) {
-            st_uprec.fallback++;
-            if (st->tex_index == GS_TEX_DEFERRED) native_state_decode(st);
-            if (st->tex_index != 0xFFFFFFFFu)
-                idx = ps2_vk_texture_native(st->tex_index, x0, y0, w, h);
-        }
-        if (idx != 0xFFFFFFFFu) {
-            st->tex_index = idx;
-            st->native_region = (st->wms == 2u || st->wmt == 2u) ? 1 : 0;
-        }
-    }
-    if (st->tex_index == GS_TEX_DEFERRED) native_state_decode(st);
-}
-
-void ps2_gs_native_frame(float *xoff, float *yoff, float *zmax) {
-    u64 off = xyoff_reg();
-    u32 psm = (u32)((zbuf_reg() >> 24) & 0xFull);
-    *xoff = (float)(off & 0xFFFFull) / 16.0f;
-    *yoff = (float)((off >> 32) & 0xFFFFull) / 16.0f;
-    *zmax = (psm == 1) ? 16777215.0f : (psm >= 2 ? 65535.0f : 4294967295.0f);
 }
 
 static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
@@ -4097,7 +3905,7 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
     t[0] = q[0]; t[1] = q[1]; t[2] = q[2];
     t[3] = q[0]; t[4] = q[2]; t[5] = q[3];
     for (i = 0; i < 6; i++) t[i].round_uv = PS2_VK_RUV_SPRITE;
-    if (st.tme && st.fst && !st.tex_point && !st.shuffle_rg) {
+    if (st.tme && st.fst && !st.shuffle_rg) {
         u32 cu, cv;
         if (sprite_clamp_axis(q[0].x, q[2].x, q[0].s, q[2].s, &cu)
             && sprite_clamp_axis(q[0].y, q[2].y, q[0].t, q[2].t, &cv))
@@ -4130,12 +3938,7 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
         blitlog[i].s0 = q[0].s; blitlog[i].s1 = q[2].s;
     }
     draw_census(&st, t, 6);
-    if (rn_claim_prim(&st, RN_PRIM_SPRITE, t, 6)) {
-        rn_census_prim(&st, RN_PRIM_SPRITE, t, 3, 1);
-        gs_stat_prims++;
-        return;
-    }
-    rn_census_prim(&st, RN_PRIM_SPRITE, t, 3, 0);
+    ws_hud(&st, t, 6);
     ps2_vk_draw(PS2_VK_TRIANGLES, &st, t, 3);
     ps2_vk_draw(PS2_VK_TRIANGLES, &st, t + 3, 3);
     gs_stat_prims++;
@@ -4150,11 +3953,8 @@ static void vk_line(const gs_vtx *a, const gs_vtx *b) {
     vk_vertex(&v[0], a, (gs_prim & PRIM_IIP) ? 1 : 0, b, st.fst, st.tex_lod);
     vk_vertex(&v[1], b, (gs_prim & PRIM_IIP) ? 1 : 0, b, st.fst, st.tex_lod);
     draw_census(&st, v, 2);
-    {
-        int claimed = rn_claim_prim(&st, RN_PRIM_LINE, v, 2);
-        rn_census_prim(&st, RN_PRIM_LINE, v, 2, claimed);
-        if (!claimed) ps2_vk_draw(PS2_VK_LINES, &st, v, 2);
-    }
+    ws_hud(&st, v, 2);
+    ps2_vk_draw(PS2_VK_LINES, &st, v, 2);
     gs_stat_prims++;
 }
 
@@ -4166,11 +3966,8 @@ static void vk_point(const gs_vtx *a) {
     gs_dyn_lod = -1;
     vk_vertex(&v[0], a, 1, a, st.fst, st.tex_lod);
     draw_census(&st, v, 1);
-    {
-        int claimed = rn_claim_prim(&st, RN_PRIM_POINT, v, 1);
-        rn_census_prim(&st, RN_PRIM_POINT, v, 1, claimed);
-        if (!claimed) ps2_vk_draw(PS2_VK_POINTS, &st, v, 1);
-    }
+    ws_hud(&st, v, 1);
+    ps2_vk_draw(PS2_VK_POINTS, &st, v, 1);
     gs_stat_prims++;
 }
 
@@ -4238,7 +4035,6 @@ int ps2_gs_present_now(void) {
     u32 base = (u32)(fb & 0x1FFull) * 2048u * 4u;
     int slot;
     ps2_gs_frame_count++;
-    rn_census_frame();
     rn_dump_frame();
     ps2_cap_present();
     ps2_cap_maybe_start();

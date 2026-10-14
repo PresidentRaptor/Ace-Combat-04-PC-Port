@@ -2,7 +2,7 @@
 
 A static recompilation of **Ace Combat 04: Shattered Skies** (PS2, NTSC-U, SLUS-20152) for Windows.
 
-This project is built on [sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the recompiler, the runtime and most of what is described here are their work. This fork adds an Ace Combat 04 configuration, the AC4-specific system code, and a set of emulation and renderer fixes that AC4 needed. The original AC5 build is still in the tree (`-DPS2_GAME=AC5`).
+This project is built on [sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the recompiler, the runtime and most of what is described here are their work. This fork adds an Ace Combat 04 configuration, the AC4-specific system code, and a set of emulation and renderer fixes that AC4 needed. The AC5 build, its config and its native renderer have been removed; sal063's repository has them.
 
 The game's main CPU code isn't emulated. A Python tool reads the original executable and translates every function into C ahead of time, and GCC compiles that together with a runtime that stands in for the rest of the console: the GS (drawn through Vulkan), the VU vector units, SPU2 audio, the IPU for the movies, the IOP modules, memory cards and controllers. The result is a normal `ac4.exe`.
 
@@ -14,13 +14,14 @@ There's no game code or assets in this repo. You bring your own copy of the game
 - **Saving and loading** work (pre-mission SAVE, title-screen LOAD and CONTINUE).
 - **Controller vibration**, rebindable keyboard and controller, PCSX2-style analog settings.
 - The picture defaults to an undistorted 4:3 image in wide windows. AC4 does not yet have a verified game-specific 16:9 camera patch; AC5's patch is not applied.
-- Graphics presets smooth enlarged screen-space map and HUD art by default; the 4K preset also selects internal resolution automatically to cover the current display, up to 8x (GPU and memory permitting). The PS2's original texture art remains native resolution; filtering improves sampling, not source detail.
-- The F4 system menu has a **Mods** page for viewing installed mods and changing which ones load at the next launch. The Windows executable uses the AC4 ISAF insignia as its application icon.
-- Later missions have not been checked yet.
+- **HD texture packs**: the game's textures can be saved, upscaled with Real-ESRGAN and drawn in place of the PS2 originals (aircraft, hangar, terrain, menus). See [HD textures](#hd-textures).
+- The F4 system menu has a **Mods** page for viewing installed mods and changing which ones load at the next launch.
+- The Windows executable uses the Ace Combat 04 ISAF insignia as its application icon.
+- Later missions haven't been played yet. The title screen's demonstration flights, recorded in several of them (snowy mountains, a bridge, a low pass through a city, the cockpit view), render correctly.
 
 How AC4 differs from AC5 under the hood:
 
-- AC4 is drawn entirely through the emulated GS. AC5's native renderer was written for AC5's own VU1 programs and is switched off.
+- AC4 is drawn entirely through the emulated GS. AC5's native renderer was written for AC5's own VU1 programs and has been removed.
 - AC4's sound modules (`SOUND.IRX`, `VAG.IRX`) are replaced by native code written from their own symbol tables.
 - The config files in `config/ac4/` were rebuilt from the executable alone, without IDA or the PS2 SDK. `README_AC4.md` explains how.
 
@@ -61,7 +62,7 @@ From an MSYS2 UCRT64 shell (or Git Bash with `C:\msys64\ucrt64\bin` on the PATH)
 bash tools/build_ac4.sh path/to/SLUS_201.52
 ```
 
-That runs the recompiler with the AC4 config (about 5,950 functions into `generated/`), configures CMake with `-DPS2_GAME=AC4` the first time, and builds. Expect several minutes: every generated file is essentially one huge function. You get:
+That runs the recompiler with the AC4 config (about 5,950 functions into `generated/`), configures CMake the first time, and builds. Expect several minutes: every generated file is essentially one huge function. You get:
 
 - `build/gcc/ac4.exe`: the game
 - `build/gcc/shaders/`: the compiled shaders (must stay next to the exe, or set `PS2_SHADER_DIR`)
@@ -77,7 +78,7 @@ python -m ps2recomp "C:\path\to\SLUS_201.52" -o generated `
     --ida-db config/ac4/ida_db.json --ida-seeds config/ac4/seeds.json `
     --symbols config/ac4/sdk_symbols.json --symbols config/ac4/manual_symbols.json `
     --overrides config/ac4/overrides.json --hooks config/ac4/hooks.json
-cmake -S . -B build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2_GAME=AC4 `
+cmake -S . -B build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Release `
     -DCMAKE_C_COMPILER=C:/msys64/ucrt64/bin/gcc.exe `
     -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/c++.exe
 cmake --build build/gcc
@@ -128,6 +129,16 @@ Controllers go through SDL; buttons map by position (bottom face = Cross, right 
 - **Esc** asks before quitting (or closes the menu).
 - F6 to F10 are capture and trace tools for development; they only work with `PS2_DEV_KEYS=1` (DIAGNOSTICS.bat sets it).
 
+### HD textures
+
+The runtime can draw replacement textures, at up to 8x the PS2's resolution, in place of the originals. A replacement is matched by the original's pixels, so it follows a texture wherever the game loads it. No textures are included: a pack is made on your machine from your copy of the game.
+
+1. In the game, open **F4 > Rendering** and tick **Save textures for upscaling**, then play the parts you want covered (menus, the hangar, missions; the title screen's demonstration flights cover several later missions). Textures go to `textures\dump`, each saved once; pictures that change every frame, like movies, are skipped.
+2. Upscale them: `MAKE_HD_TEXTURES.bat` in the game folder, or `python tools/texture_pack.py upscale textures/dump --output textures/hd/upscaled --esrgan <realesrgan-ncnn-vulkan.exe>`. This needs Python with Pillow and the Windows [Real-ESRGAN ncnn Vulkan](https://github.com/xinntao/Real-ESRGAN/releases) build. Photographic textures (terrain, aircraft skins, the hangar) use Real-ESRGAN's general model, and text and menu art its anime model. Textures up to 512 px are scaled 4x and up to 1024 px 2x. Running it again only adds textures that aren't in a pack yet.
+3. Restart the game. **F4 > Rendering > HD texture pack** switches the pack on and off, for comparison.
+
+Replacements are read in the background the first time they're drawn, and use up to 4 GB of RAM (`PS2_TEXTURE_PACK_MB`). Far away they fade back to the original's level of detail instead of shimmering. To change one by hand, `python tools/texture_pack.py export textures/dump` writes PNGs and a contact sheet, and `import ORIGINAL.pam EDITED.png` packages your edit; files directly in `textures\hd` take priority over `textures\hd\upscaled`.
+
 ## What was fixed for AC4
 
 The details, with the debug switches used to find each one, are in `README_AC4.md`. In short:
@@ -136,7 +147,8 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - **24-bit texture uploads** (font palettes: smudged text, over-bright menus), **64-pixel channel shuffles** (self-shadowed aircraft drew black).
 - **Palettes drawn by the GPU**: the sun's halo palette is rendered every frame; it is now looked up from the render target (the sun was a square of rainbow rings).
 - **Depth clears done with colour draws** into the Z buffer's memory (black shapes over the hangar).
-- **Per-primitive mip levels** for `TEX1.LCM=0`: distant terrain lives only in the small levels of AC4's terrain texture cache (islands were big wrong squares at a distance).
+- **Per-pixel mip levels** for `TEX1.LCM=0`, blended between levels as the game asks (trilinear): distant terrain lives only in the small levels of AC4's terrain texture cache (islands were big wrong squares at a distance, then showed seams between tiles).
+- **Palette indices read from the frame** (PSMT8H from a render target): the haze and sea-detail layer is weighted by an alpha remap of the back buffer (the haze was uniform and the sea nearly black).
 - **Presentation**: fields are never dropped, each field keeps its own display buffer, and present semaphores are per swapchain image (single frames of an older picture flashed on screen).
 - **Upscaled 2D**: sprites keep to the texels the PS2 samples at native resolution (thin lines around text boxes at higher resolutions).
 
@@ -156,9 +168,9 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - `tools/`: AC4 config builders (`find_entries.py`, `find_switches.py`, `port_symbols.py`), analysis tools (`listing.py`, `irx_dis.py`) and tests
 - `runtime/`: everything that stands in for the console, plus the settings menu; `runtime/src/ps2_hle_ac4.c` is AC4's sound system
 - `runtime/shaders/`: the GLSL shaders, compiled at build time
-- `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks; `config/`: AC5's
-- `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat` and the player README
-- `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (AC5 mod scripts)
+- `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks
+- `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat`, `MAKE_HD_TEXTURES.bat` and the player README
+- `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (mod scripts; see `mods/README.md`)
 - `generated/`: the recompiler's output, created in step 2
 
 Tests: the scripts in `tools/` named `test_*.py` and `check_*.py` run without the game; `ac4.exe --vu-test --novideo` runs the VU self-test.

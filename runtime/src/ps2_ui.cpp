@@ -3,6 +3,7 @@
 #include "ps2_game.h"
 #include "ps2_mod.h"
 #include "ps2_settings.h"
+#include "ps2_texpack.h"
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -21,6 +22,7 @@ namespace {
 
 bool g_init, g_visible;
 bool g_quit_prompt;      /* Esc in the game: confirm before quitting */
+bool g_quit_only;        /* ...shown on its own, without the settings menu behind it */
 SDL_Window *g_window;
 float g_max_aniso;
 float g_dpi = 1.0f;
@@ -35,16 +37,8 @@ Sint16 g_cap_base[SDL_GAMEPAD_AXIS_COUNT];
 enum { TAB_NONE = -1, TAB_KEYBOARD = 4, TAB_CONTROLLER = 5, TAB_ANALOG = 6 };
 int g_want_tab = TAB_NONE;
 
-#ifdef PS2_GAME_AC4
 /* Ace Combat 04's menus: navy panels, light-blue text and highlights */
 const ImVec4 ACCENT(0.45f, 0.78f, 1.00f, 1.0f);
-#define UI_RGB(gr, gg, gb, br, bg, bb) (br), (bg), (bb)
-#define UI_COL(gr, gg, gb, br, bg, bb, a) IM_COL32(br, bg, bb, a)
-#else
-const ImVec4 ACCENT(0.40f, 0.86f, 0.50f, 1.0f);
-#define UI_RGB(gr, gg, gb, br, bg, bb) (gr), (gg), (gb)
-#define UI_COL(gr, gg, gb, br, bg, bb, a) IM_COL32(gr, gg, gb, a)
-#endif
 const ImVec4 WARN(1.00f, 0.76f, 0.32f, 1.0f);
 
 void check_vk(VkResult r) {
@@ -86,7 +80,6 @@ bool slider_pct(const char *label, float *v, float lo, float hi) {
 void apply_style() {
     ImGui::StyleColorsDark();
     ImGuiStyle &s = ImGui::GetStyle();
-#ifdef PS2_GAME_AC4
     s.WindowRounding = 1.0f;
     s.ChildRounding = 0.0f;
     s.FrameRounding = 0.0f;
@@ -94,53 +87,42 @@ void apply_style() {
     s.GrabRounding = 0.0f;
     s.TabRounding = 0.0f;
     s.ScrollbarRounding = 0.0f;
-#else
-    s.WindowRounding = 8.0f;
-    s.ChildRounding = 6.0f;
-    s.FrameRounding = 5.0f;
-    s.PopupRounding = 6.0f;
-    s.GrabRounding = 5.0f;
-    s.TabRounding = 5.0f;
-    s.ScrollbarRounding = 6.0f;
-#endif
     s.WindowPadding = ImVec2(16.0f, 14.0f);
     s.FramePadding = ImVec2(9.0f, 5.0f);
     s.ItemSpacing = ImVec2(10.0f, 8.0f);
     s.WindowBorderSize = 1.0f;
     s.SeparatorTextBorderSize = 2.0f;
     ImVec4 *c = s.Colors;
-    c[ImGuiCol_WindowBg]         = ImVec4(UI_RGB(0.07f, 0.09f, 0.10f, 0.03f, 0.06f, 0.12f), 0.96f);
+    c[ImGuiCol_WindowBg]         = ImVec4(0.03f, 0.06f, 0.12f, 0.96f);
     c[ImGuiCol_ChildBg]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    c[ImGuiCol_PopupBg]          = ImVec4(UI_RGB(0.08f, 0.10f, 0.11f, 0.04f, 0.07f, 0.14f), 0.98f);
-    c[ImGuiCol_Border]           = ImVec4(UI_RGB(0.30f, 0.55f, 0.36f, 0.30f, 0.52f, 0.80f), 0.45f);
-    c[ImGuiCol_FrameBg]          = ImVec4(UI_RGB(0.13f, 0.17f, 0.16f, 0.08f, 0.13f, 0.22f), 1.00f);
-    c[ImGuiCol_FrameBgHovered]   = ImVec4(UI_RGB(0.19f, 0.27f, 0.22f, 0.12f, 0.21f, 0.35f), 1.00f);
-    c[ImGuiCol_FrameBgActive]    = ImVec4(UI_RGB(0.22f, 0.34f, 0.26f, 0.15f, 0.27f, 0.45f), 1.00f);
-    c[ImGuiCol_TitleBg]          = ImVec4(UI_RGB(0.07f, 0.12f, 0.09f, 0.04f, 0.08f, 0.16f), 1.00f);
-    c[ImGuiCol_TitleBgActive]    = ImVec4(UI_RGB(0.10f, 0.22f, 0.14f, 0.07f, 0.16f, 0.32f), 1.00f);
-    c[ImGuiCol_Button]           = ImVec4(UI_RGB(0.16f, 0.26f, 0.19f, 0.10f, 0.19f, 0.34f), 1.00f);
-    c[ImGuiCol_ButtonHovered]    = ImVec4(UI_RGB(0.24f, 0.42f, 0.29f, 0.16f, 0.32f, 0.55f), 1.00f);
-    c[ImGuiCol_ButtonActive]     = ImVec4(UI_RGB(0.30f, 0.55f, 0.36f, 0.22f, 0.42f, 0.70f), 1.00f);
-    c[ImGuiCol_Header]           = ImVec4(UI_RGB(0.16f, 0.30f, 0.20f, 0.11f, 0.22f, 0.40f), 1.00f);
-    c[ImGuiCol_HeaderHovered]    = ImVec4(UI_RGB(0.22f, 0.40f, 0.27f, 0.16f, 0.32f, 0.55f), 1.00f);
-    c[ImGuiCol_HeaderActive]     = ImVec4(UI_RGB(0.28f, 0.50f, 0.33f, 0.22f, 0.42f, 0.70f), 1.00f);
-    c[ImGuiCol_Tab]              = ImVec4(UI_RGB(0.11f, 0.18f, 0.13f, 0.07f, 0.13f, 0.24f), 1.00f);
-    c[ImGuiCol_TabHovered]       = ImVec4(UI_RGB(0.24f, 0.44f, 0.30f, 0.17f, 0.33f, 0.58f), 1.00f);
-    c[ImGuiCol_TabSelected]      = ImVec4(UI_RGB(0.19f, 0.36f, 0.24f, 0.13f, 0.26f, 0.47f), 1.00f);
+    c[ImGuiCol_PopupBg]          = ImVec4(0.04f, 0.07f, 0.14f, 0.98f);
+    c[ImGuiCol_Border]           = ImVec4(0.30f, 0.52f, 0.80f, 0.45f);
+    c[ImGuiCol_FrameBg]          = ImVec4(0.08f, 0.13f, 0.22f, 1.00f);
+    c[ImGuiCol_FrameBgHovered]   = ImVec4(0.12f, 0.21f, 0.35f, 1.00f);
+    c[ImGuiCol_FrameBgActive]    = ImVec4(0.15f, 0.27f, 0.45f, 1.00f);
+    c[ImGuiCol_TitleBg]          = ImVec4(0.04f, 0.08f, 0.16f, 1.00f);
+    c[ImGuiCol_TitleBgActive]    = ImVec4(0.07f, 0.16f, 0.32f, 1.00f);
+    c[ImGuiCol_Button]           = ImVec4(0.10f, 0.19f, 0.34f, 1.00f);
+    c[ImGuiCol_ButtonHovered]    = ImVec4(0.16f, 0.32f, 0.55f, 1.00f);
+    c[ImGuiCol_ButtonActive]     = ImVec4(0.22f, 0.42f, 0.70f, 1.00f);
+    c[ImGuiCol_Header]           = ImVec4(0.11f, 0.22f, 0.40f, 1.00f);
+    c[ImGuiCol_HeaderHovered]    = ImVec4(0.16f, 0.32f, 0.55f, 1.00f);
+    c[ImGuiCol_HeaderActive]     = ImVec4(0.22f, 0.42f, 0.70f, 1.00f);
+    c[ImGuiCol_Tab]              = ImVec4(0.07f, 0.13f, 0.24f, 1.00f);
+    c[ImGuiCol_TabHovered]       = ImVec4(0.17f, 0.33f, 0.58f, 1.00f);
+    c[ImGuiCol_TabSelected]      = ImVec4(0.13f, 0.26f, 0.47f, 1.00f);
     c[ImGuiCol_CheckMark]        = ACCENT;
-    c[ImGuiCol_SliderGrab]       = ImVec4(UI_RGB(0.36f, 0.70f, 0.44f, 0.36f, 0.62f, 0.95f), 1.00f);
+    c[ImGuiCol_SliderGrab]       = ImVec4(0.36f, 0.62f, 0.95f, 1.00f);
     c[ImGuiCol_SliderGrabActive] = ACCENT;
     c[ImGuiCol_SeparatorHovered] = ACCENT;
-    c[ImGuiCol_TextSelectedBg]   = ImVec4(UI_RGB(0.30f, 0.55f, 0.36f, 0.22f, 0.42f, 0.70f), 0.45f);
+    c[ImGuiCol_TextSelectedBg]   = ImVec4(0.22f, 0.42f, 0.70f, 0.45f);
     c[ImGuiCol_NavCursor]        = ACCENT;
-    c[ImGuiCol_PlotHistogram]    = ImVec4(UI_RGB(0.36f, 0.70f, 0.44f, 0.36f, 0.62f, 0.95f), 1.00f);
-#ifdef PS2_GAME_AC4
+    c[ImGuiCol_PlotHistogram]    = ImVec4(0.36f, 0.62f, 0.95f, 1.00f);
     c[ImGuiCol_Text]             = ImVec4(0.86f, 0.93f, 1.00f, 1.00f);
     c[ImGuiCol_TextDisabled]     = ImVec4(0.45f, 0.53f, 0.64f, 1.00f);
     c[ImGuiCol_Separator]        = ImVec4(0.30f, 0.52f, 0.80f, 0.50f);
     c[ImGuiCol_ScrollbarGrab]    = ImVec4(0.16f, 0.32f, 0.55f, 1.00f);
     c[ImGuiCol_ResizeGrip]       = ImVec4(0.22f, 0.42f, 0.70f, 0.40f);
-#endif
 }
 
 void bind_key(int act, int slot, int sc) {
@@ -395,24 +377,14 @@ void resolution_controls() {
 }
 
 const char *const ASPECTS[] = {
-#ifdef PS2_GAME_AC4
-    "Stretch to fill the window", "Auto (keep the game's 4:3)", "4:3", "16:9", "Custom",
-#else
     "Stretch to fill the window", "Auto (4:3, or 16:9 with widescreen)", "4:3", "16:9", "Custom",
-#endif
 };
 
 void aspect_controls() {
     if (ImGui::Combo("Aspect ratio", &ps2_cfg.aspect, ASPECTS, 5)) changed(0);
-#ifdef PS2_GAME_AC4
-    help("The shape of the picture inside the window. Auto and 4:3 keep the game's 4:3 picture "
-         "undistorted, with bars at the sides of a wide window. Stretch fills the window "
-         "whatever its shape.");
-#else
     help("The shape of the picture inside the window. Auto keeps the PS2's 4:3 picture "
-         "undistorted and becomes 16:9 when the widescreen patch is on. Stretch fills the "
+         "undistorted and becomes 16:9 when widescreen is on. Stretch fills the "
          "window whatever its shape, which is how the runtime always behaved.");
-#endif
     env_note("PS2_ASPECT", "overrides the aspect ratio");
     if (ps2_cfg.aspect == PS2_ASPECT_CUSTOM
         && ImGui::SliderFloat("Custom ratio", &ps2_cfg.aspect_custom, 1.0f, 3.0f, "%.3f : 1"))
@@ -420,26 +392,26 @@ void aspect_controls() {
 }
 
 void widescreen_control() {
-#ifdef PS2_GAME_AC4
-    return;     /* the 16:9 camera patch is AC5's; nothing to offer for AC4 */
-#endif
     bool ws = ps2_cfg.widescreen != 0;
     if (ImGui::Checkbox("Widescreen (16:9)", &ws)) {
         ps2_cfg.widescreen = ws;
         if (ws && ps2_cfg.aspect == PS2_ASPECT_4_3) ps2_cfg.aspect = PS2_ASPECT_AUTO;
+        /* settings files from before AC4 had widescreen carry hud_layout 0 */
+        if (ws && ps2_cfg.hud_layout == PS2_HUD_STRETCHED) ps2_cfg.hud_layout = PS2_HUD_EDGES;
         changed(0);
     }
-    help("Applies the 16:9 patch from PCSX2's patch database (by nemesis2000) to the game's "
-         "own camera, so the 3D view really is wider instead of stretched. Use Auto or 16:9 "
-         "aspect with it.");
+    help("Widens the game's own camera, so the 3D view really shows more at the sides "
+         "instead of being stretched. Use Auto or 16:9 aspect with it.");
     if (ws) {
         static const char *const HUD_LAYOUTS[] = { "Stretched with the picture",
-                                                   "4:3 in the centre" };
-        if (ImGui::Combo("HUD layout", &ps2_cfg.hud_layout, HUD_LAYOUTS, 2)) changed(0);
-        help("The game's HUD is laid out for 4:3. Centred draws the screen-fixed parts -- "
-             "tapes, readouts, radar, captions -- at their own proportions in the middle of "
-             "the screen; markers placed on things in the world stay on them. Needs the "
-             "native 2D layer (on unless PS2_RN_2D=0).");
+                                                   "4:3 in the centre",
+                                                   "4:3, corners at the screen edges" };
+        if (ImGui::Combo("HUD layout", &ps2_cfg.hud_layout, HUD_LAYOUTS, 3)) changed(0);
+        help("The game's HUD and menus are laid out for 4:3. Centred draws them at their own "
+             "proportions in the middle of the screen. Corners at the edges keeps the same "
+             "shapes but moves the score, radar and speed tape out to the left and the time, "
+             "altitude tape and weapons out to the right; captions, the pitch ladder and the "
+             "menus stay in the middle. Markers placed on things in the world stay on them.");
     }
     if (ws && ps2_cfg.aspect == PS2_ASPECT_STRETCH && g_window) {
         int w = 0, h = 0;
@@ -480,21 +452,17 @@ void present_controls() {
 }
 
 struct PresetInfo { const char *name, *blurb; };
-const PresetInfo PRESETS[5] = {
+const PresetInfo PRESETS[4] = {
     { "Low",    "The PS2's native 640x448 with plain bilinear scaling to the window -- the "
                 "renderer as it was before this menu. Lightest on the GPU; the one for "
                 "integrated graphics." },
     { "Medium", "2x internal resolution (1280x896) for clean edges, lines and effects, and "
                 "4x anisotropic filtering." },
     { "High",   "3x internal resolution (1920x1344), 8x anisotropic filtering, sharp-bilinear "
-                "scaling and light sharpening." },
+                "scaling, FXAA edge smoothing, smooth UI textures and light sharpening." },
     { "Ultra",  "4x internal resolution (2560x1792), averaged down to the window for "
-                "anti-aliasing, 16x anisotropic filtering and light sharpening. Uses the "
+                "anti-aliasing, FXAA, smooth UI textures, 16x anisotropic filtering and light sharpening. Uses the "
                 "most video memory." },
-    { "4K",     "Display-aware internal resolution: Auto selects enough pixels for the "
-                "current window, up to 8x, with 16x anisotropic filtering and sharp scaling. "
-                "Bilinear UI filtering smooths enlarged map and HUD art. At 4K this can use "
-                "substantial GPU memory and time." },
 };
 
 void internal_res_status() {
@@ -553,13 +521,13 @@ void internal_res_control() {
 void tab_quick() {
     ImGuiStyle &st = ImGui::GetStyle();
     ImGui::SeparatorText("Graphics quality");
-    float w = (ImGui::GetContentRegionAvail().x - st.ItemSpacing.x * 4.0f) / 5.0f;
+    float w = (ImGui::GetContentRegionAvail().x - st.ItemSpacing.x * 3.0f) / 4.0f;
     float h = ImGui::GetFrameHeight() * 2.2f;
-    for (int i = PS2_PRESET_4K; i >= PS2_PRESET_LOW; i--) {
+    for (int i = PS2_PRESET_ULTRA; i >= PS2_PRESET_LOW; i--) {
         bool sel = ps2_cfg.preset == i;
         if (sel) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(UI_RGB(0.25f, 0.52f, 0.32f, 0.18f, 0.38f, 0.68f), 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(UI_RGB(0.30f, 0.60f, 0.38f, 0.24f, 0.46f, 0.80f), 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.38f, 0.68f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.46f, 0.80f, 1.0f));
         }
         if (ImGui::Button(PRESETS[i].name, ImVec2(w, h))) {
             ps2_settings_apply_preset(&ps2_cfg, i);
@@ -666,7 +634,31 @@ void tab_rendering() {
     static const char *const UIF[] = { "As the game asks (sharp pixels)", "Bilinear (smoother enlarged art)" };
     if (ImGui::Combo("UI texture filtering", &ps2_cfg.ui_smooth, UIF, 2)) gfx_changed(0);
     help("Smooths screen-space HUD, menu and map textures when enlarged. This can soften very "
-         "thin lines or text; graphics presets enable it, and it can be switched off here.");
+         "thin lines or text; the High and Ultra presets enable it.");
+
+    {   /* replacement textures (ps2_texpack.c) */
+        unsigned n = ps2_texpack_count();
+        bool hd = ps2_cfg.hd_textures != 0, dump = ps2_texpack_dumping() != 0;
+        if (!n) ImGui::BeginDisabled();
+        if (ImGui::Checkbox("HD texture pack", &hd)) { ps2_cfg.hd_textures = hd; changed(0); }
+        if (!n) ImGui::EndDisabled();
+        if (n) {
+            uint64_t used = 0, limit = 0;
+            ps2_texpack_memory(&used, &limit);
+            ImGui::TextDisabled("%u textures in %s, %.0f MB loaded", n, ps2_texpack_dir(),
+                                (double)used / (1024.0 * 1024.0));
+        } else {
+            ImGui::TextDisabled("No pack in %s", ps2_texpack_dir());
+        }
+        help("Draws higher-resolution versions of the game's textures (aircraft, terrain, menus) "
+             "from the textures\\hd folder in place of the PS2's. Turn it off to compare. "
+             "tools\\texture_pack.py makes a pack from textures saved with the option below.");
+        if (ImGui::Checkbox("Save textures for upscaling", &dump)) ps2_texpack_set_dump(dump);
+        if (dump) ImGui::TextDisabled("%u saved to textures\\dump", ps2_texpack_dumped());
+        help("Saves each texture the game draws into textures\\dump, once, skipping pictures "
+             "that change every frame such as movies. Play the parts you want an HD pack to "
+             "cover with this on. It is not remembered between sessions.");
+    }
 
     static const int AF_VALUES[] = { 0, 2, 4, 8, 16 };
     static const char *const AF[] = { "Off", "2x", "4x", "8x", "16x" };
@@ -763,6 +755,12 @@ void tab_controller() {
         ps2_cfg.vibration = rumble;
         changed(0);
     }
+    {   float pct = ps2_cfg.vibration_strength * 100.0f;
+        if (ImGui::SliderFloat("Vibration strength", &pct, 0.0f, 100.0f, "%.0f%%")) {
+            ps2_cfg.vibration_strength = pct / 100.0f;
+            changed(0);
+        }
+    }
     ImGui::TextWrapped("Click a binding, then press a button, or push a stick or trigger in the "
                        "direction you want. Esc cancels; Backspace or a right-click clears it.");
     if (ImGui::Button("Reset controller to defaults")) {
@@ -792,17 +790,17 @@ void stick_view(int s, float size) {
     ImDrawList *dl = ImGui::GetWindowDrawList();
     float r = size * 0.5f - 4.0f;
     ImVec2 ctr = p + ImVec2(size * 0.5f, size * 0.5f);
-    dl->AddRectFilled(p, p + ImVec2(size, size), UI_COL(18, 24, 22, 14, 22, 36, 255), 6.0f);
+    dl->AddRectFilled(p, p + ImVec2(size, size), IM_COL32(14, 22, 36, 255), 6.0f);
     float scale = ps2_cfg.axis_scale > 0.01f ? ps2_cfg.axis_scale : 0.01f;
     float dzr = ps2_cfg.deadzone / scale;
     if (dzr > 0.0f)
         dl->AddCircleFilled(ctr, r * (dzr < 1.0f ? dzr : 1.0f), IM_COL32(190, 70, 70, 80), 48);
-    dl->AddLine(ctr - ImVec2(r, 0.0f), ctr + ImVec2(r, 0.0f), UI_COL(60, 72, 66, 56, 70, 92, 255));
-    dl->AddLine(ctr - ImVec2(0.0f, r), ctr + ImVec2(0.0f, r), UI_COL(60, 72, 66, 56, 70, 92, 255));
-    dl->AddCircle(ctr, r, UI_COL(130, 150, 140, 128, 150, 182, 255), 64, 1.5f);
-    if (scale > 1.0f) dl->AddCircle(ctr, r / scale, UI_COL(100, 120, 110, 96, 118, 150, 200), 64, 1.0f);
+    dl->AddLine(ctr - ImVec2(r, 0.0f), ctr + ImVec2(r, 0.0f), IM_COL32(56, 70, 92, 255));
+    dl->AddLine(ctr - ImVec2(0.0f, r), ctr + ImVec2(0.0f, r), IM_COL32(56, 70, 92, 255));
+    dl->AddCircle(ctr, r, IM_COL32(128, 150, 182, 255), 64, 1.5f);
+    if (scale > 1.0f) dl->AddCircle(ctr, r / scale, IM_COL32(96, 118, 150, 200), 64, 1.0f);
     dl->AddCircleFilled(ctr + ImVec2(rx * r, ry * r), 4.0f, IM_COL32(210, 210, 210, 220));
-    dl->AddCircleFilled(ctr + ImVec2(ox * r, oy * r), 5.5f, UI_COL(100, 235, 130, 110, 195, 255, 255));
+    dl->AddCircleFilled(ctr + ImVec2(ox * r, oy * r), 5.5f, IM_COL32(110, 195, 255, 255));
     ImGui::Text("X %3u  Y %3u", (unsigned)bx, (unsigned)by);
 }
 
@@ -945,6 +943,8 @@ void draw_fps() {
     ImGui::End();
 }
 
+bool draw_quit_prompt();
+
 void draw_menu() {
     ImGuiIO &io = ImGui::GetIO();
     float s = g_dpi * ps2_cfg.ui_scale;
@@ -980,6 +980,14 @@ void draw_menu() {
                             "toggles fullscreen  |  %s", ps2_settings_path());
     }
     ImGui::End();
+    if (!draw_quit_prompt()) open = false;
+    if (!open) ps2_ui_set_visible(0);
+}
+
+/* The "Quit?" popup; false once the player picks Keep playing */
+bool draw_quit_prompt() {
+    ImGuiIO &io = ImGui::GetIO();
+    bool open = true;
     if (g_quit_prompt) {
         const char *title = "Quit " PS2_GAME_SHORT "?";
         if (!ImGui::IsPopupOpen(title)) ImGui::OpenPopup(title);
@@ -998,7 +1006,7 @@ void draw_menu() {
             ImGui::EndPopup();
         }
     }
-    if (!open) ps2_ui_set_visible(0);
+    return open;
 }
 
 }
@@ -1052,7 +1060,7 @@ int ps2_ui_init(const ps2_ui_init_info *info) {
     ps2_log("ui: Dear ImGui %s ready -- F4 opens the settings menu", IMGUI_VERSION);
     if (const char *e = getenv("PS2_UI_OPEN")) {   /* tab number, or q: the quit prompt */
         ps2_ui_set_visible(1);
-        if (*e == 'q') g_quit_prompt = true;
+        if (*e == 'q') g_quit_prompt = g_quit_only = true;
         else g_want_tab = atoi(e);
     }
     return 0;
@@ -1071,6 +1079,7 @@ int ps2_ui_visible(void) { return g_init && g_visible; }
 
 int ps2_ui_ask_quit(void) {
     if (!g_init) return 0;
+    if (!g_visible) g_quit_only = true;   /* Esc from play: just the popup */
     g_quit_prompt = true;
     ps2_ui_set_visible(1);
     return 1;
@@ -1079,7 +1088,7 @@ int ps2_ui_ask_quit(void) {
 void ps2_ui_set_visible(int on) {
     if (!g_init || (on != 0) == g_visible) return;
     g_visible = on != 0;
-    if (!g_visible) g_quit_prompt = false;
+    if (!g_visible) g_quit_prompt = g_quit_only = false;
     ImGuiIO &io = ImGui::GetIO();
     io.ClearEventsQueue();
     io.ClearInputKeys();
@@ -1128,7 +1137,9 @@ void ps2_ui_draw(VkCommandBuffer cmd) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     if (ps2_cfg.show_fps) draw_fps();
-    if (g_visible) {
+    if (g_visible && g_quit_only) {
+        if (!draw_quit_prompt()) ps2_ui_set_visible(0);
+    } else if (g_visible) {
         draw_menu();
         draw_capture_popup();
     }

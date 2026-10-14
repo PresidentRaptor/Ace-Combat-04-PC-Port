@@ -98,10 +98,9 @@ with tempfile.TemporaryDirectory(dir=root/'out') as d:
         syms[1]['size'] = 256
         assert sigmatch.align_object_symbols(d,gp,exact.copy(),log=lambda *a:None) == exact
 
-report = json.loads((root/'config/report.json').read_text())
-assert len(report['applied_overrides']) == 73 and len(report['applied_hooks']) == 9
-assert report['applied_overrides']['0x0033E920'] == 'hle_sceCdInit'
-assert '0x0033EC00' not in report['applied_overrides']
-assert report['applied_overrides']['0x0033EDF8'] == 'hle_sceCdDiskReady'
+report = json.loads((root/'config/ac4/report.json').read_text())
+assert len(report['applied_overrides']) == 68 and len(report['applied_hooks']) == 0
+assert report['applied_overrides']['0x0026F858'] == 'hle_sceCdInit'
+assert report['applied_overrides']['0x0026F540'] == 'hle_sceCdDiskReady'
 assert not report['missing_targets'] and not report['unhandled']
-print('PASS: delay-slot entry/rejection, MTSA, 1000 PMULTH vectors, structural VU parser, VU ordering, SDK alignment rejection, 73 overrides/9 hooks.')
+print('PASS: delay-slot entry/rejection, MTSA, 1000 PMULTH vectors, structural VU parser, VU ordering, SDK alignment rejection, 68 AC4 overrides.')

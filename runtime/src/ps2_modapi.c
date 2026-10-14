@@ -2,7 +2,6 @@
 #include "ps2_hle.h"
 #include "ps2_hook.h"
 #include "ps2_modapi.h"
-#include "ps2_params.h"
 #include "ps2_patch.h"
 #include "ps2_vfs.h"
 
@@ -249,14 +248,12 @@ static uint32_t api_call_guest(ac5_ctx *ctx, uint32_t addr,
     return (uint32_t)sub.r[2].uw[0];
 }
 
-enum { CB_FREE, CB_FIELD, CB_FRAME, CB_SCENE, CB_TIMER, CB_INPUT, CB_SHUTDOWN };
+enum { CB_FREE, CB_FIELD, CB_TIMER, CB_INPUT, CB_SHUTDOWN };
 
 typedef struct {
     int kind, handle;
     union {
         ac5_field_fn field;
-        ac5_frame_fn frame;
-        ac5_scene_fn scene;
         ac5_input_fn input;
     } fn;
     void *user;
@@ -269,7 +266,7 @@ typedef struct {
 static mod_cb *cbs;
 static unsigned ncbs, ccbs;
 static int next_cb_handle = 1;
-static u64 fields_elapsed, frames_seen;
+static u64 fields_elapsed;
 static unsigned counts[CB_SHUTDOWN + 1];
 
 static int cb_add(int kind, void *fn, void *user, u32 period, int repeat) {
@@ -325,72 +322,23 @@ static int api_on_shutdown(ac5_field_fn fn, void *user) {
     return cb_add(CB_SHUTDOWN, (void *)fn, user, 0, 0);
 }
 
-#define AC5_SCENE_DISPATCH 0x0031CF00u
-#define AC5_MAIN_MACHINE   0x004459ACu
-
-static struct { u32 obj; int key; } machines[8];
-static unsigned nmachines;
-static int events_hooked;
-
-static int scene_dispatch_hook(ps2_ctx *ctx, void *user) {
-    u32 obj = ps2_arg(ctx, 0);
-    int major = ps2_r8(obj + 8u), minor = ps2_r8(obj + 9u);
-    int key = (major << 8) | minor;
-    unsigned m;
-    (void)user;
-    for (m = 0; m < nmachines && machines[m].obj != obj; m++) {}
-    if (m == nmachines && nmachines < 8) {
-        machines[m].obj = obj;
-        machines[m].key = -1;
-        nmachines++;
-    }
-    if (m < nmachines && machines[m].key != key) {
-        int prev = machines[m].key;
-        machines[m].key = key;
-        for (unsigned i = 0; i < ncbs; i++) {
-            mod_cb cb = cbs[i];
-            mod_api *save;
-            if (cb.kind != CB_SCENE) continue;
-            save = current;
-            current = cb.owner;
-            cb.fn.scene((ac5_ctx *)ctx, (int)m, major, minor,
-                        prev < 0 ? -1 : prev >> 8, prev < 0 ? -1 : prev & 255,
-                        cb.user);
-            current = save;
-        }
-    }
-    if (obj == ps2_r32(AC5_MAIN_MACHINE)) {
-        frames_seen++;
-        for (unsigned i = 0; i < ncbs; i++) {
-            mod_cb cb = cbs[i];
-            mod_api *save;
-            if (cb.kind != CB_FRAME) continue;
-            save = current;
-            current = cb.owner;
-            cb.fn.frame((ac5_ctx *)ctx, cb.user);
-            current = save;
-        }
-    }
-    return 0;
-}
-
-static int events_hook(void) {
-    if (events_hooked) return 0;
-    if (ps2_hook_before(AC5_SCENE_DISPATCH, scene_dispatch_hook, NULL, INT_MAX,
-                        "mod host (frame and scene events)") < 0)
-        return -1;
-    events_hooked = 1;
-    return 0;
+/* on_frame, on_scene and param_set hooked AC5's scene machine and named-value
+   parser; AC4 has neither at those addresses, so they are refused. */
+static int unsupported(const char *what) {
+    if (current)
+        ps2_log("mod[%s]: %s is not available in this game; refused",
+                current->id, what);
+    return -1;
 }
 
 static int api_on_frame(ac5_frame_fn fn, void *user) {
-    if (!fn || !on_ee("on_frame") || events_hook() != 0) return -1;
-    return cb_add(CB_FRAME, (void *)fn, user, 0, 0);
+    (void)fn; (void)user;
+    return unsupported("on_frame");
 }
 
 static int api_on_scene(ac5_scene_fn fn, void *user) {
-    if (!fn || !on_ee("on_scene") || events_hook() != 0) return -1;
-    return cb_add(CB_SCENE, (void *)fn, user, 0, 0);
+    (void)fn; (void)user;
+    return unsupported("on_scene");
 }
 
 static void pad_from_host(const ps2_pad_state *h, ac5_pad *p) {
@@ -443,8 +391,8 @@ static int api_unpatch(int handle) {
     return on_ee("unpatch") ? ps2_patch_remove(handle) : -1;
 }
 static int api_param_set(const char *name, const char *value) {
-    if (!on_ee("param_set")) return -1;
-    return ps2_params_set(name, value, cur_priority(), cur_id());
+    (void)name; (void)value;
+    return unsupported("param_set");
 }
 
 static void store_path(const mod_api *m, char *out, size_t cap) {
@@ -747,10 +695,7 @@ void ps2_modapi_report(void) {
             ps2_log("   %s: %llu call(s) refused for arriving on a thread "
                     "without the EE", apis[i]->id,
                     (unsigned long long)apis[i]->refused);
-    if (events_hooked)
-        ps2_log("   events: %llu frame(s) seen, %u scene machine(s); "
-                "callbacks: %u frame, %u scene, %u input, %u timer, %u field",
-                (unsigned long long)frames_seen, nmachines, counts[CB_FRAME],
-                counts[CB_SCENE], counts[CB_INPUT], counts[CB_TIMER],
-                counts[CB_FIELD]);
+    if (counts[CB_INPUT] || counts[CB_TIMER] || counts[CB_FIELD])
+        ps2_log("   callbacks: %u input, %u timer, %u field",
+                counts[CB_INPUT], counts[CB_TIMER], counts[CB_FIELD]);
 }

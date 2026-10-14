@@ -26,24 +26,11 @@ int  ps2_vfs_read(const ps2_disc_file *f, u64 pos, u32 len, void *dst);
 int  ps2_vfs_read_guest(const ps2_disc_file *f, u64 pos, u32 len,
                         u32 guest_addr);
 
-u32  ps2_vfs_pac_changed(void);
-int  ps2_vfs_pac_is_changed(u32 member);
-
-u32  ps2_vfs_pac_size(u32 member);
-
-int  ps2_vfs_pac_fill_guest(u32 member, u32 guest_addr, u32 capacity);
-
-int  ps2_vfs_pac_compose(u32 member, u8 **out, u32 *len);
-
-void ps2_vfs_pac_revert(const char *why);
-
 s64  ps2_vfs_stat(const char *path);
 s64  ps2_vfs_read_path(const char *path, u64 pos, u32 len, void *dst);
 
-void ps2_vfs_owner_stats(const char *owner, u32 *files, s64 *heap_delta);
+void ps2_vfs_owner_stats(const char *owner, u32 *files);
 void ps2_vfs_report(void);
-
-s64  ps2_vfs_ulz_decode(const u8 *src, u32 len, u8 *dst, u32 cap);
 
 #ifdef __cplusplus
 }

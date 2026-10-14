@@ -15,7 +15,7 @@ PYTHONPATH=tools python -m ps2recomp "$ELF" -o generated \
     --hooks config/ac4/hooks.json \
     --report config/ac4/report.json | grep -v '^seed: handler'
 if [ ! -f build/gcc/build.ninja ]; then
-    cmake -S . -B build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2_GAME=AC4 \
+    cmake -S . -B build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_C_COMPILER=C:/msys64/ucrt64/bin/gcc.exe \
         -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/c++.exe \
         -DCMAKE_PREFIX_PATH=C:/msys64/ucrt64

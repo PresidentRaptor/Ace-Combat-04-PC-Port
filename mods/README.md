@@ -13,14 +13,11 @@ mods/
   my_mod/
     mod.toml                          optional
     files/
-      select/noise.gim                every copy of a file inside DATA.PAC
-      BIN/DATA.PAC/0011/map/m09a/m09a.wad   one member's copy
-      BIN/US/BGM.PAC                  a whole file on the disc
+      VAG/BRIEF01.VPK                 a whole file on the disc
       my_mod/table.bin                a new file, for scripts to read
     script.lua                        Lua, run at startup
     lib/helpers.lua                   a module, for require("lib.helpers")
-    params.txt                        the game's named values, changed by name
-    widescreen.pnach                  PCSX2 patches (data patches work)
+    patch.pnach                       PCSX2 patches (data patches work)
     symbols.txt                       names for functions
     module.dll                        native code, only with native = true
 ```
@@ -29,70 +26,30 @@ mods/
 
 | Layer | How | Example |
 | --- | --- | --- |
-| Files | `files/` | textures, music, maps, text |
-| Named values | `params.txt`, `ac5.param` | `.enemyjet.distSound = 1.5` |
-| Memory | `.pnach`, `ac5.patch` | PCSX2's widescreen patch |
+| Files | `files/` | music, briefings, movies |
+| Memory | `.pnach`, `ac5.patch` | a PCSX2 data patch |
 | Functions | `ac5.hook_before/after/replace`, `ac5.redirect` | new weapon behaviour |
-| Every frame | `ac5.on_frame`, `ac5.on_scene`, timers | a HUD counter, a game mode |
+| Over time | `ac5.every`, `ac5.after`, field callbacks | a HUD counter |
 | The controller | `ac5.on_input`, `ac5.pad` | remapping, macros |
 | Between runs | `ac5.store`, `ac5.stored` | unlocks, statistics |
 
+The mod interface was written for the Ace Combat 5 runtime this port grew from,
+which is why its names start with `ac5`. Three of its calls hooked parts of
+AC5 that Ace Combat 04 does not have, and are refused here: `on_frame`,
+`on_scene` and `param`.
+
 ## The filesystem the game reads from
 
-The game does not read the disc directly. Every read — the CD library, Namco's
-file service, the music streams, and the loader that unpacks `DATA.PAC` — goes
-through one filesystem, and mods are layers in it. Nothing is repacked: when a
-mod changes a file inside `DATA.PAC`, the game's own loader fills that member
-from the filesystem instead of decompressing it from the disc. This works the
-same on a `.iso` and on an extracted disc directory.
+The game does not read the disc directly. Every read — the CD library, the
+sound and music streams and the movies — goes through one filesystem, and mods
+are layers in it. This works the same on a `.iso` and on an extracted disc
+directory.
 
-A file under `files/` is named the way the filesystem names it:
-
-- **A whole file on the disc**, by its path: `BIN/US/BGM.PAC`. The size may
-  change.
-- **A file inside `DATA.PAC`, every copy**, by its name from
-  `config/pac_names.txt`: `select/noise.gim`. Many names repeat across members,
-  and a plain name replaces every copy the disc has.
-- **One copy**, by member: `BIN/DATA.PAC/0011/map/m09a/m09a.wad`, or by
-  position where there is no name: `BIN/DATA.PAC/0958/#4`. This form can also
-  add a file to a slot the member leaves empty.
-- **Anything else** is a new file, which scripts can read. The log says so,
-  because it is usually a typo.
-
-Names are matched without regard to case. The name table comes from a Japanese
-build's index and is not right everywhere, so a plain name skips places the
-disc leaves empty, and the log warns when the copies it replaces differ in
-size. When a warning names a member you did not mean, give that member its own
-file.
-
-```
-python -m modkit list    --disc DIR --names datapack.bin
-python -m modkit extract --disc DIR --names datapack.bin --out DIR --member 11
-```
-
-`extract` writes the paths the filesystem uses, so a file can go straight into
-a mod. `--ref-tree` cuts each file to its true length; without it a file keeps
-up to 15 bytes of padding.
-
-## Named values: params.txt
-
-Much of the game's tuning is looked up by name at run time (the game's
-`CTxtio` lists). An override applies to whatever the game asks for under that
-name, converted to the type it asks for:
-
-```
-.enemyjet.distSound = 1.5
-.enemyjet.enable    = 0
-some_string_value   = "text"
-```
-
-To find the names, run with `PS2_PARAM_TRACE=1`. The log lists every distinct
-name the game looks up, with its type and value:
-
-```
-param: model_name (string) = "Tcam__rel__cameraMain"
-param: motion_no (u16) = 1
-```
+A file under `files/` is named by its path on the disc, without regard to
+case: `VAG/BRIEF01.VPK` replaces that file, and its size may change. Anything
+that is not on the disc is a new file, which scripts can read; the log says
+so, because it is usually a typo. Ace Combat 04 keeps most of its data in
+`BIN/DATA.CDP`, so for now a mod replaces that file whole or not at all.
 
 ## Memory patches: .pnach
 
@@ -117,10 +74,10 @@ modules for `require` in a subdirectory. A script sees one table, `ac5`, which
 is `runtime/include/ac5mod.h` call for call:
 
 ```lua
--- functions: by address, or by name (config/game_symbols.txt, symbols.txt)
-ac5.hook_before(0x0011DB30, function(ctx) count = count + 1 end)
-ac5.hook_after("CTxtio::_GetFloat", function(ctx)
-    ac5.set_return_float(ctx, ac5.return_float(ctx) * 2)
+-- functions: by address, or by name (the recompiler's names, symbols.txt)
+ac5.hook_before(0x00263718, function(ctx) count = count + 1 end)
+ac5.hook_after("sceVu0ViewScreenMatrix", function(ctx)
+    ac5.log("camera set up")
 end)
 local h = ac5.hook_replace(0x00123456, function(ctx)
     if not wanted then return false end    -- the game's own function runs
@@ -128,9 +85,6 @@ local h = ac5.hook_replace(0x00123456, function(ctx)
 end)
 ac5.unhook(h)
 
--- the game's loop: a safe place to call the game's own functions
-ac5.on_frame(function(ctx) ac5.call_guest(ctx, "sceGsGetGParam") end)
-ac5.on_scene(function(ctx, machine, major, minor, from_major, from_minor) end)
 local t = ac5.every(600, function() ac5.log("ten seconds") end)
 ac5.after(60, function() ac5.cancel(t) end)
 
@@ -141,7 +95,6 @@ ac5.on_input(function(pads)
     end
 end)
 
-ac5.param(".enemyjet.distSound", 1.5)
 ac5.store("best_score", 12345)          -- saves/mods/<id>.txt
 local helpers = require("lib.helpers")
 ```
@@ -164,8 +117,7 @@ their after-hooks rather than growing the stack; the run summary counts it.
 A DLL exporting `int ac5_mod_main(const ac5_api *api)` loads only when the
 mod's manifest says `native = true`. It is ordinary code in the game's process,
 so only enable it for mods you trust. Check `api->abi_version >=
-AC5_ABI_VERSION`: fields are only ever added. See
-`tests/mods/native_test/native_test.c`.
+AC5_ABI_VERSION`: fields are only ever added.
 
 ## mod.toml
 
@@ -180,7 +132,7 @@ enabled  = false         # switch it off without deleting it
 native   = true          # allow the DLLs in this directory to load
 requires = "base_pack >= 1.2, helpers"
 abi      = 3             # the mod ABI it needs, at least
-game     = "SLUS-20851"
+game     = "SLUS-20152"
 
 [config]
 volume   = "0.8"         # read back with ac5.config("volume")
@@ -194,22 +146,12 @@ after the mods they require.
 ## When two mods want the same thing
 
 Priority decides everywhere: the same file, hooked function, indirect-call
-target, memory bytes or named value. For files at equal priority, a
-member-scoped path beats a plain name, and after that the mod whose directory
-name sorts later wins. Every conflict is in the log with both sides named.
-
-## What it costs
-
-A file changed inside `DATA.PAC` changes how much memory the game allocates for
-that member, and the machine has 32 MB. The run summary says what each mod
-added. Whole-file replacements stream from your file and cost no memory. A
-changed member is ready sooner than one the game decompresses, so a load that
-includes one can finish a little early.
+target or memory bytes. At equal priority the mod whose directory name sorts
+later wins. Every conflict is in the log with both sides named.
 
 ## When something goes wrong
 
 - `PS2_NO_MODS=1` turns the whole layer off. Always the first thing to try.
 - `PS2_MOD_DIR=path` loads from somewhere else.
 - The run summary lists every mod, what it supplied, why any were switched
-  off, every conflict, hook, patch and parameter override, and every script
-  error.
+  off, every conflict, hook and patch, and every script error.

@@ -22,7 +22,7 @@ enum {
 #define PS2_PADBIND_AXISDIR(a, p) (PS2_PADBIND_AXIS | ((int)(a) << 1) | ((p) ? 1 : 0))
 
 enum { PS2_PRESET_LOW, PS2_PRESET_MEDIUM, PS2_PRESET_HIGH, PS2_PRESET_ULTRA,
-       PS2_PRESET_4K, PS2_PRESET_CUSTOM };
+       PS2_PRESET_CUSTOM };
 enum { PS2_TEXFILTER_GAME, PS2_TEXFILTER_NEAREST, PS2_TEXFILTER_BILINEAR };
 enum { PS2_SCALE_NEAREST, PS2_SCALE_BILINEAR, PS2_SCALE_SHARP };
 enum { PS2_WIN_WINDOWED, PS2_WIN_BORDERLESS, PS2_WIN_EXCLUSIVE };
@@ -30,7 +30,7 @@ enum { PS2_ASPECT_STRETCH, PS2_ASPECT_AUTO, PS2_ASPECT_4_3, PS2_ASPECT_16_9,
        PS2_ASPECT_CUSTOM };
 enum { PS2_PRESENT_MAILBOX, PS2_PRESENT_FIFO, PS2_PRESENT_IMMEDIATE,
        PS2_PRESENT_FIFO_RELAXED };
-enum { PS2_HUD_STRETCHED, PS2_HUD_CENTERED };
+enum { PS2_HUD_STRETCHED, PS2_HUD_CENTERED, PS2_HUD_EDGES };
 #define PS2_INTERNAL_RES_MAX 8
 
 typedef struct ps2_settings {
@@ -38,6 +38,7 @@ typedef struct ps2_settings {
     int   internal_res;
     int   tex_filter;
     int   ui_smooth;
+    int   hd_textures;      /* use the replacement texture pack in textures/hd */
     int   anisotropy;
     int   deinterlace;
     int   fxaa;
@@ -63,6 +64,7 @@ typedef struct ps2_settings {
     float ui_scale;
     int   block_input_in_menu;
     int   vibration;
+    float vibration_strength; /* rumble motor scale, 0..1 */
     float volume;           /* master volume, 0..1 */
     int   mute_unfocused;   /* silence while the window is in the background */
     int   key[PS2_ACT_COUNT][PS2_BIND_SLOTS];
@@ -93,8 +95,6 @@ int  ps2_settings_take_dirty(void);
 const char *ps2_action_name(int act);
 const char *ps2_key_name(int scancode);
 const char *ps2_padbind_name(int code);
-
-void ps2_settings_apply_game_patches(void);
 
 float ps2_pad_axis_value(int raw, int positive);
 void  ps2_pad_stick(float deadzone, float axis_scale, int invert, const float v[4],

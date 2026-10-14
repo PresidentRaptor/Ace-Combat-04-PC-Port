@@ -1,5 +1,4 @@
 #include "ps2_gfxq.h"
-#include "rn.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,9 +27,7 @@ enum {
     GQ_VIFCLR,
     GQ_GS_PRIV,
     GQ_MMIO,
-    GQ_FIELD,
-    GQ_TAG,
-    GQ_INTENT
+    GQ_FIELD
 };
 
 static u8 *q_buf;
@@ -71,7 +68,6 @@ int ps2_speed_enabled(void) {
     }
     return value;
 }
-void ps2_scene_speed_report(double dt);
 void ps2_speed_sample(u64 fields, u64 dropped) {
     static u64 prev_ns, prev_fields, prev_dropped, prev_present, prev_n, prev_work;
     static u64 prev_field_wait, prev_ring_wait, prev_drain, prev_bytes;
@@ -79,7 +75,7 @@ void ps2_speed_sample(u64 fields, u64 dropped) {
     if (!ps2_speed_enabled()) return;
     u64 now = gq_now_ns();
     if (!prev_ns) {
-        ps2_log("speed: diagnostics v1; 5s intervals, scene dispatch is not simulation FPS; collision/VIF fixes 2026-09-06");
+        ps2_log("speed: diagnostics v1; 5s intervals");
         ps2_log("speed: EE/present/worker ms are interval totals; present_ms is GS display-list handoff, not Vulkan GPU time. See vk-speed for renderer host stages.");
         prev_ns = now; prev_fields = fields; prev_dropped = dropped;
         prev_field_wait=st_field_wait_ns; prev_ring_wait=st_producer_ns;
@@ -88,7 +84,6 @@ void ps2_speed_sample(u64 fields, u64 dropped) {
         prev_present=speed_present_ns; prev_n=speed_present_n; prev_work=speed_work_ns;
         prev_vu_runs=speed_vu_runs; prev_vu_insns=speed_vu_insns; prev_vu_guards=speed_vu_guards;
         pthread_mutex_unlock(&q_lock);
-        ps2_scene_speed_report(0);
         return;
     }
     if (now - prev_ns < 5000000000ull) return;
@@ -105,7 +100,6 @@ void ps2_speed_sample(u64 fields, u64 dropped) {
     ps2_log("speed: EE wait_ms field=%.2f ring=%.2f drain=%.2f; present=%.2f/s present_ms=%.2f worker_active_ms=%.2f",
         (st_field_wait_ns-prev_field_wait)/1e6, (st_producer_ns-prev_ring_wait)/1e6,
         (st_drain_ns-prev_drain)/1e6, (pn-prev_n)/dt, (pt-prev_present)/1e6, (work-prev_work)/1e6);
-    ps2_scene_speed_report(dt);
     ps2_log("speed: VU1 runs=%.2f/s instructions_M=%.3f guard_hits=%llu",
         (vr-prev_vu_runs)/dt, (vi-prev_vu_insns)/1e6, (unsigned long long)(vg-prev_vu_guards));
     prev_vu_runs=vr; prev_vu_insns=vi; prev_vu_guards=vg;
@@ -179,12 +173,6 @@ static u32 q_apply(const u8 *r) {
     case GQ_VIFCLR:  ps2_vif_clear_stall((int)r[1]);               return 2u;
     case GQ_GS_PRIV: ps2_gs_priv_write_now(get32(r, 1), get64(r, 5)); return 13u;
     case GQ_MMIO:    ps2_gif_ctrl_write(get32(r, 1), get32(r, 5)); return 9u;
-    case GQ_TAG:     rn_gs_tag(get32(r, 1), get32(r, 5), get32(r, 9)); return 13u;
-    case GQ_INTENT: {
-        u32 len = get32(r, 1);
-        rn_gs_intent(r + 5, len);
-        return 5u + len;
-    }
     case GQ_FIELD:
         if (!ps2_gs_present_now()) ps2_request_exit();
         return 1u;
@@ -260,13 +248,12 @@ void ps2_gfxq_forbid(const char *why) { if (!q_forbidden) q_forbidden = why; }
 void ps2_gfxq_init(void) {
     const char *e = getenv("PS2_ASYNC_GFX");
     size_t mb;
-#ifdef PS2_GAME_AC4
-    /* AC4's in-flight frames intermittently come out as a few stray
-       screen-sized triangles with the graphics machine on its own thread,
-       and never on the EE thread; until that race is found, stay
-       synchronous unless asked otherwise. */
+    /* AC4's in-flight frames once came out as a few stray screen-sized
+       triangles with the graphics machine on its own thread.  Re-tested after
+       the VU pair-hazard fix: none in about 2,500 async flight fields, and
+       the EE never touches VU1 memory directly (PS2_TRAP_VU1_EE).  The EE
+       thread still holds full speed at 6x, so stay synchronous unless asked. */
     if (!e || !*e) e = "0";
-#endif
     if (e && *e == '0') {
         ps2_log("gfxq: PS2_ASYNC_GFX=0 -- the graphics machine runs on the EE "
                 "thread, as it did before.");
@@ -444,18 +431,4 @@ void ps2_gfxq_mmio(u32 addr, u32 val) {
       put8(r, 0, GQ_MMIO); put32(r, 1, addr); put32(r, 5, val);
       q_commit(9); }
 }
-
-void ps2_gfxq_tag(u32 kind, u32 a, u32 b) {
-    if (!ps2_gfxq_on) { rn_gs_tag(kind, a, b); return; }
-    { u8 *r = q_reserve(13);
-      put8(r, 0, GQ_TAG); put32(r, 1, kind); put32(r, 5, a); put32(r, 9, b);
-      q_commit(13); }
-}
-
-void ps2_gfxq_intent(const u8 *rec, u32 len) {
-    if (!ps2_gfxq_on) { rn_gs_intent(rec, len); return; }
-    { u8 *r = q_reserve(5u + len);
-      put8(r, 0, GQ_INTENT); put32(r, 1, len);
-      memcpy(r + 5, rec, len);
-      q_commit(5u + len); }
-}
+
