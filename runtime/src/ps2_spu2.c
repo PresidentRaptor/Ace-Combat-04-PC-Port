@@ -284,23 +284,15 @@ static void voice_sample(spu2_voice *v, u32 i, int *l, int *r) {
     adsr_step(v);
 }
 
-#include "ps2_nustream.h"
 void ps2_spu2_mix(s16 *out, u32 n) {
     u32 k, i;
-    s16 volumes[48][2];
-    u64 stream_mask = ps2_nustream_voice_mask();
     if (!ps2_spu2_ram) { memset(out, 0, (size_t)n * 4u); return; }
     SDL_LockSpinlock(&spu2_lock);
-    for (i = 0; i < 48; i++) {
-        volumes[i][0] = spu2_v[i].voll;
-        volumes[i][1] = spu2_v[i].volr;
-    }
     for (k = 0; k < n; k++) {
         int l = 0, r = 0;
         u32 nlive = 0, nenv = 0, nvol = 0;
         for (i = 0; i < SPU2_VOICES; i++) {
             spu2_voice *v = &spu2_v[i];
-            if (stream_mask & (1ull << i)) continue;
             if (v->on) {
                 nlive++;
                 if (v->env > 0) {
@@ -321,7 +313,6 @@ void ps2_spu2_mix(s16 *out, u32 n) {
     }
     spu2_frames += n;
     SDL_UnlockSpinlock(&spu2_lock);
-    ps2_nustream_mix(out, n, volumes);
 }
 
 void ps2_spu2_report(void) {
@@ -505,8 +496,6 @@ int ps2_spu2_selftest(void) {
             spu2_expect("invalid waveform address mutes safely", spu2_v[47].on, 0);
         }
     }
-    extern int ps2_nustream_selftest(void);
-    spu2_fail += ps2_nustream_selftest();
     ps2_log("spu2 selftest: %s", spu2_fail ? "FAILED" : "all checks passed");
     return spu2_fail ? 1 : 0;
 }

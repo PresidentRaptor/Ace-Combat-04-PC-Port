@@ -105,7 +105,7 @@ int ps2_hle_selftest(const char *disc) {
     fail += ps2_r32(recv) != 0 || ps2_r8(recv + 5) != 0xa5;
     if (disc) {
         fail += ps2_vfs_open(disc) != 0;
-        /* Check AC4's actual boot files; NUFILE/RADIOEE.PAC is AC5-specific. */
+        /* AC4's boot files */
         const ps2_disc_file *boot = ps2_vfs_find("\\SYSTEM.CNF;1");
         const ps2_disc_file *elf = ps2_vfs_find("\\SLUS_201.52;1");
         char cnf[512] = {0};

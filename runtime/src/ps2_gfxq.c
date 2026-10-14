@@ -68,7 +68,6 @@ int ps2_speed_enabled(void) {
     }
     return value;
 }
-void ps2_scene_speed_report(double dt);
 void ps2_speed_sample(u64 fields, u64 dropped) {
     static u64 prev_ns, prev_fields, prev_dropped, prev_present, prev_n, prev_work;
     static u64 prev_field_wait, prev_ring_wait, prev_drain, prev_bytes;
@@ -76,7 +75,7 @@ void ps2_speed_sample(u64 fields, u64 dropped) {
     if (!ps2_speed_enabled()) return;
     u64 now = gq_now_ns();
     if (!prev_ns) {
-        ps2_log("speed: diagnostics v1; 5s intervals, scene dispatch is not simulation FPS; collision/VIF fixes 2026-09-06");
+        ps2_log("speed: diagnostics v1; 5s intervals");
         ps2_log("speed: EE/present/worker ms are interval totals; present_ms is GS display-list handoff, not Vulkan GPU time. See vk-speed for renderer host stages.");
         prev_ns = now; prev_fields = fields; prev_dropped = dropped;
         prev_field_wait=st_field_wait_ns; prev_ring_wait=st_producer_ns;
@@ -85,7 +84,6 @@ void ps2_speed_sample(u64 fields, u64 dropped) {
         prev_present=speed_present_ns; prev_n=speed_present_n; prev_work=speed_work_ns;
         prev_vu_runs=speed_vu_runs; prev_vu_insns=speed_vu_insns; prev_vu_guards=speed_vu_guards;
         pthread_mutex_unlock(&q_lock);
-        ps2_scene_speed_report(0);
         return;
     }
     if (now - prev_ns < 5000000000ull) return;
@@ -102,7 +100,6 @@ void ps2_speed_sample(u64 fields, u64 dropped) {
     ps2_log("speed: EE wait_ms field=%.2f ring=%.2f drain=%.2f; present=%.2f/s present_ms=%.2f worker_active_ms=%.2f",
         (st_field_wait_ns-prev_field_wait)/1e6, (st_producer_ns-prev_ring_wait)/1e6,
         (st_drain_ns-prev_drain)/1e6, (pn-prev_n)/dt, (pt-prev_present)/1e6, (work-prev_work)/1e6);
-    ps2_scene_speed_report(dt);
     ps2_log("speed: VU1 runs=%.2f/s instructions_M=%.3f guard_hits=%llu",
         (vr-prev_vu_runs)/dt, (vi-prev_vu_insns)/1e6, (unsigned long long)(vg-prev_vu_guards));
     prev_vu_runs=vr; prev_vu_insns=vi; prev_vu_guards=vg;

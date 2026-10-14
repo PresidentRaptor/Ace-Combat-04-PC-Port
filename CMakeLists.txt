@@ -50,7 +50,6 @@ set(RUNTIME_SOURCES
     runtime/src/ps2_ipu.c
     runtime/src/ps2_kernel.c
     runtime/src/ps2_spu2.c
-    runtime/src/ps2_nustream.c
     runtime/src/ps2_memcard.c
     runtime/src/ps2_audio.c
     runtime/src/ps2_sif.c
