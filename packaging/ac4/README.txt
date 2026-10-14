@@ -104,7 +104,8 @@ Fixed in this build
   reads it back.
 - Quitting no longer leaves a 25 MB ps2_frame.ppm screenshot in this
   folder (an older one can be deleted).
-- Esc no longer ends the game on the spot: it asks first. The settings
+- Esc no longer ends the game on the spot: it asks first, with just a
+  small "Quit?" box (the settings menu no longer opens behind it). The settings
   menu (F4) gained a master volume, "mute in the background" and a Quit
   button, and lost the widescreen option that only applied to AC5. The
   F6-F10 debugging keys only work in DIAGNOSTICS.bat now, so a stray key
