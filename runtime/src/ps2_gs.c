@@ -3964,46 +3964,52 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     if (ps2_gif_path == 1 || st->tex_rt || st->fb_w < 480u || st->fb_h < 400u) return;
     aspect = ps2_vk_game_aspect();
     if (!(aspect > 1.34f)) return;
-    for (k = 0; k < n; k++) {
-        if (v[k].z < 0.99999f && v[k].z != 0.0f) return;
-        if (v[k].x < x0) x0 = v[k].x;
-        if (v[k].x > x1) x1 = v[k].x;
-        if (v[k].y < y0) y0 = v[k].y;
-        if (v[k].y > y1) y1 = v[k].y;
-    }
-    if (ws_marker_frame != ps2_gs_frame_count) {
-        ws_marker_frame = ps2_gs_frame_count;
-        ws_mcur ^= 1u;
-        ws_nmarker[ws_mcur] = 0;
-    }
-    if (st->zte && st->ztst != 1u) {
-        /* a target box or label: placed by the widened camera, left alone;
-           remembered so the lock cues beside it stay with it */
-        u32 m = ws_nmarker[ws_mcur];
-        if (m < WS_MARKERS && v[0].z != 0.0f) {
-            ws_marker[ws_mcur][m][0] = x0; ws_marker[ws_mcur][m][1] = x1;
-            ws_marker[ws_mcur][m][2] = y0; ws_marker[ws_mcur][m][3] = y1;
-            ws_nmarker[ws_mcur] = m + 1u;
+    {   int realz = 0;
+        for (k = 0; k < n; k++) {
+            if (v[k].z < 0.99999f && v[k].z != 0.0f) realz = 1;
+            if (v[k].x < x0) x0 = v[k].x;
+            if (v[k].x > x1) x1 = v[k].x;
+            if (v[k].y < y0) y0 = v[k].y;
+            if (v[k].y > y1) y1 = v[k].y;
         }
-        return;
+        if (ws_marker_frame != ps2_gs_frame_count) {
+            ws_marker_frame = ps2_gs_frame_count;
+            ws_mcur ^= 1u;
+            ws_nmarker[ws_mcur] = 0;
+        }
+        if (st->zte && st->ztst != 1u) {
+            /* a target box or label (at the far plane or at the target's own
+               depth): placed by the widened camera, left alone; remembered
+               so the lock cues beside it stay with it */
+            u32 m = ws_nmarker[ws_mcur];
+            if (m < WS_MARKERS && v[0].z != 0.0f && x1 - x0 <= 128.0f && y1 - y0 <= 128.0f
+                && (!realz || (n == 2 && !st->tme))) {   /* at depth: box lines only */
+                ws_marker[ws_mcur][m][0] = x0; ws_marker[ws_mcur][m][1] = x1;
+                ws_marker[ws_mcur][m][2] = y0; ws_marker[ws_mcur][m][3] = y1;
+                ws_nmarker[ws_mcur] = m + 1u;
+            }
+            return;
+        }
+        if (realz) return;
     }
-    /* The lock-on arrow and seeker diamond are small untextured shapes (a
-       triangle, slanted lines) the game places at the target's projected
-       position but draws without the depth test, so nothing else marks them
-       as world-anchored.  They are
-       drawn before the target's box, so the boxes of this frame and the one
-       before are checked. */
-    if (((!st->tme && n == 2 && x1 - x0 >= 0.5f && y1 - y0 >= 0.5f) || n == 3)
-        && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
-        && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f) {
-        /* the red seeker diamond: a turned square (triangles, or slanted
-           lines in the cockpit), wherever it is on its way from the centre to
-           the target.  The radar's red shapes are scissored; red text such
-           as WARNING is drawn with sprites. */
-        gs_stat_ws_cue++;
-        return;
+    /* The lock-on arrow and seeker diamond are drawn at the target's
+       projected position but without the depth test, so nothing else marks
+       them as world-anchored.  The diamond is red (lines, triangles or a
+       sprite, depending on the view) wherever it is on its way from the
+       centre to the target; the radar's red shapes are scissored, and the
+       caption band and the WARNING sign in the middle are left out. */
+    {   float sx = 512.0f / (float)st->fb_w, cyn = (y0 + y1) * 0.5f, cxn = (x0 + x1) * 0.5f * sx;
+        int warning = cxn > 192.0f && cxn < 320.0f && cyn > 136.0f && cyn < 180.0f;
+        if (!(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
+            && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
+            && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && cyn >= 104.0f && !warning) {
+            gs_stat_ws_cue++;
+            return;
+        }
     }
-    if (!st->tme && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f
+    /* the arrow: small untextured shapes touching a target box of this frame
+       or the last (the boxes come later in the frame) */
+    if (!st->tme && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f && st->scissor[0] == 0
         && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f)))   /* not tape ticks */
         for (u32 b = 0; b < 2u; b++)
             for (u32 m = 0; m < ws_nmarker[b]; m++) {
@@ -4033,12 +4039,16 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     if (ps2_cfg.hud_layout == PS2_HUD_EDGES && v[0].z != 0.0f) {
         float sx = 512.0f / (float)st->fb_w;
         float nx = (x0 + x1) * 0.5f * sx, ny = (y0 + y1) * 0.5f, w = (x1 - x0) * sx;
-        /* The enlarged radar map reaches from the left edge far into the
-           middle; while it is up (this frame or the last) the radar block
-           stays centred so the map and its frame keep together. */
-        if (x0 * sx < 40.0f && x1 * sx > 170.0f && y1 > 280.0f) ws_bigmap_frame = ps2_gs_frame_count;
+        /* The radar and the enlarged radar map (Square) draw their contents
+           and frame clipped to their own scissor at the left; all of it goes
+           to the left edge together.  While the big map is up (this frame or
+           the last) the position rules for the small radar's unclipped
+           pieces are off, since the speed tape's numbers run past it. */
+        int clipped = st->scissor[0] > 0 && st->scissor[0] < 40 && st->scissor[1] < 256;
+        if (clipped && st->scissor[1] - st->scissor[0] > 140) ws_bigmap_frame = ps2_gs_frame_count;
         int bigmap = ps2_gs_frame_count - ws_bigmap_frame <= 1u;
-        if (ny < 56.0f && nx < 165.0f) edge = -1;                 /* PTS, TGT */
+        if (clipped) edge = -1;                                   /* radar, map */
+        else if (ny < 56.0f && nx < 165.0f) edge = -1;            /* PTS, TGT */
         else if (ny < 46.0f && nx > 360.0f) edge = 1;             /* TIME */
         else if (!bigmap && ny > 284.0f && nx < 140.0f
                  && (nx < 90.0f || ny > 345.0f || st->scissor[0] > 0

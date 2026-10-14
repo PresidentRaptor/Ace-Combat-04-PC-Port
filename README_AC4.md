@@ -78,7 +78,8 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
   depth test; they are left in place when they touch a target box of this or the previous
   frame (the boxes come later in the frame), axis-aligned tape ticks excepted. HUD layout 2
   (`hud_layout = 2`, AC4's default, "corners at the screen edges") anchors the flight HUD's
-  corner blocks to the sides instead of the centre: PTS/TGT and the radar left, TIME and the
+  corner blocks to the sides instead of the centre: PTS/TGT and the radar (and the enlarged
+  map, everything clipped to the radar's scissor at the left) left, TIME and the
   weapon/damage block right, recognised by position on the 512 x 448 layout (`ws_hud`);
   the speed/altitude tape numbers scroll into the radar's and weapon list's rows, so there
   only pieces the tapes never have count. The pitch ladder turns within ~150 px of the
