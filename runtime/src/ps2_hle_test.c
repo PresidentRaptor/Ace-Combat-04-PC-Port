@@ -13,6 +13,11 @@ void hle_scePad2End(ps2_ctx *);
 void hle_scePad2CreateSocket(ps2_ctx *);
 void hle_scePad2DeleteSocket(ps2_ctx *);
 void hle_sceVibGetProfile(ps2_ctx *);
+void hle_scePadInit(ps2_ctx *);
+void hle_scePadPortOpen(ps2_ctx *);
+void hle_scePadPortClose(ps2_ctx *);
+void hle_scePadGetState(ps2_ctx *);
+void hle_scePadRead(ps2_ctx *);
 void ps2_iop_services_register(void);
 void ps2_build_dispatch(void);
 
@@ -67,6 +72,32 @@ int ps2_hle_selftest(const char *disc) {
     ps2_w8(recv, 0xff);
     fail += invoke(hle_sceVibGetProfile, 0, recv, 0) != 1;
     fail += ps2_r8(recv) != 3;
+#ifdef PS2_GAME_AC4
+    {
+        /* AC4 uses the original libpad, not AC5's input consumer at 32ad00. */
+        fail += invoke(hle_scePadInit, 0, 0, 0) != 1;
+        fail += invoke(hle_scePadRead, 0, 0, recv) != 0;
+        fail += invoke(hle_scePadPortOpen, 0, 1, send) != 0;
+        fail += invoke(hle_scePadPortOpen, 0, 0, send) != 1;
+        ps2_pad_host[0].connected = 1;
+        ps2_pad_host[0].buttons = (1u << 14) | (1u << 7); /* Cross + Left */
+        ps2_pad_host[0].lx = 17; ps2_pad_host[0].ly = 239;
+        ps2_pad_host[0].rx = 128; ps2_pad_host[0].ry = 128;
+        ps2_w8(recv + 32, 0xa5);
+        fail += invoke(hle_scePadGetState, 0, 0, 0) != 6;
+        fail += invoke(hle_scePadRead, 0, 0, recv) != 32;
+        fail += ps2_r8(recv) != 0 || ps2_r8(recv + 1) != 0x73;
+        fail += ps2_r16(recv + 2) != (u16)~ps2_pad_host[0].buttons;
+        fail += ps2_r8(recv + 6) != 17 || ps2_r8(recv + 7) != 239;
+        fail += ps2_r8(recv + 32) != 0xa5;
+        ps2_pad_host[0].buttons = 0;
+        fail += invoke(hle_scePadRead, 0, 0, recv) != 32;
+        fail += ps2_r16(recv + 2) != 0xffff;
+        fail += invoke(hle_scePadPortClose, 0, 0, 0) != 1;
+        fail += invoke(hle_scePadRead, 0, 0, recv) != 0;
+        ps2_log("AC4 libpad contract checked: closed port, slot rejection, active-low buttons, sticks, release, buffer bounds");
+    }
+#else
     {
         ps2_ctx guest = {0};
         ps2_w32(send + 580, 0);
@@ -86,6 +117,7 @@ int ps2_hle_selftest(const char *disc) {
                 ps2_r16(send + 916), ps2_r16(send + 918));
         ps2_pad_host[0].buttons = 0;
     }
+#endif
     fail += invoke(hle_scePad2DeleteSocket, 0, 0, 0) != 1;
     fail += invoke(hle_scePad2DeleteSocket, 0, 0, 0) != (u32)-1;
     ps2_w8(recv + 5, 0xa5);
@@ -95,6 +127,17 @@ int ps2_hle_selftest(const char *disc) {
     fail += ps2_r32(recv) != 0 || ps2_r8(recv + 5) != 0xa5;
     if (disc) {
         fail += ps2_vfs_open(disc) != 0;
+#ifdef PS2_GAME_AC4
+        /* Check AC4's actual boot files; NUFILE/RADIOEE.PAC is AC5-specific. */
+        const ps2_disc_file *boot = ps2_vfs_find("\\SYSTEM.CNF;1");
+        const ps2_disc_file *elf = ps2_vfs_find("\\SLUS_201.52;1");
+        char cnf[512] = {0};
+        unsigned char magic[4] = {0};
+        int bytes = boot ? ps2_vfs_read(boot, 0, sizeof(cnf)-1, cnf) : -1;
+        fail += bytes <= 0 || strstr(cnf, "SLUS_201.52") == NULL;
+        fail += !elf || ps2_vfs_read(elf, 0, 4, magic) != 4 || memcmp(magic, "\177ELF", 4);
+        ps2_log("AC4 disc boot files checked (SYSTEM.CNF and SLUS_201.52)");
+#else
         fail += ps2_rpc_call(0x80000593u, 3, 0, 0, recv, 4) != 0;
         fail += ps2_r32(recv) != 0x14;
         const char path[] = "cd:\\BIN\\RADIOEE.PAC";
@@ -119,6 +162,7 @@ int ps2_hle_selftest(const char *disc) {
         ps2_w32(send + 16, 0);
         ps2_rpc_call(0x4e554649u, 5, send, 32, recv, 4);
         fail += ps2_r32(recv) != (u32)-1;
+#endif
     }
     ps2_log("HLE contract regressions: %s (%d failures)", fail ? "FAILED" : "passed", fail);
     return fail != 0;

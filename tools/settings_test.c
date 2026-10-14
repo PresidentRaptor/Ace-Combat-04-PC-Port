@@ -113,7 +113,8 @@ int main(void) {
         for (int i = 0; i <= PS2_PRESET_4K; i++) {
             ps2_settings_apply_preset(&s, i);
             CHECK(s.internal_res == res[i], "preset %d internal resolution %d", i, s.internal_res);
-            CHECK(s.ui_smooth == (i == PS2_PRESET_4K), "preset %d UI filtering %d", i, s.ui_smooth);
+            CHECK(s.ui_smooth == (i >= PS2_PRESET_HIGH), "preset %d UI filtering %d", i, s.ui_smooth);
+            CHECK(s.fxaa == (i >= PS2_PRESET_HIGH), "preset %d edge smoothing %d", i, s.fxaa);
         }
         ps2_settings_apply_preset(&s, PS2_PRESET_HIGH);
         s.internal_res = 0;

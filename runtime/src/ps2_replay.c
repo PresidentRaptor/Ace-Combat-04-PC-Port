@@ -354,6 +354,7 @@ static void usage(const char *argv0) {
 "  --loop N        replay N times, 0 = until the window is closed\n"
 "  --fields N      stop each pass after N fields\n"
 "  --bench         time every pass and print the phase profile\n"
+"  --preset N      graphics preset: 0 low, 1 medium, 2 high, 3 ultra, 4 4K\n"
 "  --hidden        render through Vulkan without showing a window\n"
 "  --novideo       run headless -- but NOT the fast path and NOT what you\n"
 "                  want for a measurement: with no Vulkan device, vertex_kick\n"
@@ -396,6 +397,15 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--loud")) quiet = 0;
         else if (!strcmp(argv[i], "--census")) census = 1;
         else if (!strcmp(argv[i], "--bench")) bench = 1;
+        else if (!strcmp(argv[i], "--preset") && i + 1 < argc) {
+            char *end;
+            long preset = strtol(argv[++i], &end, 10);
+            if (!*argv[i] || *end || preset < PS2_PRESET_LOW || preset > PS2_PRESET_4K) {
+                fprintf(stderr, "[REPLAY] invalid graphics preset: %s\n", argv[i]);
+                return 1;
+            }
+            ps2_settings_apply_preset(&ps2_cfg, (int)preset);
+        }
         else if (!strcmp(argv[i], "--loop") && i + 1 < argc)
             loops = (int)strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--fields") && i + 1 < argc)

@@ -477,13 +477,13 @@ const PresetInfo PRESETS[5] = {
     { "Medium", "2x internal resolution (1280x896) for clean edges, lines and effects, and "
                 "4x anisotropic filtering." },
     { "High",   "3x internal resolution (1920x1344), 8x anisotropic filtering, sharp-bilinear "
-                "scaling and light sharpening." },
+                "scaling, FXAA edge smoothing, smooth UI textures and light sharpening." },
     { "Ultra",  "4x internal resolution (2560x1792), averaged down to the window for "
-                "anti-aliasing, 16x anisotropic filtering and light sharpening. Uses the "
+                "anti-aliasing, FXAA, smooth UI textures, 16x anisotropic filtering and light sharpening. Uses the "
                 "most video memory." },
     { "4K",     "Display-aware internal resolution: Auto selects enough pixels for the "
                 "current window, up to 8x, with 16x anisotropic filtering and sharp scaling. "
-                "Bilinear UI filtering smooths enlarged map and HUD art. At 4K this can use "
+                "FXAA and bilinear UI filtering smooth object edges and enlarged map and HUD art. At 4K this can use "
                 "substantial GPU memory and time." },
 };
 

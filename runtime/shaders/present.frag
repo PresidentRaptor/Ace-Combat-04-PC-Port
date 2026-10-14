@@ -11,6 +11,8 @@ layout(push_constant) uniform PC {
 
 vec2 texel;
 vec2 lo, hi;
+vec2 footprint;
+bool shrinking;
 
 vec3 tap(vec2 uv) { return texture(src, clamp(uv, lo, hi)).rgb; }
 
@@ -43,31 +45,40 @@ vec3 downsample(vec2 uv, vec2 dtex, vec2 one) {
     return sum / float(n.x * n.y);
 }
 
+// Postprocessing must see the same resolved image as the centre sample.
+// Sampling raw supersampled texels at the edges can reintroduce aliasing.
+vec3 resolved(vec2 uv) {
+    vec2 one = 1.0 / vec2(textureSize(src, 0));
+    return shrinking && pc.opts.x > 0.5 ? downsample(uv, footprint, one)
+                                       : filtered(uv, footprint);
+}
+
 vec3 fxaa(vec2 uv, vec3 rgbM) {
     const vec3 L = vec3(0.299, 0.587, 0.114);
-    vec3 rgbNW = tap(uv + vec2(-1.0, -1.0) * texel);
-    vec3 rgbNE = tap(uv + vec2( 1.0, -1.0) * texel);
-    vec3 rgbSW = tap(uv + vec2(-1.0,  1.0) * texel);
-    vec3 rgbSE = tap(uv + vec2( 1.0,  1.0) * texel);
+    vec3 rgbNW = resolved(uv + vec2(-1.0, -1.0) * texel);
+    vec3 rgbNE = resolved(uv + vec2( 1.0, -1.0) * texel);
+    vec3 rgbSW = resolved(uv + vec2(-1.0,  1.0) * texel);
+    vec3 rgbSE = resolved(uv + vec2( 1.0,  1.0) * texel);
     float lNW = dot(rgbNW, L), lNE = dot(rgbNE, L);
     float lSW = dot(rgbSW, L), lSE = dot(rgbSE, L), lM = dot(rgbM, L);
     float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
     float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    if (lMax - lMin < max(1.0 / 32.0, lMax / 8.0)) return rgbM;
     vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
     float reduce = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);
     float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
     dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * texel;
-    vec3 a = 0.5 * (tap(uv + dir * (1.0 / 3.0 - 0.5)) + tap(uv + dir * (2.0 / 3.0 - 0.5)));
-    vec3 b = a * 0.5 + 0.25 * (tap(uv - dir * 0.5) + tap(uv + dir * 0.5));
+    vec3 a = 0.5 * (resolved(uv + dir * (1.0 / 3.0 - 0.5)) + resolved(uv + dir * (2.0 / 3.0 - 0.5)));
+    vec3 b = a * 0.5 + 0.25 * (resolved(uv - dir * 0.5) + resolved(uv + dir * 0.5));
     float lB = dot(b, L);
     return (lB < lMin || lB > lMax) ? a : b;
 }
 
 vec3 sharpen(vec2 uv, vec3 c, float amount) {
-    vec3 n = tap(uv + vec2(0.0, -texel.y));
-    vec3 s = tap(uv + vec2(0.0,  texel.y));
-    vec3 e = tap(uv + vec2( texel.x, 0.0));
-    vec3 w = tap(uv + vec2(-texel.x, 0.0));
+    vec3 n = resolved(uv + vec2(0.0, -texel.y));
+    vec3 s = resolved(uv + vec2(0.0,  texel.y));
+    vec3 e = resolved(uv + vec2( texel.x, 0.0));
+    vec3 w = resolved(uv + vec2(-texel.x, 0.0));
     vec3 mn = min(c, min(min(n, s), min(e, w)));
     vec3 mx = max(c, max(max(n, s), max(e, w)));
     vec3 blur = (n + s + e + w) * 0.25;
@@ -79,6 +90,8 @@ void main() {
     vec2 size = vec2(textureSize(src, 0));
     vec2 dtex = fwidth(uv * size);
     bool shrink = max(dtex.x, dtex.y) > 1.01;
+    footprint = dtex;
+    shrinking = shrink;
     if (any(lessThan(v_uv, pc.bound.xy)) || any(greaterThan(v_uv, pc.bound.zw))) {
         out_color = vec4(0.0, 0.0, 0.0, 1.0);
         return;
