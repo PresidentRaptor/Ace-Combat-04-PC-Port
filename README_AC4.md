@@ -86,7 +86,10 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
   centre and never reaches a block. Captions, tapes, ladder and menus stay centred. `PS2_TRACE_VSM=1`
   logs the distinct calls of 00263718 and the on-screen cameras' fields; `PS2_VSM_SKIP=ra,...`
   leaves more callers (return addresses, hex) alone; `PS2_TRACE_WS=N[:M]` logs each primitive
-  kept 4:3 in fields N..M.
+  kept 4:3 in fields N..M. When the frame's squeezed Z-0 textured draws cover more than 35%
+  of the target (a menu, briefing, hangar overlay or movie), the presentation scissors the
+  picture to the 4:3 middle for that and the next 12 fields (`ps2_ws_pillar_frame`), so the
+  sides show black instead of stretched leftovers and half-covered 3D.
 - High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the
@@ -109,7 +112,7 @@ General fixes that AC4 exposed:
   AC4 uploads its font CLUTs as CT24 to keep their alpha bytes; read as 4 bytes a pixel
   the last 4 CLUT entries -- the stroke centres -- stayed black, giving hollow, smudged
   text, and the menu glow textures came out far too bright.
-- **upscaled sprites**: a bilinear sprite carries the texel range it samples at native
+- **upscaled sprites**: a sprite (bilinear, or point-sampled under smoothed UI) carries the texel range it samples at native
   resolution (`PS2_VK_RUV_CLAMP`, `clamp_u`/`clamp_v`, vertex attribute 5) and gs.frag keeps
   upscaled sub-pixels inside it, so text boxes, subtitles and HUD labels no longer pick up
   neighbouring texels as thin lines along their edges (PCSX2 needs "round sprite" for this game).

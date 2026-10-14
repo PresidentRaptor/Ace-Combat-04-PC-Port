@@ -4113,8 +4113,8 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
         default: break;
         }
     }
-    float scale_x = 1.0f, scale_y = 1.0f;
-    int letterboxed;
+    float scale_x = 1.0f, scale_y = 1.0f, pillar_w = 1.0f;
+    int letterboxed, pillar = 0;
     ps2_vk_display_aspect = aspect_src;
 
     if (aspect_dst > aspect_src) scale_x = aspect_src / aspect_dst;
@@ -4130,6 +4130,25 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
         }
     }
     letterboxed = scale_x < 0.9999f || scale_y < 0.9999f;
+#ifdef PS2_GAME_AC4
+    {   /* widescreen: menus, briefings and movies stay 4:3 in the middle
+           (ps2_gs.c ws_hud); show black beside them rather than what the
+           sides last held */
+        extern u32 ps2_gs_frame_count, ps2_ws_pillar_frame;
+        float ga = ps2_vk_game_aspect();
+        pillar = ga > 1.34f && ps2_cfg.hud_layout != PS2_HUD_STRETCHED
+                 && ps2_gs_frame_count - ps2_ws_pillar_frame <= 12u;   /* through fades */
+        if (pillar) { pillar_w = (4.0f / 3.0f) / ga; letterboxed = 1; }
+        {   static int was = -1;
+            if (pillar != was) {
+                if (was >= 0)
+                    ps2_log("present: 4:3 screen, black sides %s (field %u)",
+                            pillar ? "on" : "off", ps2_gs_frame_count);
+                was = pillar;
+            }
+        }
+    }
+#endif
     if (present_h > 0) {
         float k = ceilf(sh * scale_y / (float)present_h - 0.01f);
         auto_scale_target = k < 1.0f ? 1u
@@ -4183,6 +4202,11 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
         if (iy < 0) iy = 0;
         if (iw > (s32)swap_extent.width - ix) iw = (s32)swap_extent.width - ix;
         if (ih > (s32)swap_extent.height - iy) ih = (s32)swap_extent.height - iy;
+        if (pillar && iw > 0) {
+            s32 pw = (s32)((float)iw * pillar_w + 0.5f);
+            ix += (iw - pw) / 2;
+            iw = pw;
+        }
         sc.offset.x = ix; sc.offset.y = iy;
         sc.extent.width = iw > 0 ? (u32)iw : 0u;
         sc.extent.height = ih > 0 ? (u32)ih : 0u;

@@ -3946,6 +3946,10 @@ u64 ps2_kernel_vblank_count(void);
    even the parts at the far plane.  Full-width draws, untextured full-height
    ones (fades and clears, which AC4 draws in 64-pixel strips), off-screen
    targets and render-target copies stay too. */
+static float ws_area;
+static u32 ws_area_frame = ~0u;
+u32 ps2_ws_pillar_frame = 0x80000000u;
+
 #define WS_MARKERS 256
 static float ws_marker[2][WS_MARKERS][4];
 static u32 ws_nmarker[2], ws_mcur, ws_marker_frame = ~0u, ws_bigmap_frame = 0x80000000u;
@@ -3996,20 +4000,20 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
        projected position but without the depth test, so nothing else marks
        them as world-anchored.  The diamond is red (lines, triangles or a
        sprite, depending on the view) wherever it is on its way from the
-       centre to the target; the radar's red shapes are scissored, and the
-       caption band and the WARNING sign in the middle are left out. */
+       centre to the target; the radar's red shapes are scissored, and red
+       text (captions, speaker names, the WARNING sign) is drawn with sprites. */
     {   float sx = 512.0f / (float)st->fb_w, cyn = (y0 + y1) * 0.5f, cxn = (x0 + x1) * 0.5f * sx;
         int warning = n == 6 && cxn > 192.0f && cxn < 320.0f && cyn > 136.0f && cyn < 180.0f;
         if (!(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
             && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
-            && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && cyn >= 104.0f && !warning) {
+            && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && !(n == 6 && cyn < 104.0f) && !warning) {
             gs_stat_ws_cue++;
             return;
         }
     }
     /* the arrow: small untextured shapes touching a target box of this frame
        or the last (the boxes come later in the frame) */
-    if (!st->tme && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f && st->scissor[0] == 0
+    if (!st->tme && n != 6 && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f && st->scissor[0] == 0
         && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f)))   /* not tape ticks */
         for (u32 b = 0; b < 2u; b++)
             for (u32 m = 0; m < ws_nmarker[b]; m++) {
@@ -4072,6 +4076,18 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
                 v[k].clamp_u = cu;
                 v[k].clamp_v = cv;
             }
+    }
+    if (v[0].z == 0.0f && st->tme) {
+        /* a menu, briefing or movie fills the 4:3 middle with its own picture:
+           the presentation then shows black at the sides instead of whatever
+           was left there (ps2_video.c) */
+        if (ws_area_frame != ps2_gs_frame_count) {
+            ws_area_frame = ps2_gs_frame_count;
+            ws_area = 0.0f;
+        }
+        ws_area += (x1 - x0) * (y1 - y0);
+        if (ws_area > 0.35f * (float)st->fb_w * (float)st->fb_h)
+            ps2_ws_pillar_frame = ps2_gs_frame_count;
     }
     for (k = 0; k < n; k++) {
         v[k].x = ws_map(v[k].x, edge, s, cx, (float)st->fb_w);
@@ -4448,7 +4464,7 @@ static void vk_sprite(const gs_vtx *a, const gs_vtx *b) {
     t[0] = q[0]; t[1] = q[1]; t[2] = q[2];
     t[3] = q[0]; t[4] = q[2]; t[5] = q[3];
     for (i = 0; i < 6; i++) t[i].round_uv = PS2_VK_RUV_SPRITE;
-    if (st.tme && st.fst && !st.tex_point && !st.shuffle_rg) {
+    if (st.tme && st.fst && !st.shuffle_rg) {
         u32 cu, cv;
         if (sprite_clamp_axis(q[0].x, q[2].x, q[0].s, q[2].s, &cu)
             && sprite_clamp_axis(q[0].y, q[2].y, q[0].t, q[2].t, &cv))
