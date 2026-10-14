@@ -79,7 +79,7 @@ static u64 gs_stat_prims, gs_stat_pixels, gs_stat_regs;
 u64 ps2_gs_vtx_draw, ps2_gs_vtx_adc;
 static u64 gs_stat_trx, gs_stat_trxpix;
 static u64 gs_stat_deint;
-static u64 gs_stat_ws_hud;
+static u64 gs_stat_ws_hud, gs_stat_ws_cue;
 static int no_deinterlace;
 static u64 gs_reg_hist[0x64];
 
@@ -3085,8 +3085,8 @@ void ps2_gs_rt_report(void) {
     ps2_log("GS field blits deinterlaced: %llu",
             (unsigned long long)gs_stat_deint);
     if (gs_stat_ws_hud)
-        ps2_log("GS widescreen: %llu 2D primitives kept 4:3",
-                (unsigned long long)gs_stat_ws_hud);
+        ps2_log("GS widescreen: %llu 2D primitives kept 4:3, %llu lock cues left on their "
+                "target", (unsigned long long)gs_stat_ws_hud, (unsigned long long)gs_stat_ws_cue);
     ps2_log("GS DISPFB base %u -> slot %d,  PMODE %llX  DISPFB1 %llX DISPFB2 %llX",
             gs_disp_base, rt_find(gs_disp_base),
             (unsigned long long)ps2_gs_priv_read(0x12000000u),
@@ -3946,12 +3946,22 @@ u64 ps2_kernel_vblank_count(void);
    even the parts at the far plane.  Full-width draws, untextured full-height
    ones (fades and clears, which AC4 draws in 64-pixel strips), off-screen
    targets and render-target copies stay too. */
+#define WS_MARKERS 256
+static float ws_marker[2][WS_MARKERS][4];
+static u32 ws_nmarker[2], ws_mcur, ws_marker_frame = ~0u;
+
+/* x pulled to 4:3 about the centre (edge 0) or the left/right side (-1/1) */
+static float ws_map(float x, int edge, float s, float cx, float w) {
+    if (edge < 0) return x * s;
+    if (edge > 0) return w - (w - x) * s;
+    return cx + (x - cx) * s;
+}
+
 static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, s, cx, gx, l, r, aspect;
-    int k;
-    if (!ps2_cfg.widescreen || ps2_cfg.hud_layout != PS2_HUD_CENTERED) return;
+    int k, edge;
+    if (!ps2_cfg.widescreen || ps2_cfg.hud_layout == PS2_HUD_STRETCHED) return;
     if (ps2_gif_path == 1 || st->tex_rt || st->fb_w < 480u || st->fb_h < 400u) return;
-    if (st->zte && st->ztst != 1u) return;
     aspect = ps2_vk_game_aspect();
     if (!(aspect > 1.34f)) return;
     for (k = 0; k < n; k++) {
@@ -3961,13 +3971,71 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
         if (v[k].y < y0) y0 = v[k].y;
         if (v[k].y > y1) y1 = v[k].y;
     }
+    if (ws_marker_frame != ps2_gs_frame_count) {
+        ws_marker_frame = ps2_gs_frame_count;
+        ws_mcur ^= 1u;
+        ws_nmarker[ws_mcur] = 0;
+    }
+    if (st->zte && st->ztst != 1u) {
+        /* a target box or label: placed by the widened camera, left alone;
+           remembered so the lock cues beside it stay with it */
+        u32 m = ws_nmarker[ws_mcur];
+        if (m < WS_MARKERS && v[0].z != 0.0f) {
+            ws_marker[ws_mcur][m][0] = x0; ws_marker[ws_mcur][m][1] = x1;
+            ws_marker[ws_mcur][m][2] = y0; ws_marker[ws_mcur][m][3] = y1;
+            ws_nmarker[ws_mcur] = m + 1u;
+        }
+        return;
+    }
+    /* The lock-on arrow and seeker diamond are small untextured shapes (a
+       triangle, slanted lines) the game places at the target's projected
+       position but draws without the depth test, so nothing else marks them
+       as world-anchored.  They are
+       drawn before the target's box, so the boxes of this frame and the one
+       before are checked. */
+    if (!st->tme && x1 - x0 <= 40.0f && y1 - y0 <= 40.0f
+        && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f)))   /* not tape ticks */
+        for (u32 b = 0; b < 2u; b++)
+            for (u32 m = 0; m < ws_nmarker[b]; m++) {
+                const float *r4 = ws_marker[b][m];
+                if (x1 >= r4[0] - 16.0f && x0 <= r4[1] + 16.0f
+                    && y1 >= r4[2] - 16.0f && y0 <= r4[3] + 16.0f) {
+                    gs_stat_ws_cue++;
+                    return;
+                }
+            }
     gx = (float)st->fb_w * 0.5f;
     if (x0 <= 1.0f && x1 >= (float)st->fb_w - 0.5f) return;
     if (!st->tme && y0 <= 1.0f && y1 >= (float)st->fb_h - 0.5f) return;
     s = (4.0f / 3.0f) / aspect;
     cx = gx + 0.5f;
+    /* "corners at the edges": the flight HUD's corner blocks keep their 4:3
+       shape but sit against the screen's sides: score and target count and
+       the radar on the left, time, weapons and damage on the right.  The
+       tapes, pitch ladder, captions and menus (Z 0) stay centred.  The blocks
+       are recognised by where they sit on AC4's 512 x 448 layout; the speed
+       and altitude tapes' numbers scroll into the radar's and the weapon
+       list's rows, so there only pieces the tapes never have (their own
+       scissor, wide labels, the radar's 8 x 8 corners) or rows below the
+       tapes count.  The pitch ladder turns but stays within ~150 pixels of
+       the centre, short of every block. */
+    edge = 0;
+    if (ps2_cfg.hud_layout == PS2_HUD_EDGES && v[0].z != 0.0f) {
+        float sx = 512.0f / (float)st->fb_w;
+        float nx = (x0 + x1) * 0.5f * sx, ny = (y0 + y1) * 0.5f, w = (x1 - x0) * sx;
+        if (ny < 56.0f && nx < 165.0f) edge = -1;                 /* PTS, TGT */
+        else if (ny < 46.0f && nx > 360.0f) edge = 1;             /* TIME */
+        else if (ny > 284.0f && nx < 140.0f
+                 && (nx < 90.0f || ny > 345.0f || st->scissor[0] > 0
+                     || (w >= 7.5f && w <= 8.5f && y1 - y0 >= 7.5f && y1 - y0 <= 8.5f
+                         && nx > 118.0f)))
+            edge = -1;                                            /* radar */
+        else if (ny > 288.0f && nx > 384.0f
+                 && (nx > 434.0f || ny > 345.0f || (st->tme && w > 20.0f)))
+            edge = 1;                                             /* weapons, damage */
+    }
     for (k = 0; k < n; k++) {
-        v[k].x = cx + (v[k].x - cx) * s;
+        v[k].x = ws_map(v[k].x, edge, s, cx, (float)st->fb_w);
         v[k].round_uv &= PS2_VK_RUV_SPRITE | PS2_VK_RUV_CLAMP;
     }
     if (st->tex_point) st->tex_point = 2;
@@ -3987,8 +4055,8 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
                     (unsigned)(gs_prim & 7u), n, st->tme, (unsigned long long)tex0_reg(),
                     x0, x1, v[0].y, v[n - 1].y, v[0].z, st->fb_w, st->fb_h);
     }
-    l = gx + ((float)st->scissor[0] - gx) * s;
-    r = gx + ((float)st->scissor[1] + 1.0f - gx) * s;
+    l = ws_map((float)st->scissor[0], edge, s, gx, (float)st->fb_w);
+    r = ws_map((float)st->scissor[1] + 1.0f, edge, s, gx, (float)st->fb_w);
     st->scissor[0] = (s32)floorf(l);
     st->scissor[1] = (s32)ceilf(r) - 1;
     gs_stat_ws_hud++;

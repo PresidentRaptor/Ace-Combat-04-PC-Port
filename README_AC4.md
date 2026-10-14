@@ -73,7 +73,16 @@ AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
   draws with real depth (sun flare, lens ghosts), full-width draws, untextured full-height
   ones (fades and clears, drawn in 64-pixel strips), render-target copies and off-screen
   targets (the 512 x 128 cloud target). Movies and menus come out pillarboxed 4:3. With
-  widescreen off nothing changes: the 12 captures replay pixel-identical. `PS2_TRACE_VSM=1`
+  widescreen off nothing changes: the 12 captures replay pixel-identical. The lock-on arrow
+  and seeker diamond are small untextured shapes placed at the target but drawn without the
+  depth test; they are left in place when they touch a target box of this or the previous
+  frame (the boxes come later in the frame), axis-aligned tape ticks excepted. HUD layout 2
+  (`hud_layout = 2`, AC4's default, "corners at the screen edges") anchors the flight HUD's
+  corner blocks to the sides instead of the centre: PTS/TGT and the radar left, TIME and the
+  weapon/damage block right, recognised by position on the 512 x 448 layout (`ws_hud`);
+  the speed/altitude tape numbers scroll into the radar's and weapon list's rows, so there
+  only pieces the tapes never have count. The pitch ladder turns within ~150 px of the
+  centre and never reaches a block. Captions, tapes, ladder and menus stay centred. `PS2_TRACE_VSM=1`
   logs the distinct calls of 00263718 and the on-screen cameras' fields; `PS2_VSM_SKIP=ra,...`
   leaves more callers (return addresses, hex) alone; `PS2_TRACE_WS=N[:M]` logs each primitive
   kept 4:3 in fields N..M.

@@ -113,9 +113,13 @@ Fixed in this build
 - 16:9 widescreen: F4 > Display > "Widescreen (16:9)" (off by default).
   The game's own camera is widened, so flight, the carrier deck, the
   hangar and the opening show more at the sides instead of being
-  stretched. The HUD, captions, menus, briefings and story movies stay
-  4:3 in the middle of the screen; target boxes and FRND/TGT labels stay
-  on their aircraft. Keep "Aspect ratio" on Auto (or 16:9).
+  stretched. The HUD keeps its 4:3 shapes: by default its corner blocks
+  (score, radar, time, weapons) sit at the screen's edges while the tapes,
+  pitch ladder and captions stay in the middle ("HUD layout" in F4 also
+  offers everything 4:3 in the centre). Menus, briefings and story movies
+  stay 4:3 in the middle; target boxes, FRND/TGT labels and the lock-on
+  arrow and diamond stay on their aircraft. Keep "Aspect ratio" on Auto
+  (or 16:9).
 
 Known limits
 ------------

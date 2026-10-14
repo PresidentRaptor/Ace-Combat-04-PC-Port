@@ -407,7 +407,7 @@ void widescreen_control() {
         if (ws && ps2_cfg.aspect == PS2_ASPECT_4_3) ps2_cfg.aspect = PS2_ASPECT_AUTO;
 #ifdef PS2_GAME_AC4
         /* settings files from before AC4 had widescreen carry hud_layout 0 */
-        if (ws) ps2_cfg.hud_layout = PS2_HUD_CENTERED;
+        if (ws && ps2_cfg.hud_layout == PS2_HUD_STRETCHED) ps2_cfg.hud_layout = PS2_HUD_EDGES;
 #endif
         changed(0);
     }
@@ -420,14 +420,20 @@ void widescreen_control() {
          "aspect with it.");
 #endif
     if (ws) {
+#ifdef PS2_GAME_AC4
+        static const char *const HUD_LAYOUTS[] = { "Stretched with the picture",
+                                                   "4:3 in the centre",
+                                                   "4:3, corners at the screen edges" };
+        if (ImGui::Combo("HUD layout", &ps2_cfg.hud_layout, HUD_LAYOUTS, 3)) changed(0);
+        help("The game's HUD and menus are laid out for 4:3. Centred draws them at their own "
+             "proportions in the middle of the screen. Corners at the edges keeps the same "
+             "shapes but moves the score, radar and speed tape out to the left and the time, "
+             "altitude tape and weapons out to the right; captions, the pitch ladder and the "
+             "menus stay in the middle. Markers placed on things in the world stay on them.");
+#else
         static const char *const HUD_LAYOUTS[] = { "Stretched with the picture",
                                                    "4:3 in the centre" };
         if (ImGui::Combo("HUD layout", &ps2_cfg.hud_layout, HUD_LAYOUTS, 2)) changed(0);
-#ifdef PS2_GAME_AC4
-        help("The game's HUD and menus are laid out for 4:3. Centred draws them at their own "
-             "proportions in the middle of the screen; markers placed on things in the world "
-             "stay on them.");
-#else
         help("The game's HUD is laid out for 4:3. Centred draws the screen-fixed parts -- "
              "tapes, readouts, radar, captions -- at their own proportions in the middle of "
              "the screen; markers placed on things in the world stay on them. Needs the "
