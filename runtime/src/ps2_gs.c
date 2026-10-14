@@ -3614,7 +3614,6 @@ static u32 sprite_round_axis(s32 p0, s32 p1, u32 t0, u32 t1) {
     return dt <= 0 || !(span & (span - 1u)) ? 1u : 2u;
 }
 
-#ifdef PS2_GAME_AC4
 u64 ps2_kernel_vblank_count(void);
 
 /* AC4 widescreen: the camera is widened in the EE (ps2_hook.c), so the 4:3
@@ -3797,11 +3796,6 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     st->scissor[1] = (s32)ceilf(r) - 1;
     gs_stat_ws_hud++;
 }
-#else
-static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
-    (void)st; (void)v; (void)n;
-}
-#endif
 
 static void vk_triangle_draw(const gs_vtx *a, const gs_vtx *b, const gs_vtx *c) {
     ps2_vk_state st;

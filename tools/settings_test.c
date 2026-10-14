@@ -7,12 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef PS2_GAME_AC4
-#define EXPECT_WIDESCREEN 0
-#else
-#define EXPECT_WIDESCREEN 1
-#endif
-
 u8 *ps2_pt[PS2_PT_ENTRIES];
 u8 *ps2_ram;
 u8 *ps2_spr;
@@ -156,7 +150,7 @@ int main(void) {
               "graphics fields did not round-trip");
         CHECK(b->window_mode == PS2_WIN_EXCLUSIVE && b->fullscreen_type == PS2_WIN_EXCLUSIVE && b->fs_w == 1920
               && b->fs_h == 1080 && feq(b->fs_hz, 143.98f) && b->aspect == PS2_ASPECT_CUSTOM
-              && feq(b->aspect_custom, 2.1f) && b->widescreen == EXPECT_WIDESCREEN && b->integer_scale == 1
+              && feq(b->aspect_custom, 2.1f) && b->widescreen == 1 && b->integer_scale == 1
               && b->present_mode == PS2_PRESENT_IMMEDIATE && b->fps_limit == 90 && b->show_fps == 1
               && feq(b->ui_scale, 1.25f), "display fields did not round-trip");
         CHECK(b->internal_res == 0, "internal resolution did not round-trip (%d)", b->internal_res);
@@ -281,26 +275,6 @@ int main(void) {
         CHECK(ps2_pad_trigger(0.6f, 0.7f, &p) == 1 && p == 178, "trigger past its dead zone (%u)", p);
         CHECK(ps2_pad_button(0.0f, 1.0f) == 1 && ps2_pad_button(0.0f, 0.0f) == 0, "button");
         CHECK(ps2_pad_button(0.5f, 0.4f) == 0 && ps2_pad_button(0.5f, 0.5f) == 1, "button dead zone");
-    }
-
-    {
-        ps2_w32(0x00440828u, 0x440315C2u);
-        ps2_w32(0x0044082Cu, 0x441013D7u);
-        ps2_cfg.widescreen = 1;
-        ps2_settings_apply_game_patches();
-#ifdef PS2_GAME_AC4
-        CHECK(ps2_r32(0x00440828u) == 0x440315C2u && ps2_r32(0x0044082Cu) == 0x441013D7u,
-              "AC5 camera patch must never write AC4 memory");
-#else
-        CHECK(ps2_r32(0x00440828u) == 0x43D638F3u && ps2_r32(0x0044082Cu) == 0x43EB7385u, "patch not applied");
-#endif
-        ps2_cfg.widescreen = 0;
-        ps2_settings_apply_game_patches();
-        CHECK(ps2_r32(0x00440828u) == 0x440315C2u && ps2_r32(0x0044082Cu) == 0x441013D7u, "patch not removed");
-        ps2_w32(0x00440828u, 0x12345678u);
-        ps2_cfg.widescreen = 1;
-        ps2_settings_apply_game_patches();
-        CHECK(ps2_r32(0x00440828u) == 0x12345678u, "patch overwrote an unexpected value");
     }
 
     printf("settings test: %s\n", fails ? "FAILED" : "all checks passed");

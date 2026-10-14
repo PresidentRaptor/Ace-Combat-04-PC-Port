@@ -2,8 +2,8 @@
 
 This tree is the AC5 static recompilation (github.com/sal063/Ace-Combat-5-Static-recompilation,
 commit 078662b) extended to build **Ace Combat 04: Shattered Skies (USA, SLUS-20152)**.
-`-DPS2_GAME=AC4` (the default here) builds `ac4.exe`; `-DPS2_GAME=AC5` still builds the
-original `ac5.exe`.
+It builds `ac4.exe` only: the AC5 build option, AC5's config and AC5-only tools and tests
+have been removed.
 
 ## Building
 
@@ -23,13 +23,13 @@ build/gcc/ac4.exe --data generated --disc "path/to/Ace Combat 04 (USA).iso" --wa
 
 ## How the AC4 config was made (no IDA, no SDK)
 
-AC5's `config/` comes from IDA and the PS2 SDK. AC4's was rebuilt from the executable alone:
+AC5's config came from IDA and the PS2 SDK. AC4's was rebuilt from the executable alone:
 
 | file | made by | what |
 | --- | --- | --- |
 | `config/ac4/seeds.json` | `tools/find_entries.py` | function entries: code after returns/tail calls, frame openers, code pointers in data |
 | `config/ac4/ida_db.json` | `tools/find_switches.py` | `jr $reg` jump tables (131 of 134; the rest are `longjmp` and hand-written asm) |
-| `config/ac4/sdk_symbols.json` | `tools/port_symbols.py` | SDK names carried over from AC5 by masked-signature, fuzzy and call-graph matching |
+| `config/ac4/sdk_symbols.json` | `tools/port_symbols.py` | SDK names carried over from AC5 (its ELF and sal063's `config/`) by masked-signature, fuzzy and call-graph matching |
 | `config/ac4/manual_symbols.json` | by hand | libpad, the rest of libcdvd, functions the matcher can't place |
 | `config/ac4/overrides.json` | | the SIF/CD overrides that exist in AC4, plus the old (SDK 2.x) libpad |
 
@@ -38,7 +38,7 @@ Coverage is 99.46% of `.text`. `tools/listing.py` (annotated disassembly, `--xre
 
 ## Runtime changes
 
-AC4-specific (`#ifdef PS2_GAME_AC4` or AC4-only files):
+AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
 
 - `ps2_hle_ac4.c` — native replacements for AC4's IOP sound modules, written from their own
   symbol tables:
@@ -193,7 +193,7 @@ General fixes that AC4 exposed:
   signed/unsigned compare; the CLUT-in-render-target lookup requires a PSMCT32/24 target;
   the VAG module no longer logs from the audio thread. Saving and loading were exercised
   (pre-mission SAVE, title LOAD -> CONTINUE).
-- **settings/mod menu** uses AC4's navy and light-blue colours (`ps2_ui.cpp`, `PS2_GAME_AC4`).
+- **settings/mod menu** uses AC4's navy and light-blue colours (`ps2_ui.cpp`).
 - **channel shuffles**: the CT16-over-CT32 shuffle sprite is also recognised when its
   64-pixel strips end exactly on the boundary (AC5 ends them half a pixel short). AC4's
   aircraft self-shadow (shadow volumes counted into a half-size buffer, shuffled into

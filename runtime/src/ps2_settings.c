@@ -181,11 +181,7 @@ void ps2_settings_defaults(ps2_settings *s) {
     s->window_h = 896;
     s->aspect = PS2_ASPECT_AUTO;
     s->aspect_custom = 16.0f / 9.0f;
-#ifdef PS2_GAME_AC4
     s->hud_layout = PS2_HUD_EDGES;
-#else
-    s->hud_layout = PS2_HUD_CENTERED;
-#endif
     s->present_mode = PS2_PRESENT_MAILBOX;
     s->ui_scale = 1.0f;
     s->block_input_in_menu = 1;
@@ -234,11 +230,7 @@ static void sanitize(ps2_settings *s) {
     s->aspect_custom = clampf(s->aspect_custom, 0.5f, 4.0f);
     s->integer_scale = s->integer_scale != 0;
     s->widescreen = s->widescreen != 0;
-#ifdef PS2_GAME_AC4
     s->hud_layout = clampi(s->hud_layout, 0, 2);
-#else
-    s->hud_layout = clampi(s->hud_layout, 0, 1);
-#endif
     s->present_mode = clampi(s->present_mode, 0, 3);
     s->fps_limit = clampi(s->fps_limit, 0, 1000);
     s->show_fps = s->show_fps != 0;
@@ -459,33 +451,6 @@ void ps2_settings_touch(int dirty) {
 }
 
 int ps2_settings_take_dirty(void) { return atomic_exchange(&cfg_dirty, 0); }
-
-#ifndef PS2_GAME_AC4
-static const u32 ws_addr[2]  = { 0x00440828u, 0x0044082Cu };
-static const u32 ws_orig[2]  = { 0x440315C2u, 0x441013D7u };
-static const u32 ws_patch[2] = { 0x43D638F3u, 0x43EB7385u };
-#endif
-
-void ps2_settings_apply_game_patches(void) {
-#ifdef PS2_GAME_AC4
-    return;     /* AC4 widens its camera through a hook (ps2_hook.c) */
-#else
-    static int logged = -1;
-    if (!ps2_ram) return;
-    for (int i = 0; i < 2; i++) {
-        u32 cur = ps2_r32(ws_addr[i]);
-        if (ps2_cfg.widescreen) {
-            if (cur == ws_orig[i]) ps2_w32(ws_addr[i], ws_patch[i]);
-        } else if (cur == ws_patch[i]) {
-            ps2_w32(ws_addr[i], ws_orig[i]);
-        }
-    }
-    if (logged != ps2_cfg.widescreen) {
-        logged = ps2_cfg.widescreen;
-        ps2_log("settings: widescreen patch %s", logged ? "on" : "off");
-    }
-#endif
-}
 
 float ps2_pad_axis_value(int raw, int positive) {
     float v = (float)raw / (raw < 0 ? 32768.0f : 32767.0f);

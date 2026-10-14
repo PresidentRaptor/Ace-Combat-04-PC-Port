@@ -546,7 +546,6 @@ void ps2_hook_texcache_attach(long n) {
         ps2_log("hook: texture-cache trace on 0013B2F8 (%ld calls)", n);
 }
 
-#ifdef PS2_GAME_AC4
 /* AC4 widescreen.  Every camera goes through sceVu0ViewScreenMatrix
    (00263718: m, scrz, ax, ay, cx, cy, zmin, zmax, nearz, farz); ax scales
    screen X.  With widescreen on, the on-screen cameras get a wider virtual
@@ -642,7 +641,6 @@ void ps2_hook_ac4_widescreen_attach(void) {
     if (ps2_hook_before(0x00263718u, vsm_before, NULL, 0, "ac4-widescreen") <= 0)
         ps2_log("hook: cannot attach the widescreen camera to 00263718");
 }
-#endif
 
 void ps2_hook_selftest_attach(void);
 void ps2_hook_selftest_attach(void) {

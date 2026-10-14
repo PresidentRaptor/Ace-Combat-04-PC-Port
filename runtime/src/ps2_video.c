@@ -3062,7 +3062,6 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
         }
     }
     letterboxed = scale_x < 0.9999f || scale_y < 0.9999f;
-#ifdef PS2_GAME_AC4
     {   /* widescreen: menus, briefings and movies stay 4:3 in the middle
            (ps2_gs.c ws_hud); show black beside them rather than what the
            sides last held */
@@ -3080,7 +3079,6 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
             }
         }
     }
-#endif
     if (present_h > 0) {
         float k = ceilf(sh * scale_y / (float)present_h - 0.01f);
         auto_scale_target = k < 1.0f ? 1u
@@ -4687,11 +4685,7 @@ int ps2_vk_present(u32 disp_x, u32 disp_y, u32 disp_w, u32 disp_h, u32 rt) {
         static int no_drop = -1;
         if (no_drop < 0) {
             const char *e = getenv("PS2_DROP_FIELDS");
-#ifdef PS2_GAME_AC4
             no_drop = !(e && *e && *e != '0');
-#else
-            no_drop = e && *e == '0';
-#endif
             if (no_drop) ps2_log("vk: fields are waited for rather than dropped "
                                  "(PS2_DROP_FIELDS=1 drops them)");
         }

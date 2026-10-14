@@ -2,7 +2,7 @@
 
 A static recompilation of **Ace Combat 04: Shattered Skies** (PS2, NTSC-U, SLUS-20152) for Windows.
 
-This project is built on [sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the recompiler, the runtime and most of what is described here are their work. This fork adds an Ace Combat 04 configuration, the AC4-specific system code, and a set of emulation and renderer fixes that AC4 needed. The original AC5 build is still in the tree (`-DPS2_GAME=AC5`).
+This project is built on [sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the recompiler, the runtime and most of what is described here are their work. This fork adds an Ace Combat 04 configuration, the AC4-specific system code, and a set of emulation and renderer fixes that AC4 needed. The AC5 build, its config and its native renderer have been removed; sal063's repository has them.
 
 The game's main CPU code isn't emulated. A Python tool reads the original executable and translates every function into C ahead of time, and GCC compiles that together with a runtime that stands in for the rest of the console: the GS (drawn through Vulkan), the VU vector units, SPU2 audio, the IPU for the movies, the IOP modules, memory cards and controllers. The result is a normal `ac4.exe`.
 
@@ -61,7 +61,7 @@ From an MSYS2 UCRT64 shell (or Git Bash with `C:\msys64\ucrt64\bin` on the PATH)
 bash tools/build_ac4.sh path/to/SLUS_201.52
 ```
 
-That runs the recompiler with the AC4 config (about 5,950 functions into `generated/`), configures CMake with `-DPS2_GAME=AC4` the first time, and builds. Expect several minutes: every generated file is essentially one huge function. You get:
+That runs the recompiler with the AC4 config (about 5,950 functions into `generated/`), configures CMake the first time, and builds. Expect several minutes: every generated file is essentially one huge function. You get:
 
 - `build/gcc/ac4.exe`: the game
 - `build/gcc/shaders/`: the compiled shaders (must stay next to the exe, or set `PS2_SHADER_DIR`)
@@ -77,7 +77,7 @@ python -m ps2recomp "C:\path\to\SLUS_201.52" -o generated `
     --ida-db config/ac4/ida_db.json --ida-seeds config/ac4/seeds.json `
     --symbols config/ac4/sdk_symbols.json --symbols config/ac4/manual_symbols.json `
     --overrides config/ac4/overrides.json --hooks config/ac4/hooks.json
-cmake -S . -B build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2_GAME=AC4 `
+cmake -S . -B build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Release `
     -DCMAKE_C_COMPILER=C:/msys64/ucrt64/bin/gcc.exe `
     -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/c++.exe
 cmake --build build/gcc
@@ -167,7 +167,7 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - `tools/`: AC4 config builders (`find_entries.py`, `find_switches.py`, `port_symbols.py`), analysis tools (`listing.py`, `irx_dis.py`) and tests
 - `runtime/`: everything that stands in for the console, plus the settings menu; `runtime/src/ps2_hle_ac4.c` is AC4's sound system
 - `runtime/shaders/`: the GLSL shaders, compiled at build time
-- `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks; `config/`: AC5's
+- `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks
 - `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat`, `MAKE_HD_TEXTURES.bat` and the player README
 - `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (AC5 mod scripts)
 - `generated/`: the recompiler's output, created in step 2

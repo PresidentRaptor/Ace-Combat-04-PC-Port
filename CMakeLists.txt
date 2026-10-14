@@ -16,9 +16,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
 option(PS2_DIAG "compile the entry histogram and the guest-store watch in" OFF)
 
-set(PS2_GAME "AC4" CACHE STRING "game the runtime is built for: AC4 or AC5")
-set_property(CACHE PS2_GAME PROPERTY STRINGS AC4 AC5)
-string(TOLOWER "${PS2_GAME}" PS2_EXE)
+set(PS2_EXE ac4)
 
 find_package(Threads REQUIRED)
 
@@ -39,7 +37,7 @@ list(APPEND GENERATED_SOURCES
 if(NOT GENERATED_SOURCES)
   message(FATAL_ERROR
     "No generated sources. Run:\n"
-    "  python -m ps2recomp <elf> -o generated --ida-db config/ida_db.json")
+    "  bash tools/build_ac4.sh path/to/SLUS_201.52")
 endif()
 
 set(RUNTIME_SOURCES
@@ -120,11 +118,7 @@ set_source_files_properties(${HOT_SOURCES} PROPERTIES COMPILE_OPTIONS "-O3")
 if(PS2_DIAG)
   target_compile_definitions(${PS2_EXE} PRIVATE PS2_DIAG=1)
 endif()
-if(PS2_GAME STREQUAL "AC4")
-  target_compile_definitions(${PS2_EXE} PRIVATE PS2_GAME_AC4=1)
-endif()
-
-if(WIN32 AND PS2_GAME STREQUAL "AC4")
+if(WIN32)
   enable_language(RC)
   configure_file(runtime/ac4.rc.in "${CMAKE_CURRENT_BINARY_DIR}/ac4.rc" @ONLY)
   target_sources(${PS2_EXE} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ac4.rc")
@@ -159,9 +153,6 @@ target_link_libraries(gsreplay PRIVATE Threads::Threads m
 target_link_options(gsreplay PRIVATE -static-libstdc++ -static-libgcc)
 if(PS2_DIAG)
   target_compile_definitions(gsreplay PRIVATE PS2_DIAG=1)
-endif()
-if(PS2_GAME STREQUAL "AC4")
-  target_compile_definitions(gsreplay PRIVATE PS2_GAME_AC4=1)
 endif()
 
 target_compile_options(gsreplay PRIVATE

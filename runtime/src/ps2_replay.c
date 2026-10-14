@@ -368,7 +368,7 @@ static void usage(const char *argv0) {
 "                  game disarms them on a path a replay never reaches, so\n"
 "                  leaving them on measures the diagnostics, not the work.\n"
 "\n"
-"A capture is taken from the game with F6, or with --capture on ac5.exe.\n"
+"A capture is taken from the game with F6, or with --capture on ac4.exe.\n"
 "Set PS2_PROFILE_PHASES=1 for the per-phase breakdown a --bench pass prints,\n"
 "and PS2_PRESENT_MODE=immediate so the swapchain does not pace the benchmark.\n",
     argv0);

@@ -96,8 +96,6 @@ const char *ps2_action_name(int act);
 const char *ps2_key_name(int scancode);
 const char *ps2_padbind_name(int code);
 
-void ps2_settings_apply_game_patches(void);
-
 float ps2_pad_axis_value(int raw, int positive);
 void  ps2_pad_stick(float deadzone, float axis_scale, int invert, const float v[4],
                     unsigned char *x, unsigned char *y);

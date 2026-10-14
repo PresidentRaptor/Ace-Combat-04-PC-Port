@@ -12,7 +12,6 @@ ini = out / 'settings_test.ini'
 
 subprocess.run(['gcc', '-std=gnu2x', '-O1', '-fno-strict-aliasing', '-fwrapv',
                 '-Wall', '-Wextra', '-Wno-unused-parameter',
-                *(['-DPS2_GAME_AC4=1'] if '--ac4' in sys.argv else []),
                 '-I' + str(root / 'runtime/include'),
                 str(root / 'tools/settings_test.c'),
                 str(root / 'runtime/src/ps2_settings.c'),

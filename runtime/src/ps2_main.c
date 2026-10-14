@@ -197,10 +197,8 @@ void ps2_finish(const char *why) {
     ps2_nufile_report();
     ps2_nusound_report();
     ps2_nusndstr_report();
-#ifdef PS2_GAME_AC4
     ps2_ac4_report();
     ps2_libpad_report();
-#endif
     ps2_spu2_report();
     ps2_audio_report();
     ps2_pad_report();
@@ -609,9 +607,7 @@ int main(int argc, char **argv) {
     ps2_cdvd_init();
     ps2_cdvd_rpc_register();
     ps2_iop_services_register();
-#ifdef PS2_GAME_AC4
     ps2_ac4_services_register();
-#endif
     ps2_pad_init();
     ps2_kernel_init();
     ps2_pad_autoplay(want_autoplay);
@@ -635,10 +631,8 @@ int main(int argc, char **argv) {
         extern void ps2_hook_texcache_attach(long n);
         ps2_hook_texcache_attach(strtol(getenv("PS2_TRACE_TEXCACHE"), NULL, 0));
     }
-#ifdef PS2_GAME_AC4
     {   extern void ps2_hook_ac4_widescreen_attach(void);
         ps2_hook_ac4_widescreen_attach(); }
-#endif
     if (load_image(dir) != 0) return 1;
     ps2_mod_init();
     if (disc && ps2_vfs_open(disc) != 0)
@@ -650,9 +644,7 @@ int main(int argc, char **argv) {
         ps2_sif_hle_init();
         ps2_cdvd_rpc_register();
         ps2_iop_services_register();
-#ifdef PS2_GAME_AC4
     ps2_ac4_services_register();
-#endif
         bad  = nufile_selftest("\\BIN\\DATA.TBL;1");
         bad += nufile_selftest("\\SYSTEM.CNF;1");
         return bad ? 1 : 0;
@@ -728,10 +720,8 @@ int main(int argc, char **argv) {
     ps2_nufile_report();
     ps2_nusound_report();
     ps2_nusndstr_report();
-#ifdef PS2_GAME_AC4
     ps2_ac4_report();
     ps2_libpad_report();
-#endif
     ps2_spu2_report();
         ps2_pad_report();
         ps2_video_report();

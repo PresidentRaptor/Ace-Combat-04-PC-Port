@@ -151,9 +151,7 @@ void hle_sceCdReadIOPm(ps2_ctx *ctx) {
     u32 buf = ps2_arg(ctx, 2);
     if (buf < PS2_IOP_RAM_SIZE) ctx->r[6].ud[0] = PS2_IOP_RAM_BASE + buf;
     hle_sceCdRead(ctx);
-#ifdef PS2_GAME_AC4
     ps2_ac4_iop_fill(buf, ps2_arg(ctx, 1) * 2048u);
-#endif
 }
 
 void hle_sceCdSync(ps2_ctx *ctx)  { HRET(0); }

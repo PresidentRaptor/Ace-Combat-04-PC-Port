@@ -195,11 +195,9 @@ static int operation(u32 f,u32 s,int ssize) {
         u32 a=ps2_r32(s+28); if(!ram_ok(a,192)) return -5;
         u8 info[192]={0}; wr32(info,2); wr32(info+4,8192-used_clusters(c)); wr32(info+144,c->formatted);
         to_guest(a,info,sizeof info);
-#ifdef PS2_GAME_AC4
         /* the first look at a card reports it as newly inserted (-1, or -2
            unformatted), as the hardware does; AC4 waits for that event */
         if(!c->announced) { c->announced=1; return c->formatted?-1:-2; }
-#endif
         return c->formatted?0:-2;
     }
     if(f==16||f==17) {

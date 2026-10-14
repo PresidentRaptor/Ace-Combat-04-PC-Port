@@ -72,7 +72,6 @@ int ps2_hle_selftest(const char *disc) {
     ps2_w8(recv, 0xff);
     fail += invoke(hle_sceVibGetProfile, 0, recv, 0) != 1;
     fail += ps2_r8(recv) != 3;
-#ifdef PS2_GAME_AC4
     {
         /* AC4 uses the original libpad, not AC5's input consumer at 32ad00. */
         fail += invoke(hle_scePadInit, 0, 0, 0) != 1;
@@ -97,27 +96,6 @@ int ps2_hle_selftest(const char *disc) {
         fail += invoke(hle_scePadRead, 0, 0, recv) != 0;
         ps2_log("AC4 libpad contract checked: closed port, slot rejection, active-low buttons, sticks, release, buffer bounds");
     }
-#else
-    {
-        ps2_ctx guest = {0};
-        ps2_w32(send + 580, 0);
-        ps2_w32(send + 616, 0);
-        ps2_pad_host[0].buttons = 8;
-        guest.r[4].ud[0] = send;
-        guest.r[29].ud[0] = 0x01ff0000;
-        ps2_dispatch(&guest, 0x0032ad00);
-        guest.r[4].ud[0] = send;
-        ps2_dispatch(&guest, 0x0032ad00);
-        int input_bad = ps2_r8(send + 920) != 0
-                     || !(ps2_r16(send + 916) & 8)
-                     || !(ps2_r16(send + 918) & 8);
-        fail += input_bad;
-        ps2_log("Game input consumer: %s (unsupported=%u held=%04x edge=%04x)",
-                input_bad ? "FAILED" : "passed", ps2_r8(send + 920),
-                ps2_r16(send + 916), ps2_r16(send + 918));
-        ps2_pad_host[0].buttons = 0;
-    }
-#endif
     fail += invoke(hle_scePad2DeleteSocket, 0, 0, 0) != 1;
     fail += invoke(hle_scePad2DeleteSocket, 0, 0, 0) != (u32)-1;
     ps2_w8(recv + 5, 0xa5);
@@ -127,7 +105,6 @@ int ps2_hle_selftest(const char *disc) {
     fail += ps2_r32(recv) != 0 || ps2_r8(recv + 5) != 0xa5;
     if (disc) {
         fail += ps2_vfs_open(disc) != 0;
-#ifdef PS2_GAME_AC4
         /* Check AC4's actual boot files; NUFILE/RADIOEE.PAC is AC5-specific. */
         const ps2_disc_file *boot = ps2_vfs_find("\\SYSTEM.CNF;1");
         const ps2_disc_file *elf = ps2_vfs_find("\\SLUS_201.52;1");
@@ -137,32 +114,6 @@ int ps2_hle_selftest(const char *disc) {
         fail += bytes <= 0 || strstr(cnf, "SLUS_201.52") == NULL;
         fail += !elf || ps2_vfs_read(elf, 0, 4, magic) != 4 || memcmp(magic, "\177ELF", 4);
         ps2_log("AC4 disc boot files checked (SYSTEM.CNF and SLUS_201.52)");
-#else
-        fail += ps2_rpc_call(0x80000593u, 3, 0, 0, recv, 4) != 0;
-        fail += ps2_r32(recv) != 0x14;
-        const char path[] = "cd:\\BIN\\RADIOEE.PAC";
-        ps2_w32(send + 0x18, sizeof(path));
-        ps2_put_mem(send + 0x1c, path, sizeof(path));
-        ps2_rpc_call(0x4e554649u, 1, send, 64, recv, 4);
-        u32 fd = ps2_r32(recv);
-        fail += fd == (u32)-1;
-        ps2_w32(send + 8, fd);
-        ps2_w32(send + 12, 100);
-        ps2_w32(send + 16, 0);
-        ps2_rpc_call(0x4e554649u, 5, send, 32, recv, 4);
-        fail += ps2_r32(recv) != 100;
-        ps2_w32(send + 12, (u32)-40);
-        ps2_w32(send + 16, 1);
-        ps2_rpc_call(0x4e554649u, 5, send, 32, recv, 4);
-        fail += ps2_r32(recv) != 60;
-        ps2_w32(send + 16, 2);
-        ps2_rpc_call(0x4e554649u, 5, send, 32, recv, 4);
-        const ps2_disc_file *f = ps2_vfs_find(path);
-        fail += !f || ps2_r32(recv) != f->size - 40;
-        ps2_w32(send + 16, 0);
-        ps2_rpc_call(0x4e554649u, 5, send, 32, recv, 4);
-        fail += ps2_r32(recv) != (u32)-1;
-#endif
     }
     ps2_log("HLE contract regressions: %s (%d failures)", fail ? "FAILED" : "passed", fail);
     return fail != 0;

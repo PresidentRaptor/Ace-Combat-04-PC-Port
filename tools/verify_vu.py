@@ -7,10 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ps2recomp.elf import ElfFile
-import paths
 
 VU_C = "runtime/src/ps2_vu.c"
-GAME = paths.GAME
 
 SWITCHES = {
     "upper.sub": ("vu_upper", "sub"),
@@ -91,6 +89,8 @@ def analyse(path, h):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("elf", nargs="?", default="SLUS_201.52",
+                    help="the game executable whose .vutext is decoded")
     ap.add_argument("--corpus", action="store_true",
                     help="also check the SDK samples' microcode")
     args = ap.parse_args()
@@ -100,7 +100,7 @@ def main():
         print("  %-14s %3d cases" % (k, len(v)))
     print()
 
-    sec = ElfFile(GAME).section(".vutext")
+    sec = ElfFile(args.elf).section(".vutext")
     print(".vutext at %08X, %d bytes (a VIF packet stream, not raw microcode)"
           % (sec.addr, len(sec.data)))
 

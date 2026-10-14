@@ -251,14 +251,12 @@ void ps2_gfxq_forbid(const char *why) { if (!q_forbidden) q_forbidden = why; }
 void ps2_gfxq_init(void) {
     const char *e = getenv("PS2_ASYNC_GFX");
     size_t mb;
-#ifdef PS2_GAME_AC4
     /* AC4's in-flight frames once came out as a few stray screen-sized
        triangles with the graphics machine on its own thread.  Re-tested after
        the VU pair-hazard fix: none in about 2,500 async flight fields, and
        the EE never touches VU1 memory directly (PS2_TRAP_VU1_EE).  The EE
        thread still holds full speed at 6x, so stay synchronous unless asked. */
     if (!e || !*e) e = "0";
-#endif
     if (e && *e == '0') {
         ps2_log("gfxq: PS2_ASYNC_GFX=0 -- the graphics machine runs on the EE "
                 "thread, as it did before.");
