@@ -7,7 +7,42 @@ def mmi(rs,rt,rd,selector,group):
     return 0x70000000|(rs<<21)|(rt<<16)|(rd<<11)|(selector<<6)|group
 
 
+def halves(lanes,bits):
+    raw=b''.join(value.to_bytes(bits//8,'little') for value in lanes)
+    return int.from_bytes(raw[:8],'little'),int.from_bytes(raw[8:],'little')
+
+
 class PackedCodegenTests(unittest.TestCase):
+    def test_wrapping_arithmetic_keeps_carries_inside_each_lane(self):
+        for bits,add,sub in ((8,8,9),(16,4,5),(32,0,1)):
+            mask=(1<<bits)-1; sign=1<<(bits-1); repeat=128//bits//4
+            a=halves([mask,0,sign,sign-1]*repeat,bits)
+            b=halves([1,1,sign,sign]*repeat,bits)
+            result=native({0:mmi(2,3,8,add,8),4:mmi(2,3,2,sub,8),8:13},
+                          registers={2:a[0],3:b[0]},upper={2:a[1],3:b[1]})
+            self.assertEqual((result['r'][8],result['upper'][8]),halves([0,1,0,mask]*repeat,bits))
+            self.assertEqual((result['r'][2],result['upper'][2]),halves([mask-1,mask,0,mask]*repeat,bits))
+
+    def test_comparisons_produce_full_lane_masks_and_use_signed_order(self):
+        for bits,equal,greater in ((8,10,10),(16,6,6),(32,2,2)):
+            mask=(1<<bits)-1; sign=1<<(bits-1); repeat=128//bits//4
+            a=halves([mask,0,sign,sign-1]*repeat,bits)
+            b=halves([0,0,sign-1,sign]*repeat,bits)
+            result=native({0:mmi(2,3,8,equal,40),4:mmi(2,3,9,greater,8),8:13},
+                          registers={2:a[0],3:b[0]},upper={2:a[1],3:b[1]})
+            self.assertEqual((result['r'][8],result['upper'][8]),halves([0,mask,0,0]*repeat,bits))
+            self.assertEqual((result['r'][9],result['upper'][9]),halves([0,0,0,mask]*repeat,bits))
+
+    def test_signed_minimum_maximum_include_negative_extremes(self):
+        for bits,selector in ((16,7),(32,3)):
+            mask=(1<<bits)-1; sign=1<<(bits-1); repeat=128//bits//4
+            a=halves([mask,0,sign,sign-1]*repeat,bits)
+            b=halves([0,0,sign-1,sign]*repeat,bits)
+            result=native({0:mmi(2,3,8,selector,40),4:mmi(2,3,9,selector,8),8:13},
+                          registers={2:a[0],3:b[0]},upper={2:a[1],3:b[1]})
+            self.assertEqual((result['r'][8],result['upper'][8]),halves([mask,0,sign,sign]*repeat,bits))
+            self.assertEqual((result['r'][9],result['upper'][9]),halves([0,0,sign-1,sign-1]*repeat,bits))
+
     def test_logical_operations_write_both_halves(self):
         operations=((18,9),(18,41),(19,9),(19,41))
         program={i*4:mmi(2,3,8+i,selector,group) for i,(selector,group) in enumerate(operations)}

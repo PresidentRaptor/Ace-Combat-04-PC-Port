@@ -54,9 +54,9 @@ or manual text is redistributed in this change):
 
 - Sony Computer Entertainment, **EE Core Instruction Set Manual**, version 6.0,
   April 2002. [Document mirror](https://github.com/ninjadynamics/PS2Docs/blob/3a6e97416b0e23c4e94288515adef521cf077682/EE_Core_Instruction_Set_Manual.pdf).
-  Chapter 2, pp. 24ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“134: scalar encoding pictures, operands and restrictions;
-  especially BEQ/BEQL pp. 30ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“31, link branches pp. 33ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“34 and 41ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“42,
-  J/JAL/JALR/JR pp. 65ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“68, SYNC p. 121 and explicit exceptions pp. 122ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“134.
+  Chapter 2, pp. 24ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ134: scalar encoding pictures, operands and restrictions;
+  especially BEQ/BEQL pp. 30ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ31, link branches pp. 33ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ34 and 41ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ42,
+  J/JAL/JALR/JR pp. 65ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ68, SYNC p. 121 and explicit exceptions pp. 122ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ134.
   Chapter 3, MULT/MULTU pp. 154/156: EE's optional destination GPR extension.
   Consulted encoding pictures for sign extension, shift widths, fixed-zero
   fields and trap code fields as well as the descriptive text. Where the
@@ -303,3 +303,41 @@ FETCH boundaries in guarded runs of the user's verified image. They do not
 establish complete function boundaries or global dispatch coverage. Runtime
 observations still reflect the provisional startup/scheduler model, not a
 physical-console trace. No game words, generated source or artifacts enter Git.
+
+
+## M2f / M3c / M4c inputs (2026-10-15)
+
+- Newly written page-based C emission, object-cache orchestration and bounded
+  rebuild/replay use only the independent decoder/translator and verified local
+  image observations. No inherited code generator, emulator, AC5 maps or build
+  runtime was used. Runtime instruction guards remain mandatory for game builds.
+- Sony EE Core Instruction Set Manual v6.0: packed arithmetic/comparison/min/max
+  individual descriptions (including PADDB p.160, PADDW p.174, PCEQB p.177,
+  PCGTB p.183, PMAXW p.224, PMINH p.235, PSUBB p.270, PSUBW p.284);
+  MFC0 p.318 and MTC0 p.328; COP1 control transfers pp.353-354, LWC1 p.358,
+  MFC1 p.364, MOV.S p.366, MTC1 p.371 and SWC1 p.379. Document/hash recorded
+  earlier. New code implements only the stated subsets; numerical FPU/VU,
+  other COP0 registers and full exception delivery remain explicit gaps.
+- PS2tek, EE COP0/DMAC/INTC/SIF/BIOS syscall descriptions, consulted directly:
+  https://psi-rockin.github.io/ps2tek/index.html . Newly written register masks,
+  W1C/XOR semantics, handler ledger and passive incoming SIF0 state. No actual
+  DMA data or interrupts are delivered. Configuration and unsupported-event
+  tests do not establish device timing or hardware-oracle compatibility.
+- PS2SDK's published SIF register identifiers/API declarations, not its kernel
+  implementation: https://ps2dev.github.io/ps2sdk/sifdma_8h_source.html and
+  https://ps2dev.github.io/ps2sdk/kernel_8h.html . These distinguish software
+  slots 0x80000000..2 from physical register IDs 1..4. No source/header/library
+  is imported. SetReg returning the prior value is a provisional model policy
+  requiring independent ABI validation; it is not proven by those declarations.
+
+The application profile explicitly sets COP1 usability in initial Status
+(0x20000000). This is a configured functional starting state, not a BIOS dump
+or console trace. Current IOP readiness flags remain zero because no IOP side
+exists. The observed AC4 polling loop tests SMFLAG bit 0x20000; this was checked
+from the user's supported image fields and native read metadata, independently
+of old maps. Diagnostic budget exhaustion is not a boot claim.
+
+reference-bootstrap.json contains hashes/counts/addresses/build metadata only.
+Its current page-source hash aggregates module digests; runtime-input hashes
+record snapshotted own source used for the build. No generated game source,
+object, executable, RAM, ISO or assets are committed or uploaded.

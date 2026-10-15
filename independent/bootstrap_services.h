@@ -15,6 +15,7 @@ typedef struct { uint32_t resume; uint64_t ra; } Ac4BootstrapCall;
 typedef struct {
     uint64_t gpr[32][2],hi[2],lo[2];
     uint32_t pc,depth,cp0_status;
+    uint32_t fpr[32],fcr31;
     Ac4BootstrapCall frames[16];
 } Ac4ThreadContext;
 typedef struct {
@@ -23,6 +24,10 @@ typedef struct {
     uint64_t order;
     Ac4ThreadContext context;
 } Ac4BootstrapThread;
+typedef struct {
+    uint32_t address,arg,flags,gp,next,cause;
+    unsigned active;
+} Ac4BootstrapInterrupt;
 typedef struct {
     uint32_t gp, stack_low, stack_high, stack_pointer, args, root;
     uint32_t heap_start, heap_end, calls, last_number;
@@ -35,13 +40,61 @@ typedef struct {
     Ac4BootstrapThread threads[256];
     unsigned current_thread,context_switches;
     uint64_t ready_order;
+    Ac4BootstrapInterrupt interrupt_handlers[2][64];
+    uint32_t interrupt_heads[2][16];
+    uint32_t sif_system[3];
 } Ac4Bootstrap;
+
+static inline int ac4_interrupt_service(Ac4Cpu *c,Ac4Bootstrap *b,uint32_t number) {
+    uint32_t cause=(uint32_t)c->gpr[4][0],argument=(uint32_t)c->gpr[5][0];
+    unsigned dma=(number==18 || number==19 || number==22 || number==23);
+    uint32_t valid=dma ? UINT32_C(0xe3ff) : UINT32_C(0x7fff);
+    uint64_t result=UINT64_MAX;
+    if (cause<16 && (valid&(UINT32_C(1)<<cause))) {
+        if (number<20) {
+            Ac4BootstrapInterrupt *handlers=b->interrupt_handlers[dma];
+            uint32_t *link=&b->interrupt_heads[dma][cause];
+            if (number==16 || number==18) {
+                uint32_t next=(uint32_t)c->gpr[6][0];
+                unsigned slot=0;
+                for (unsigned i=0;i<64;i++) if (!handlers[i].active) { slot=i+1; break; }
+                int valid_next=next==0 || next==UINT32_MAX ||
+                    (next<=64 && handlers[next-1].active && handlers[next-1].cause==cause);
+                if (slot && argument && !(argument&3) && valid_next) {
+                    unsigned visited=0;
+                    if (next) while (*link && *link!=next && visited++<64) link=&handlers[*link-1].next;
+                    if (visited>=64) return AC4_SERVICE_ARGUMENT;
+                    Ac4BootstrapInterrupt *handler=&handlers[slot-1];
+                    handler->active=1; handler->cause=cause; handler->address=argument;
+                    handler->arg=(uint32_t)c->gpr[7][0]; handler->flags=(uint32_t)c->gpr[8][0];
+                    handler->gp=(uint32_t)c->gpr[28][0]; handler->next=*link; *link=slot; result=slot;
+                }
+            } else if (argument && argument<=64 && handlers[argument-1].active && handlers[argument-1].cause==cause) {
+                unsigned visited=0;
+                while (*link && *link!=argument && visited++<64) link=&handlers[*link-1].next;
+                if (*link==argument) { *link=handlers[argument-1].next; handlers[argument-1].active=0; result=0; }
+            }
+        } else if (!(dma && cause==15)) {
+            uint32_t address=dma ? UINT32_C(0x1000e010) : UINT32_C(0x1000f010);
+            unsigned shift=cause+(dma ? 16 : 0);
+            uint64_t low,high;
+            if (!ac4_load(c,address,4,&low,&high)) return c->memory_error;
+            unsigned old=(unsigned)((low>>shift)&1),enabled=number==20 || number==22;
+            result=old!=enabled;
+            if (old!=enabled && !ac4_store(c,address,4,UINT64_C(1)<<shift,0)) return c->memory_error;
+        }
+    }
+    c->gpr[2][0]=result; c->pc+=4; b->calls++;
+    return 0;
+}
 
 static inline void ac4_thread_save(Ac4Cpu *c,Ac4Bootstrap *b,Ac4BootstrapThread *t) {
     for (unsigned r=0;r<32;r++) for (unsigned h=0;h<2;h++) t->context.gpr[r][h]=c->gpr[r][h];
     for (unsigned h=0;h<2;h++) { t->context.hi[h]=c->hi[h]; t->context.lo[h]=c->lo[h]; }
     t->context.pc=c->pc; t->context.depth=b->call_depth;
     t->context.cp0_status=c->cp0_status;
+    for (unsigned r=0;r<32;r++) t->context.fpr[r]=c->fpr[r];
+    t->context.fcr31=c->fcr31;
     for (unsigned i=0;i<b->call_depth;i++) t->context.frames[i]=b->guest_calls[i];
 }
 static inline void ac4_thread_restore(Ac4Cpu *c,Ac4Bootstrap *b,Ac4BootstrapThread *t) {
@@ -49,6 +102,8 @@ static inline void ac4_thread_restore(Ac4Cpu *c,Ac4Bootstrap *b,Ac4BootstrapThre
     for (unsigned h=0;h<2;h++) { c->hi[h]=t->context.hi[h]; c->lo[h]=t->context.lo[h]; }
     c->pc=t->context.pc; c->pending=0; c->fault_delay=0;
     c->cp0_status=t->context.cp0_status;
+    for (unsigned r=0;r<32;r++) c->fpr[r]=t->context.fpr[r];
+    c->fcr31=t->context.fcr31;
     b->call_depth=t->context.depth;
     for (unsigned i=0;i<b->call_depth;i++) b->guest_calls[i]=t->context.frames[i];
 }
@@ -108,6 +163,8 @@ static inline int ac4_thread_service(Ac4Cpu *c,Ac4Bootstrap *b,uint32_t number) 
             t->context.gpr[29][0]=(uint64_t)t->stack+t->size;
             t->context.gpr[31][0]=b->root; t->context.pc=t->entry; t->context.depth=0;
             t->context.cp0_status=c->cp0_status;
+            for (unsigned r=0;r<32;r++) t->context.fpr[r]=0;
+            t->context.fcr31=0;
             t->wakeups=0; t->wait_kind=0; t->wait_id=0;
             t->state=2; t->order=++b->ready_order; schedule=1;
         }
@@ -203,6 +260,7 @@ static inline int ac4_bootstrap_service(Ac4Cpu *c, Ac4Bootstrap *b) {
     if ((number>=32 && number<=36) || number==41 || number==43 || number==47 ||
         (number>=50 && number<=52) || (number>=65 && number<=70))
         return ac4_thread_service(c,b,number);
+    if (number>=16 && number<=23) return ac4_interrupt_service(c,b,number);
     if (number==60) {
         if (b->thread_ready) return AC4_SERVICE_ORDER;
         if (c->memory_base || !c->memory || !a2 || a2>c->memory_size || (a2&15))
@@ -243,6 +301,26 @@ static inline int ac4_bootstrap_service(Ac4Cpu *c, Ac4Bootstrap *b) {
             }
         }
         c->gpr[2][0]=result;
+    } else if (number==121 || number==122) {
+        uint32_t old;
+        if (a0>=UINT32_C(0x80000000) && a0<=UINT32_C(0x80000002)) {
+            unsigned index=a0-UINT32_C(0x80000000);
+            old=b->sif_system[index];
+            if (number==121) b->sif_system[index]=a1;
+        } else if (a0>=1 && a0<=4) {
+            uint32_t address=UINT32_C(0x1000f200)+(a0-1)*16;
+            uint64_t low,high;
+            if (!ac4_load(c,address,4,&low,&high)) return c->memory_error;
+            old=(uint32_t)low;
+            if (number==121 && !ac4_store(c,address,4,a1,0)) return c->memory_error;
+        } else return AC4_SERVICE_ARGUMENT;
+        /* Set returns the prior value in this experimental ABI profile. */
+        c->gpr[2][0]=ac4_sext(old,32);
+    } else if (number==120) {
+        /* Arm SIF0 destination-chain reception; the device stays busy until
+         * incoming IOP data actually exists. No synthetic completion/IRQ. */
+        if (!ac4_store(c,UINT32_C(0x1000c020),4,0,0) ||
+            !ac4_store(c,UINT32_C(0x1000c000),4,UINT64_C(0x184),0)) return c->memory_error;
     } else if (number==100) {
         /* This functional harness has coherent data and no hardware caches.
          * Changed compiled instruction bytes are checked at each fetch and stop.

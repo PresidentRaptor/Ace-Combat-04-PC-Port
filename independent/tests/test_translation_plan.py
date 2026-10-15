@@ -5,11 +5,34 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from r5900_codegen import bounded_plan,emit_program,TranslationError
-from build_bootstrap import output_path,copied_code_words
+from build_bootstrap import output_path,copied_code_words,extend_fetch_plan
 from test_ac4_image import fixture
 
 
 class PlanTests(unittest.TestCase):
+    def test_fetch_discovery_preserves_previous_selection_and_bounds_growth(self):
+        initial={0:13}
+        available={0:13,16:0,20:0,24:13}
+        extended,report=extend_fetch_plan(available,initial,dict(status=3,pc=16,steps=7),limit=2)
+        self.assertEqual(initial,{0:13})
+        self.assertEqual(extended,{0:13,16:0,20:0})
+        self.assertEqual(report['fetch_pc'],'0x00000010')
+        self.assertEqual(report['added_addresses'],2)
+        self.assertIsNone(extend_fetch_plan(available,extended,dict(status=3,pc=16)))
+
+    def test_fetch_discovery_rejects_unknown_modified_and_nonfetch_boundaries(self):
+        for observation in (dict(status=3,pc=32),dict(status=12,pc=16),dict(status=10,pc=16),
+                            dict(status=3,pc='16'),dict(status=3,pc=True)):
+            with self.subTest(observation=observation):
+                self.assertIsNone(extend_fetch_plan({0:13,16:0},{0:13},observation))
+        self.assertIsNone(extend_fetch_plan({0:13,16:1},{0:13},dict(status=3,pc=16)))
+
+    def test_discovered_unsupported_opcode_remains_explicit_stop(self):
+        extended,report=extend_fetch_plan({0:13,16:0x40024800},{0:13},dict(status=3,pc=16))
+        self.assertEqual(extended[16],0x40024800)
+        self.assertIn('return AC4_UNSUPPORTED;',emit_program(extended,0,stop_unsupported=True))
+        self.assertTrue(report['plan']['boundaries'])
+
     def test_copied_code_uses_file_backing_at_relocated_pc(self):
         words,metadata=copied_code_words(bytes(fixture()),[(0x1000,0x80076000,4)])
         self.assertEqual(words,{0x80076000:0x04030201})
@@ -43,7 +66,7 @@ class PlanTests(unittest.TestCase):
         self.assertNotIn(16,selected)
 
     def test_explicit_unsupported_mode_stops_instead_of_nop(self):
-        words={0:0x40026000}
+        words={0:0x40024800}
         with self.assertRaises(TranslationError):
             emit_program(words,0)
         self.assertIn('return AC4_UNSUPPORTED;',emit_program(words,0,stop_unsupported=True))

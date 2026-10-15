@@ -304,8 +304,37 @@ selection-limit effects and remaining boundary are in MILESTONES.md; older
 commands/results above describe earlier stages.
 
 Current native CPU context covers implemented GPR/HI/LO/partial Status state and
-guest syscall frames. FPU/vector context, IRQ-driven scheduling, full CP0 and
+guest syscall frames. Numerical FPU/vector execution, IRQ-driven scheduling, full CP0 and
 suspend/terminate APIs are not implemented. No-ready-thread waits stop with
 IDLE rather than inventing external events. Scheduler return/stack policies
 still need an independent trace. Diagnostic packages now use O0 compilation;
 the native synthetic suite continues to check optimized generated C.
+
+
+## Guarded initialization replay and current IOP boundary
+
+The builder now emits stable per-4-KiB C units and reuses unchanged native objects
+within a build. Add `--discover-fetches 32 --discovery-limit 512 --jobs 4` to opt
+into bounded rebuild/replay of observed missing fetch addresses. Previously
+selected code is retained. Every replay starts from initial RAM, and every
+instruction still checks its translated bytes. Unsupported instructions,
+modified code and unverified addresses are not turned into NOPs or accepted
+by the discovery pass. This does not prove every possible dispatch target.
+
+`--limit` bounds the initial plan; each discovery round can add up to
+`--discovery-limit` more addresses. The manifest records all additions and the
+initial plan separately. Schema 3 records the paged backend, input hashes,
+per-round compilation/reuse counts and timings. Source digests aggregate the
+sorted generated-module digest map, rather than hashing a single C file.
+
+Current local validation passes 199 tests, 19 static disc checks and both CTest
+checks. AC4 reaches SIF initialization, arms incoming reception, then waits for
+the IOP command-ready flag. The 5,000,000-instruction budget stops the polling
+loop; it is not a successful boot or gameplay result. No artificial IOP ready
+bit, DMA completion or server reply is generated. See the latest MILESTONES.md
+section for the exact reproducible command, observed reads and remaining work.
+
+The CPU runner's initial Status=0x20000000 is an explicit functional startup
+profile with COP1 usable, not a measured BIOS state. Raw FPU transfers/branches
+and context are supported; numerical FPU/VU operations and full exception/IRQ
+semantics remain incomplete. Existing derived code and its notices are preserved.

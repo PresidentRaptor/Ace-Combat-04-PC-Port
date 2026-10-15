@@ -14,7 +14,8 @@ import tempfile
 
 from ac4_image import read_layout, inspect
 from r5900_analysis import executable_words,stream_words
-from r5900_codegen import bounded_plan, emit_program
+from r5900_codegen import bounded_plan, emit_modules
+from native_build import compile_pages
 
 HERE = Path(__file__).resolve().parent
 
@@ -53,7 +54,28 @@ def copied_code_words(data, regions):
     return words,metadata
 
 
-def build(data, output, cc, *, limit=1024, extra_entries=(), copied_regions=()):
+def extend_fetch_plan(words,selected,observation,*,limit=256):
+    """Add a guarded, verified-image FETCH boundary without evicting prior code.
+
+    This is observation-driven static recompilation, not runtime interpretation
+    or proof of all possible indirect targets. Unknown/modified code stays out.
+    """
+    pc=observation.get('pc')
+    if observation.get('status')!=3 or type(pc) is not int or pc in selected or pc not in words:
+        return None
+    addition,report=bounded_plan(words,[pc],limit=limit,resume_syscalls=True)
+    new={address:word for address,word in addition.items() if address not in selected}
+    if not new:
+        return None
+    return selected|new,dict(fetch_pc=f'0x{pc:08x}',
+                                      attempted_instructions=observation.get('steps'),
+                                      added_addresses=len(new),plan=report)
+
+
+def build(data, output, cc, *, limit=1024, extra_entries=(), copied_regions=(),
+          discover_fetches=0, discovery_limit=256, progress=None,jobs=4):
+    if not 0<=discover_fetches<=64 or not 1<=discovery_limit<=4096:
+        raise ValueError('discovery requires 0..64 rounds and 1..4096 addresses per round')
     output = output_path(output)
     image = inspect(data)  # Supported identity is mandatory before any output.
     words, entry, _ = executable_words(data)
@@ -65,10 +87,12 @@ def build(data, output, cc, *, limit=1024, extra_entries=(), copied_regions=()):
     if any(pc not in words for pc in seeds):
         raise ValueError('entry seed outside verified CPU image ranges')
     selected, selection = bounded_plan(words,seeds,limit=limit,resume_syscalls=True)
+    selection['initial_selected_addresses']=len(selected)
+    selection['initial_pending_addresses']=selection.pop('pending_addresses')
+    selection['initial_selection_limit']=selection.pop('selection_limit')
+    selection['boundaries_scope']='initial plan; additional boundaries are in observed_fetch_discovery plans'
     selection['entry_seeds']=[f'0x{pc:08x}' for pc in seeds]
     selection['observed_code_copies']=copies
-    program = emit_program(selected,entry,stop_unsupported=True)
-    program += f'\n#define AC4_PROGRAM_ENTRY UINT32_C(0x{entry:08x})\n'
     _, segments = read_layout(data)
     ram = bytearray(32*1024*1024)
     for s in segments:
@@ -79,33 +103,46 @@ def build(data, output, cc, *, limit=1024, extra_entries=(), copied_regions=()):
     environment['PATH'] = str(Path(cc).resolve().parent)+os.pathsep+environment.get('PATH','')
     with tempfile.TemporaryDirectory(prefix='ac4-bootstrap-build-') as folder:
         root = Path(folder)
-        generated = root/'generated_program.inc'
-        generated.write_text(program,encoding='utf-8')
+        runtime_inputs={name:(HERE/name).read_bytes() for name in
+                        ('bootstrap_main.c','bootstrap_services.h','ee_devices.h')}
+        for name,raw in runtime_inputs.items():
+            (root/name).write_bytes(raw)
         ram_file = root/'ram.bin'
         ram_file.write_bytes(ram)
-        executable = root/('ac4-independent-bootstrap.exe' if os.name=='nt' else 'ac4-independent-bootstrap')
-        # Large diagnostic dispatch maps prioritize bounded compilation latency;
-        # optimized code generation is still exercised by the native unit suite.
-        command=[cc,'-std=c11','-O0','-Wall','-Wextra','-Werror','-I',str(root),'-I',str(HERE),
-                 str(HERE/'bootstrap_main.c'),'-o',str(executable)]
-        if os.name=='nt':
-            command.append('-Wl,--no-insert-timestamp')
-        compile_result = subprocess.run(command,
-            capture_output=True,text=True,env=environment,timeout=120)
-        if compile_result.returncode:
-            raise ValueError(f'native build failed: {compile_result.stderr}')
-        execution = subprocess.run([str(executable),str(ram_file)],capture_output=True,
-                                   text=True,env=environment,timeout=30)
-        if execution.returncode not in (0,2):
-            raise ValueError(f'diagnostic process failed: {execution.stderr}')
-        observation = json.loads(execution.stdout)
-        if observation.get('scope')!='experimental-bootstrap-diagnostic':
-            raise ValueError('invalid diagnostic response')
+        discovery=[]; native_builds=[]; cache={}
+        for iteration in range(discover_fetches+1):
+            modules=emit_modules(selected,entry,stop_unsupported=True)
+            modules['generated_program.inc']='#include "ac4_cpu.h"\n'+f'#define AC4_PROGRAM_ENTRY UINT32_C(0x{entry:08x})\n'
+            executable,native_report=compile_pages(modules,root,cc,environment,cache,jobs=jobs)
+            native_builds.append(native_report)
+            execution = subprocess.run([str(executable),str(ram_file)],capture_output=True,
+                                       text=True,env=environment,timeout=30)
+            if execution.returncode not in (0,2):
+                raise ValueError(f'diagnostic process failed: {execution.stderr}')
+            observation = json.loads(execution.stdout)
+            if observation.get('scope')!='experimental-bootstrap-diagnostic':
+                raise ValueError('invalid diagnostic response')
+            if progress:
+                progress(dict(iteration=iteration,selected_addresses=len(selected),observation=observation,
+                              native_build=native_report))
+            if iteration==discover_fetches:
+                break
+            extension=extend_fetch_plan(words,selected,observation,limit=discovery_limit)
+            if extension is None:
+                break
+            selected,report=extension
+            discovery.append(report)
+        selection['selected_addresses']=len(selected)
+        selection['observed_fetch_discovery']=discovery
         version = subprocess.run([cc,'--version'],capture_output=True,text=True,
                                  env=environment,check=True,timeout=10).stdout.splitlines()[0]
-        manifest = dict(schema=1,scope='experimental bootstrap diagnostic; NOT PLAYABLE',optimization='O0',
+        module_hashes={name:hashlib.sha256(raw.encode()).hexdigest() for name,raw in modules.items()}
+        source_hash=hashlib.sha256(json.dumps(module_hashes,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        manifest = dict(schema=3,scope='experimental bootstrap diagnostic; NOT PLAYABLE',optimization='O0',
+                        backend='paged-static-c11',native_builds=native_builds,
                         image_sha256=image['sha256'],compiler=version,
-                        generated_source_sha256=hashlib.sha256(program.encode()).hexdigest(),
+                        generated_source_sha256=source_hash,
+                        runtime_inputs_sha256={name:hashlib.sha256(raw).hexdigest() for name,raw in runtime_inputs.items()},
                         ram_sha256=hashlib.sha256(ram).hexdigest(),
                         executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
                         selection=selection,observation=observation,
@@ -140,6 +177,11 @@ def main():
                         help='additional independently verified CPU entry (repeatable)')
     parser.add_argument('--copied-code',action='append',default=[],metavar='SOURCE:DESTINATION:SIZE',
                         help='explicitly observed runtime code copy; repeat for additional regions')
+    parser.add_argument('--discover-fetches',type=int,default=0,
+                        help='bounded rebuild/replay rounds for verified missing fetch addresses (0..64)')
+    parser.add_argument('--discovery-limit',type=int,default=256,
+                        help='maximum addresses selected per discovery round (1..4096)')
+    parser.add_argument('--jobs',type=int,default=4,help='parallel native compilation jobs (1..8)')
     args = parser.parse_args()
     try:
         output_path(args.output)
@@ -158,7 +200,15 @@ def main():
             if len(fields)!=3:
                 raise ValueError('copied-code requires SOURCE:DESTINATION:SIZE')
             regions.append(tuple(int(field,0) for field in fields))
-        result=build(data,args.output,cc,limit=args.limit,extra_entries=args.entry,copied_regions=regions)
+        import sys
+        def progress(report):
+            observed=report['observation']
+            print(f"Replay {report['iteration']}: {report['selected_addresses']} selected; "
+                  f"status {observed['status']} at {observed['pc']:#010x}; "
+                  f"{observed['steps']} attempted instructions; "
+                  f"{report['native_build']['compiled']} units compiled, {report['native_build']['reused']} reused",file=sys.stderr,flush=True)
+        result=build(data,args.output,cc,limit=args.limit,extra_entries=args.entry,copied_regions=regions,
+                     discover_fetches=args.discover_fetches,discovery_limit=args.discovery_limit,progress=progress,jobs=args.jobs)
     except (OSError,ValueError,subprocess.SubprocessError) as error:
         parser.exit(1,f'{error}\n')
     print(json.dumps(result,indent=2))

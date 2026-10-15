@@ -19,7 +19,8 @@ RUNTIME = r'''
 #include <stddef.h>
 enum { AC4_BREAK=1, AC4_SYSCALL=2, AC4_FETCH=3, AC4_ALIGNMENT=4,
        AC4_BOUNDS=5, AC4_UNDEFINED_SLOT=6, AC4_OVERFLOW=7, AC4_BUDGET=8,
-       AC4_UNDEFINED_INPUT=9, AC4_UNSUPPORTED=10, AC4_DEVICE=11, AC4_MODIFIED=12 };
+       AC4_UNDEFINED_INPUT=9, AC4_UNSUPPORTED=10, AC4_DEVICE=11, AC4_MODIFIED=12,
+       AC4_PRIVILEGE=13 };
 typedef struct {
     uint64_t gpr[32][2], hi[2], lo[2], steps;
     uint32_t pc, pending_target, branch_pc, fault_pc, fault_address, code;
@@ -30,6 +31,7 @@ typedef struct {
     unsigned ee_memory_map;
     unsigned verify_instruction_bytes;
     uint32_t cp0_status;
+    uint32_t fpr[32],fcr31;
     unsigned char scratchpad[16384];
     void *device_state;
     int (*device_read)(void *,uint32_t,unsigned,uint64_t *,uint64_t *);
@@ -51,6 +53,21 @@ static inline int ac4_less(uint64_t left, uint64_t right) {
 static inline int64_t ac4_signed_word(uint64_t value) {
     return (int64_t)(value & UINT64_C(0xffffffff)) -
            ((value & UINT64_C(0x80000000)) ? INT64_C(0x100000000) : 0);
+}
+static inline uint64_t ac4_packed(uint64_t left,uint64_t right,unsigned bits,unsigned operation) {
+    uint64_t mask=(UINT64_C(1)<<bits)-1,sign=UINT64_C(1)<<(bits-1),result=0;
+    for (unsigned shift=0;shift<64;shift+=bits) {
+        uint64_t a=(left>>shift)&mask,b=(right>>shift)&mask,value;
+        int greater=(a^sign)>(b^sign);
+        if (operation==0) value=(a+b)&mask;
+        else if (operation==1) value=(a-b)&mask;
+        else if (operation==2) value=a==b ? mask : 0;
+        else if (operation==3) value=greater ? mask : 0;
+        else if (operation==4) value=greater ? b : a;
+        else value=greater ? a : b;
+        result|=value<<shift;
+    }
+    return result;
 }
 static inline uint32_t ac4_physical(uint32_t address) {
     if (address>=UINT32_C(0x80000000) && address<UINT32_C(0xc0000000))
@@ -183,6 +200,9 @@ def translate(ins):
                 condition = f'({rs}==0 || ({rs}>>63)!=0)'
             elif name in ('bgtz', 'bgtzl'):
                 condition = f'({rs}!=0 && ({rs}>>63)==0)'
+            elif name in ('bc1f','bc1fl','bc1t','bc1tl'):
+                lines.append('if (!(c->cp0_status&UINT32_C(0x20000000))) return AC4_PRIVILEGE;')
+                condition='(c->fcr31&UINT32_C(0x800000))'+('!=0' if name.startswith('bc1t') else '==0')
             if condition is None:
                 raise TranslationError(f'{pc:#x}: unsupported branch {name}')
             lines.append(f'int taken=({condition});')
@@ -274,6 +294,25 @@ def translate(ins):
         else:
             expression = f'({rt}<<{shift})'
         lines.append(write(o['rd'], expression if wide else f'ac4_sext({expression},32)'))
+    elif name in ('mfc1','mtc1','mov.s','lwc1','swc1','ctc1') or (name=='cfc1' and o['fcr']==31):
+        lines.append('if (!(c->cp0_status&UINT32_C(0x20000000))) return AC4_PRIVILEGE;')
+        if name=='mfc1':
+            lines.append(write(o['rt'],f'ac4_sext(c->fpr[{o["fs"]}],32)'))
+        elif name=='mtc1':
+            lines.append(f'c->fpr[{o["fs"]}]=(uint32_t){rt};')
+        elif name=='mov.s':
+            lines.append(f'c->fpr[{o["fd"]}]=c->fpr[{o["fs"]}];')
+        elif name=='ctc1':
+            lines.append(f'c->fcr31=(uint32_t){rt};')
+        elif name=='cfc1':
+            lines.append(write(o['rt'],'ac4_sext(c->fcr31,32)'))
+        else:
+            lines.append(f'uint32_t address=(uint32_t)({register(o["base"])}+{u64(o["offset"])});')
+            if name=='lwc1':
+                lines.extend(['uint64_t low,high; if (!ac4_load(c,address,4,&low,&high)) return c->memory_error;',
+                              f'c->fpr[{o["ft"]}]=(uint32_t)low;'])
+            else:
+                lines.append(f'if (!ac4_store(c,address,4,c->fpr[{o["ft"]}],0)) return c->memory_error;')
     elif name in ('lwl', 'lwr', 'ldl', 'ldr', 'swl', 'swr', 'sdl', 'sdr'):
         width = 4 if name[1] == 'w' else 8
         store = name.startswith('s')
@@ -296,6 +335,15 @@ def translate(ins):
                 lines.append(f'c->gpr[{o["rt"]}][1]=high;')
         else:
             lines.append(f'if (!ac4_store(c,address,{width},{rt},c->gpr[{o["rt"]}][1])) return c->memory_error;')
+    elif name in ('paddb','paddh','paddw','psubb','psubh','psubw',
+                   'pceqb','pceqh','pceqw','pcgtb','pcgth','pcgtw',
+                   'pminh','pminw','pmaxh','pmaxw'):
+        if o['rd']:
+            bits={'b':8,'h':16,'w':32}[name[-1]]
+            operation={'padd':0,'psub':1,'pceq':2,'pcgt':3,'pmin':4,'pmax':5}[name[:-1]]
+            lines.extend([f'uint64_t low=ac4_packed({rs},{rt},{bits},{operation});',
+                          f'uint64_t high=ac4_packed(c->gpr[{o["rs"]}][1],c->gpr[{o["rt"]}][1],{bits},{operation});',
+                          write(o['rd'],'low'),f'c->gpr[{o["rd"]}][1]=high;'])
     elif name in ('pand','por','pxor','pnor','pcpyld','pcpyud','pcpyh'):
         if o['rd']:
             rs_high=f'c->gpr[{o.get("rs",0)}][1]'
@@ -314,6 +362,12 @@ def translate(ins):
                 high=f'{invert}({rs_high}{operator}{rt_high})'
             lines.extend([f'uint64_t low={low},high={high};',
                           write(o['rd'],'low'),f'c->gpr[{o["rd"]}][1]=high;'])
+    elif name in ('mfc0','mtc0') and o['cop0']==12:
+        lines.append('if (!(c->cp0_status&UINT32_C(0x10000006)) && (c->cp0_status&UINT32_C(0x18))) return AC4_PRIVILEGE;')
+        if name=='mfc0':
+            lines.append(write(o['rt'],'ac4_sext(c->cp0_status,32)'))
+        else:
+            lines.append(f'c->cp0_status=(uint32_t){rt};')
     elif name in ('ei','di'):
         lines.append('if ((c->cp0_status&UINT32_C(0x20006)) || !(c->cp0_status&UINT32_C(0x18))) {')
         lines.append('c->cp0_status '+('|=UINT32_C(0x10000);' if name=='ei' else '&=~UINT32_C(0x10000);'))
@@ -328,27 +382,64 @@ def translate(ins):
     return '\n'.join(lines)
 
 
+def emit_case(word,pc,*,stop_unsupported=False):
+    try:
+        ins=decode(word,pc)
+    except DecodeError as error:
+        raise TranslationError(str(error)) from None
+    try:
+        body=translate(ins)
+    except TranslationError:
+        if not stop_unsupported:
+            raise
+        body='return AC4_UNSUPPORTED;'
+    body=(f'if (c->verify_instruction_bytes) {{ uint64_t low,high; '
+          f'if (!ac4_load(c,pc,4,&low,&high)) return c->memory_error; '
+          f'if (low!=UINT32_C(0x{word:08x})) return AC4_MODIFIED; }}\n')+body
+    return f'case UINT32_C(0x{pc:08x}): {{\n{body}\n}}\n'
+
+
 def emit_program(words, entry, *, stop_unsupported=False):
     if entry not in words:
         raise TranslationError('entry outside supplied instruction map')
-    parts = [RUNTIME]
-    try:
-        for pc in sorted(words):
-            ins = decode(words[pc], pc)
-            try:
-                body = translate(ins)
-            except TranslationError:
-                if not stop_unsupported:
-                    raise
-                body = 'return AC4_UNSUPPORTED;'
-            body = (f'if (c->verify_instruction_bytes) {{ uint64_t low,high; '
-                    f'if (!ac4_load(c,pc,4,&low,&high)) return c->memory_error; '
-                    f'if (low!=UINT32_C(0x{words[pc]:08x})) return AC4_MODIFIED; }}\n') + body
-            parts.append(f'case UINT32_C(0x{pc:08x}): {{\n{body}\n}}\n')
-    except DecodeError as error:
-        raise TranslationError(str(error)) from None
+    parts=[RUNTIME]
+    for pc in sorted(words):
+        parts.append(emit_case(words[pc],pc,stop_unsupported=stop_unsupported))
     parts.append('default: c->fault_address=pc; return AC4_FETCH;\n}\n}\nreturn AC4_BUDGET;\n}\n')
     return ''.join(parts)
+
+
+def emit_modules(words,entry,*,stop_unsupported=False):
+    """Same CPU semantics in stable per-4-KiB translation units for native builds.
+
+    Page dispatch is over generated guest addresses, not guest opcodes. The
+    single-file backend remains available for small fixtures and differential QA.
+    """
+    if entry not in words:
+        raise TranslationError('entry outside supplied instruction map')
+    header,loop=RUNTIME.split('int ac4_run(Ac4Cpu *c, uint64_t budget) {',1)
+    files={'ac4_cpu.h':'#ifndef AC4_GENERATED_CPU_H\n#define AC4_GENERATED_CPU_H\n'+header+
+           '\nint ac4_run(Ac4Cpu *,uint64_t);\nint ac4_dispatch(Ac4Cpu *,uint32_t,unsigned,uint32_t);\n#endif\n'}
+    loop=loop.removesuffix('        switch (pc) {\n')
+    files['ac4_runtime.c']='#include "ac4_cpu.h"\nint ac4_run(Ac4Cpu *c,uint64_t budget) {'+loop+\
+        '        int status=ac4_dispatch(c,pc,delay,resume);\n        if (status) return status;\n}\nreturn AC4_BUDGET;\n}\n'
+    pages={}
+    for pc in sorted(words):
+        pages.setdefault(pc>>12,[]).append(emit_case(words[pc],pc,stop_unsupported=stop_unsupported))
+    dispatch=['#include "ac4_cpu.h"\n']
+    for page,cases in sorted(pages.items()):
+        name=f'ac4_page_{page:05x}'
+        signature=f'int {name}(Ac4Cpu *c,uint32_t pc,unsigned delay,uint32_t resume)'
+        dispatch.append(signature+';\n')
+        files[name+'.c']='#include "ac4_cpu.h"\n'+signature+\
+            ' {\n(void)delay; (void)resume;\nswitch (pc) {\n'+''.join(cases)+\
+            'default: c->fault_address=pc; return AC4_FETCH;\n}\nreturn 0;\n}\n'
+    dispatch.append('int ac4_dispatch(Ac4Cpu *c,uint32_t pc,unsigned delay,uint32_t resume) {\nswitch (pc>>12) {\n')
+    for page in sorted(pages):
+        dispatch.append(f'case UINT32_C(0x{page:05x}): return ac4_page_{page:05x}(c,pc,delay,resume);\n')
+    dispatch.append('default: c->fault_address=pc; return AC4_FETCH;\n}\n}\n')
+    files['ac4_dispatch.c']=''.join(dispatch)
+    return files
 
 
 def bounded_plan(words, entries, *, limit=1024, resume_syscalls=False):

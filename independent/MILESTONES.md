@@ -449,3 +449,90 @@ No performance or new cross-build reproducibility result is inferred.
 COP0/FPU/vector execution and remaining kernel/device services; independently
 validate scheduler and startup ABI policies. M2/M3/M4 remain In progress. The
 local diagnostic is still not a playable build, and later milestones stay open.
+
+
+## M2f / M3c / M4c guarded replay and SIF initialization (2026-10-15)
+
+Implemented bounded observation-driven static rebuild/replay. A FETCH stop can
+add code only from the verified CPU image or explicitly declared code-copy
+ranges. Existing translated addresses are retained, modified instruction bytes
+are not accepted, and unsupported operations remain diagnostic stops. Each
+replay restarts from the original RAM/process state; it does not continue a
+half-executed service or interpret unknown opcodes. These observed destinations
+are model-dependent evidence, not a complete indirect dispatch proof.
+
+Added a deterministic per-4-KiB C translation-unit backend with the same CPU
+instruction emission as the single-file backend. Stable pages retain native
+objects across discovery rounds; changes to shared headers invalidate them.
+Compilation uses bounded parallel jobs and a linker response file for Windows
+command-length limits. Runtime inputs are snapshotted before compilation.
+Tests cover cross-page targets/slots/fault context, likely annulment, budgets,
+128-bit state, stable generation and changed-page/header cache invalidation.
+This is a static translator, not a runtime opcode interpreter.
+
+CPU extensions from primary hardware descriptions:
+
+- Packed byte/halfword/word wrapping add/subtract, equality and signed-greater
+  comparisons, plus signed halfword/word min/max. Tests cover carry isolation,
+  negative extrema, complete lane masks, both GPR halves and source aliases.
+- MFC0/MTC0 for Status only, including sign extension and access gating.
+  Other COP0 registers and full privilege/exception delivery remain unsupported.
+- Raw COP1 register/control/memory transfers, MOV.S and BC1 branches/likely
+  forms. CU1-disabled accesses stop diagnostically, even for a zero GPR
+  destination. FPR/FCR31 state is preserved across thread switches. FCR0 and
+  numerical floating-point operations still stop; host IEEE arithmetic is not
+  substituted for the EE numerical model.
+
+The application runner now explicitly starts with Status **0x20000000** (CU1
+usable, kernel-mode functional profile). This is an experimental configured
+state, **not a captured BIOS handoff value**. The observed profile is included
+in the manifest and still requires independent validation.
+
+Added inactive DMA/INTC configuration with documented masks, interrupt status
+acknowledgement and mask toggles; bounded interrupt handler registration/removal
+and enable/disable services; SifSetDChain and SIF register services. SIF0 can be
+armed in destination-chain mode and remains busy waiting for incoming data.
+No payload, completion or interrupt is fabricated. Outgoing DMA, active timers
+and pending IRQ delivery still stop. EE writes set its own mailbox flags and
+clear IOP-owned flags; they cannot create IOP readiness. Software SIF slots are
+separate from physical registers. Some kernel return policies, including the
+SetReg prior-value return, remain provisional rather than BIOS-oracle results.
+
+Validation: **199 tests pass** with a required native compiler; **19 static disc
+checks pass**, the original native first-syscall check passes, and **2/2 CTest
+pass**. Both C backends are exercised on synthetic inputs; generated code is
+compiled with warnings treated as errors. No remote CI result is inferred.
+
+Exact local build (fresh destination required):
+
+```
+python -B independent/build_bootstrap.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --output ../dev/ac4-bootstrap-io-wait-verified --cc C:/msys64/ucrt64/bin/gcc.exe --limit 16384 --entry 0x264a88 --entry 0x1001a4 --entry 0x27c680 --copied-code 0x3fabd8:0x80076000:1856 --discover-fetches 32 --discovery-limit 512 --jobs 4
+```
+
+The run performs **10 discovery extensions**, retaining **18,520 translated
+addresses** in the final map. The initial 60-unit compilation took 3.345 seconds;
+the final replay compiled two units, reused 82, and took 0.431 seconds plus
+0.166 seconds linking on this local toolchain. These are build measurements,
+not game performance or cross-host reproducibility evidence.
+
+AC4 now reaches its SIF command-initialization wait. At 0x0026baa8..0x0026bab8,
+the guest calls GetReg(4), tests **0x20000** in SMFLAG and loops while clear.
+The last observed physical read is **0x1000f230 = 0**; SIF0 remains armed.
+The bounded run stops with **BUDGET (8)** at **0x002644bc** after **5,000,000
+attempted instructions** and two context switches. Its 517,726 completed modeled
+service calls are largely repeated readiness polling, **not additional boot or
+execution coverage**. No IOP command server, packet reply or ready bit exists
+in the current implementation. No menu, renderer or mission has been reached.
+
+Manifest schema 3 records page backend/build timings, runtime-input hashes and
+all discovery reports. The generated-source digest is SHA-256 of canonical
+sorted JSON mapping generated module names to their SHA-256 digests. Initial
+selection limits/boundaries are labelled separately from discovery plans;
+--limit applies to the initial plan, not the final monotonically enlarged map.
+All generated source, object files and game payloads remain outside Git.
+
+**Next:** implement independently sourced IOP/SIF command startup, packet/DMA
+transfer and RPC services, with truthful event/interrupt delivery; then add the
+remaining CPU/VU/graphics/disc paths. Do not force SMFLAG or fake a completed
+transfer to call boot successful. Independent execution-oracle and scheduler/
+startup-profile acceptance remain open. M2/M3/M4 stay In progress, M5-M10 pending.

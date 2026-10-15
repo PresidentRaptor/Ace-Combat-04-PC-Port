@@ -1,96 +1,151 @@
 {
-  "schema": 1,
+  "schema": 3,
   "scope": "experimental bootstrap diagnostic; NOT PLAYABLE",
   "optimization": "O0",
+  "backend": "paged-static-c11",
+  "native_builds": [
+    {
+      "translation_units": 60,
+      "compiled": 60,
+      "reused": 0,
+      "compile_seconds": 3.345,
+      "link_seconds": 0.171
+    },
+    {
+      "translation_units": 62,
+      "compiled": 4,
+      "reused": 58,
+      "compile_seconds": 0.207,
+      "link_seconds": 0.173
+    },
+    {
+      "translation_units": 63,
+      "compiled": 7,
+      "reused": 56,
+      "compile_seconds": 0.418,
+      "link_seconds": 0.201
+    },
+    {
+      "translation_units": 63,
+      "compiled": 1,
+      "reused": 62,
+      "compile_seconds": 0.131,
+      "link_seconds": 0.194
+    },
+    {
+      "translation_units": 63,
+      "compiled": 4,
+      "reused": 59,
+      "compile_seconds": 0.391,
+      "link_seconds": 0.164
+    },
+    {
+      "translation_units": 63,
+      "compiled": 4,
+      "reused": 59,
+      "compile_seconds": 0.424,
+      "link_seconds": 0.158
+    },
+    {
+      "translation_units": 79,
+      "compiled": 18,
+      "reused": 61,
+      "compile_seconds": 0.582,
+      "link_seconds": 0.17
+    },
+    {
+      "translation_units": 80,
+      "compiled": 3,
+      "reused": 77,
+      "compile_seconds": 0.133,
+      "link_seconds": 0.168
+    },
+    {
+      "translation_units": 84,
+      "compiled": 6,
+      "reused": 78,
+      "compile_seconds": 0.234,
+      "link_seconds": 0.163
+    },
+    {
+      "translation_units": 84,
+      "compiled": 12,
+      "reused": 72,
+      "compile_seconds": 0.393,
+      "link_seconds": 0.164
+    },
+    {
+      "translation_units": 84,
+      "compiled": 2,
+      "reused": 82,
+      "compile_seconds": 0.431,
+      "link_seconds": 0.166
+    }
+  ],
   "image_sha256": "38ecebd6965c2f74ec8973f538781506bf3a2cfad86f908deb6c5d585d528301",
   "compiler": "gcc.exe (Rev5, Built by MSYS2 project) 16.2.0",
-  "generated_source_sha256": "49d96ca54613906f4b07c03c7d5b085e029c8b7a395422a4816a43c2c09f35f0",
+  "generated_source_sha256": "a8d52654702bcd90b5b90a0c0744e29d6cf620e98da33147a9d4b0ec82477bc8",
+  "runtime_inputs_sha256": {
+    "bootstrap_main.c": "9593b9bf0f853b86dcd89528e91ddec9d4649e71a081ba3fa5d7093761569b95",
+    "bootstrap_services.h": "b3fd0ba99f16f1ad663bc577a1f9dda8f823716615f5fe0f2bc8b29dc5359f68",
+    "ee_devices.h": "998cff8105fd9d21a36a5abeba2bd043b739bc70b3b4d675e8fa6924de24deae"
+  },
   "ram_sha256": "1490680da7975cc25f4e1a366ca6812397d729f5e7c3fbb034993721a65c006c",
-  "executable_sha256": "821919c3685fba9908ea31bad5f85c70dbe7cab15bd2c079243322f27c0ea87a",
+  "executable_sha256": "c2f47e4842117a8e40b2f96600eda2dfd5767cd68bcaec561ba90795587e241b",
   "selection": {
-    "selected_addresses": 16384,
-    "selection_limit": 16384,
-    "pending_addresses": 260,
+    "selected_addresses": 18520,
     "boundaries": [
       {
-        "address": "0x00100d48",
-        "reason": "0x100d48: unsupported operation swc1"
+        "address": "0x00100d84",
+        "reason": "0x100d84: unsupported operation cvt.s.w"
       },
       {
-        "address": "0x00102508",
-        "reason": "0x102508: unsupported operation lwc1"
+        "address": "0x00102558",
+        "reason": "0x102558: unsupported operation mul.s"
       },
       {
-        "address": "0x0010254c",
-        "reason": "0x10254c: unsupported operation mtc1"
+        "address": "0x00104f20",
+        "reason": "0x104f20: unsupported operation sub.s"
       },
       {
-        "address": "0x001026bc",
-        "reason": "0x1026bc: unsupported operation mtc1"
+        "address": "0x0010584c",
+        "reason": "0x10584c: unsupported operation cvt.s.w"
       },
       {
-        "address": "0x001044fc",
-        "reason": "0x1044fc: unsupported operation mtc1"
+        "address": "0x001059b8",
+        "reason": "0x1059b8: unsupported operation cvt.s.w"
       },
       {
-        "address": "0x00104f10",
-        "reason": "0x104f10: unsupported operation lwc1"
+        "address": "0x001059dc",
+        "reason": "0x1059dc: unsupported operation cvt.s.w"
       },
       {
-        "address": "0x00105810",
-        "reason": "0x105810: unsupported operation swc1"
+        "address": "0x00213eac",
+        "reason": "0x213eac: unsupported operation c.lt.s"
       },
       {
-        "address": "0x0010599c",
-        "reason": "0x10599c: unsupported operation mtc1"
+        "address": "0x0021987c",
+        "reason": "0x21987c: unsupported operation sub.s"
       },
       {
-        "address": "0x001059b0",
-        "reason": "0x1059b0: unsupported operation lwc1"
+        "address": "0x00219920",
+        "reason": "0x219920: unsupported operation sub.s"
       },
       {
-        "address": "0x001059d4",
-        "reason": "0x1059d4: unsupported operation lwc1"
+        "address": "0x0021a224",
+        "reason": "0x21a224: unsupported operation div.s"
       },
       {
-        "address": "0x002121c4",
-        "reason": "0x2121c4: unsupported operation mtc1"
+        "address": "0x0021a270",
+        "reason": "0x21a270: unsupported operation cvt.w.s"
       },
       {
-        "address": "0x00213ea0",
-        "reason": "0x213ea0: unsupported operation mtc1"
+        "address": "0x0021a8ec",
+        "reason": "0x21a8ec: unsupported operation cvt.s.w"
       },
       {
-        "address": "0x0021908c",
-        "reason": "0x21908c: unsupported operation mtc1"
-      },
-      {
-        "address": "0x0021986c",
-        "reason": "0x21986c: unsupported operation lwc1"
-      },
-      {
-        "address": "0x0021a1c8",
-        "reason": "0x21a1c8: unsupported operation swc1"
-      },
-      {
-        "address": "0x0021a720",
-        "reason": "0x21a720: unsupported operation mov.s"
-      },
-      {
-        "address": "0x0021a8e8",
-        "reason": "0x21a8e8: unsupported operation lwc1"
-      },
-      {
-        "address": "0x0021e7dc",
-        "reason": "0x21e7dc: unsupported operation mtc1"
-      },
-      {
-        "address": "0x0021fb7c",
-        "reason": "0x21fb7c: unsupported operation swc1"
-      },
-      {
-        "address": "0x0021fe98",
-        "reason": "0x21fe98: unsupported operation swc1"
+        "address": "0x0021fbc0",
+        "reason": "0x21fbc0: unsupported operation div.s"
       },
       {
         "address": "0x002618b0",
@@ -105,28 +160,12 @@
         "reason": "0x261f98: unsupported operation cfc2"
       },
       {
+        "address": "0x00263230",
+        "reason": "0x263230: unsupported operation vsub"
+      },
+      {
         "address": "0x00263c18",
         "reason": "0x263c18: unsupported operation cfc2"
-      },
-      {
-        "address": "0x0026470c",
-        "reason": "0x26470c: unsupported operation mfc0"
-      },
-      {
-        "address": "0x0026485c",
-        "reason": "0x26485c: unsupported operation mfc0"
-      },
-      {
-        "address": "0x0026492c",
-        "reason": "0x26492c: unsupported operation mfc0"
-      },
-      {
-        "address": "0x0026b228",
-        "reason": "0x26b228: unsupported operation mfc0"
-      },
-      {
-        "address": "0x0026b270",
-        "reason": "0x26b270: unsupported operation mfc0"
       },
       {
         "address": "0x0026bf08",
@@ -135,41 +174,13 @@
       {
         "address": "0x0026bf2c",
         "reason": "0x26bf2c: unsupported operation cache.dhwbin"
-      },
-      {
-        "address": "0x002707f8",
-        "reason": "0x2707f8: unsupported operation mfc0"
-      },
-      {
-        "address": "0x002917b0",
-        "reason": "0x2917b0: unsupported operation psubb"
-      },
-      {
-        "address": "0x002924c0",
-        "reason": "0x2924c0: unsupported operation psubb"
-      },
-      {
-        "address": "0x00292778",
-        "reason": "0x292778: unsupported operation psubw"
-      },
-      {
-        "address": "0x002928bc",
-        "reason": "0x2928bc: unsupported operation psubb"
-      },
-      {
-        "address": "0x002929c4",
-        "reason": "0x2929c4: unsupported operation psubb"
-      },
-      {
-        "address": "0x00292b1c",
-        "reason": "0x292b1c: unsupported operation psubw"
-      },
-      {
-        "address": "0x00297974",
-        "reason": "0x297974: unsupported operation mfc0"
       }
     ],
     "syscall_continuations_selected": true,
+    "initial_selected_addresses": 16384,
+    "initial_pending_addresses": 287,
+    "initial_selection_limit": 16384,
+    "boundaries_scope": "initial plan; additional boundaries are in observed_fetch_discovery plans",
     "entry_seeds": [
       "0x00100008",
       "0x00264a88",
@@ -183,27 +194,346 @@
         "destination": "0x80076000",
         "size": 1856
       }
+    ],
+    "observed_fetch_discovery": [
+      {
+        "fetch_pc": "0x0027c834",
+        "attempted_instructions": 339764,
+        "added_addresses": 329,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 18,
+          "boundaries": [],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x0027cf88",
+        "attempted_instructions": 339777,
+        "added_addresses": 409,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 42,
+          "boundaries": [],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x002596f8",
+        "attempted_instructions": 339784,
+        "added_addresses": 48,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 21,
+          "boundaries": [],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x00214030",
+        "attempted_instructions": 339909,
+        "added_addresses": 161,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 15,
+          "boundaries": [
+            {
+              "address": "0x00213eac",
+              "reason": "0x213eac: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x0021a8ec",
+              "reason": "0x21a8ec: unsupported operation cvt.s.w"
+            }
+          ],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x002124f8",
+        "attempted_instructions": 339932,
+        "added_addresses": 219,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 20,
+          "boundaries": [],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x00210d88",
+        "attempted_instructions": 339946,
+        "added_addresses": 511,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 11,
+          "boundaries": [
+            {
+              "address": "0x001a4264",
+              "reason": "0x1a4264: unsupported operation cvt.w.s"
+            },
+            {
+              "address": "0x001ad58c",
+              "reason": "0x1ad58c: unsupported operation sub.s"
+            },
+            {
+              "address": "0x001e0bac",
+              "reason": "0x1e0bac: unsupported operation lqc2"
+            },
+            {
+              "address": "0x001e12c0",
+              "reason": "0x1e12c0: unsupported operation c.eq.s"
+            },
+            {
+              "address": "0x001e1880",
+              "reason": "0x1e1880: unsupported operation c.le.s"
+            },
+            {
+              "address": "0x00210de4",
+              "reason": "0x210de4: unsupported operation lqc2"
+            },
+            {
+              "address": "0x00210f08",
+              "reason": "0x210f08: unsupported operation mula.s"
+            },
+            {
+              "address": "0x00263230",
+              "reason": "0x263230: unsupported operation vsub"
+            },
+            {
+              "address": "0x002632d4",
+              "reason": "0x2632d4: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x0026337c",
+              "reason": "0x26337c: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x00263424",
+              "reason": "0x263424: unsupported operation c.lt.s"
+            }
+          ],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x001ff608",
+        "attempted_instructions": 339972,
+        "added_addresses": 100,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 16,
+          "boundaries": [
+            {
+              "address": "0x001a4264",
+              "reason": "0x1a4264: unsupported operation cvt.w.s"
+            },
+            {
+              "address": "0x001ad58c",
+              "reason": "0x1ad58c: unsupported operation sub.s"
+            },
+            {
+              "address": "0x001e0bac",
+              "reason": "0x1e0bac: unsupported operation lqc2"
+            },
+            {
+              "address": "0x001e12c0",
+              "reason": "0x1e12c0: unsupported operation c.eq.s"
+            },
+            {
+              "address": "0x001e1880",
+              "reason": "0x1e1880: unsupported operation c.le.s"
+            },
+            {
+              "address": "0x001ff788",
+              "reason": "0x1ff788: unsupported operation lqc2"
+            },
+            {
+              "address": "0x00263230",
+              "reason": "0x263230: unsupported operation vsub"
+            },
+            {
+              "address": "0x002632d4",
+              "reason": "0x2632d4: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x0026337c",
+              "reason": "0x26337c: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x00263424",
+              "reason": "0x263424: unsupported operation c.lt.s"
+            }
+          ],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x001e94c0",
+        "attempted_instructions": 340030,
+        "added_addresses": 164,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 17,
+          "boundaries": [
+            {
+              "address": "0x001a4264",
+              "reason": "0x1a4264: unsupported operation cvt.w.s"
+            },
+            {
+              "address": "0x001e0bac",
+              "reason": "0x1e0bac: unsupported operation lqc2"
+            },
+            {
+              "address": "0x001e12c0",
+              "reason": "0x1e12c0: unsupported operation c.eq.s"
+            },
+            {
+              "address": "0x001e1880",
+              "reason": "0x1e1880: unsupported operation c.le.s"
+            },
+            {
+              "address": "0x001f08f0",
+              "reason": "0x1f08f0: unsupported operation sqc2"
+            },
+            {
+              "address": "0x001f132c",
+              "reason": "0x1f132c: unsupported operation lqc2"
+            },
+            {
+              "address": "0x00263230",
+              "reason": "0x263230: unsupported operation vsub"
+            },
+            {
+              "address": "0x002632d4",
+              "reason": "0x2632d4: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x0026337c",
+              "reason": "0x26337c: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x00263424",
+              "reason": "0x263424: unsupported operation c.lt.s"
+            }
+          ],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x001e0a20",
+        "attempted_instructions": 340048,
+        "added_addresses": 91,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 7,
+          "boundaries": [
+            {
+              "address": "0x001a4264",
+              "reason": "0x1a4264: unsupported operation cvt.w.s"
+            },
+            {
+              "address": "0x001a5e10",
+              "reason": "0x1a5e10: unsupported operation sub.s"
+            },
+            {
+              "address": "0x001a7b44",
+              "reason": "0x1a7b44: unsupported operation c.eq.s"
+            },
+            {
+              "address": "0x001ad58c",
+              "reason": "0x1ad58c: unsupported operation sub.s"
+            },
+            {
+              "address": "0x001afe6c",
+              "reason": "0x1afe6c: unsupported operation cvt.w.s"
+            },
+            {
+              "address": "0x001b1c54",
+              "reason": "0x1b1c54: unsupported operation sub.s"
+            },
+            {
+              "address": "0x001e0bac",
+              "reason": "0x1e0bac: unsupported operation lqc2"
+            },
+            {
+              "address": "0x001e12c0",
+              "reason": "0x1e12c0: unsupported operation c.eq.s"
+            },
+            {
+              "address": "0x001e1880",
+              "reason": "0x1e1880: unsupported operation c.le.s"
+            },
+            {
+              "address": "0x001e2284",
+              "reason": "0x1e2284: unsupported operation cvt.s.w"
+            },
+            {
+              "address": "0x00263230",
+              "reason": "0x263230: unsupported operation vsub"
+            },
+            {
+              "address": "0x002632d4",
+              "reason": "0x2632d4: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x0026337c",
+              "reason": "0x26337c: unsupported operation c.lt.s"
+            },
+            {
+              "address": "0x00263424",
+              "reason": "0x263424: unsupported operation c.lt.s"
+            }
+          ],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x0026b9d0",
+        "attempted_instructions": 340669,
+        "added_addresses": 104,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 22,
+          "boundaries": [],
+          "syscall_continuations_selected": true
+        }
+      }
     ]
   },
   "observation": {
     "scope": "experimental-bootstrap-diagnostic",
-    "status": 3,
-    "pc": 2607172,
-    "fault_pc": 2607172,
-    "fault_address": 2607172,
+    "status": 8,
+    "pc": 2507964,
+    "fault_pc": 2507960,
+    "fault_address": 2507960,
     "delay": 0,
-    "steps": 339768,
-    "services_completed": 29,
-    "last_syscall": 100,
+    "steps": 5000000,
+    "services_completed": 517726,
+    "last_syscall": 122,
     "stack_pointer": 32505856,
     "heap_start": 5031756,
     "heap_end": 32505856,
     "override_target": 0,
     "current_thread": 1,
     "context_switches": 2,
-    "a0": 32505664,
-    "a1": 4242008,
-    "a2": 18446744073709551615
+    "sif0_waiting": 1,
+    "last_device_read_address": 268497456,
+    "last_device_read_value": 0,
+    "initial_cp0_status": 536870912,
+    "a0": 4,
+    "a1": 2538920,
+    "a2": 0
   },
   "limitations": [
     "provisional startup stack/heap policy and cooperative scheduler ABI",
@@ -212,5 +542,5 @@
     "unknown services/instructions and missing dispatch targets stop",
     "no graphics, input, audio, disc runtime or gameplay"
   ],
-  "validation_note": "Local Windows diagnostic with two modeled guest thread switches; no hardware oracle or playable-build acceptance. Earlier binary reproducibility measurements are historical."
+  "validation_note": "Experimental local CPU/device model reaches IOP command-initialization polling; budget exhaustion is not gameplay or boot acceptance. No independent hardware oracle."
 }

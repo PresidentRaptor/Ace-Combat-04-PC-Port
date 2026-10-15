@@ -117,3 +117,17 @@ selection. This is still a diagnostic, not a playable build. Next bounded work:
 verified dispatch expansion and the remaining CPU/kernel/device boundaries;
 scheduler/stack policies still need independent trace validation. Read the
 latest milestone evidence rather than repeating the completed CreateThread work.
+
+
+M2f/M3c/M4c now add guarded automatic FETCH discovery, per-page C builds/object
+reuse, packed arithmetic/comparison subsets, Status transfers and raw COP1
+transfers/branches/context. New DMA/INTC/SIF configuration and limited kernel
+services let local AC4 reach the IOP command-ready wait. Current evidence:
+199 tests, 19 static disc checks, original native entry acceptance and 2/2 CTest
+pass. Ten discovery extensions select 18,520 addresses; the five-million-step
+stop is predominantly readiness polling, not gameplay coverage. The last read
+is SMFLAG 0x1000f230 = 0, and the guest waits for bit 0x20000.
+Next bounded task is independent IOP/SIF command startup, packet/DMA transfer,
+RPC and IRQ delivery. Do not force readiness or fabricate transfers. The initial
+Status=0x20000000 and remaining kernel ABI policies still need independent
+oracle evidence. Read the latest exact command and manifest schema notes.

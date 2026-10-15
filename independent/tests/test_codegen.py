@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from r5900_codegen import emit_program, TranslationError
+from r5900_codegen import emit_program,emit_modules, TranslationError
 
 
 def compiler():
@@ -19,7 +19,7 @@ def compiler():
 
 
 def native(words, *, registers=None, upper=None, memory=None, limit=100, entry=0, resume=None, memory_size=256,
-           extra_source='', run_function='ac4_run'):
+           extra_source='', run_function='ac4_run',paged=False):
     cc = compiler()
     if cc is None:
         if os.environ.get('AC4_REQUIRE_NATIVE_TESTS') == '1':
@@ -52,8 +52,16 @@ int main(void) {
     environment['PATH'] = str(Path(cc).parent) + os.pathsep + environment.get('PATH', '')
     with tempfile.TemporaryDirectory(prefix='ac4-independent-') as folder:
         source, exe = Path(folder) / 'program.c', Path(folder) / ('program.exe' if os.name == 'nt' else 'program')
-        source.write_text(emit_program(words, entry) + extra_source + driver, encoding='utf-8')
-        build = subprocess.run([cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', str(source), '-o', str(exe)],
+        if paged:
+            modules=emit_modules(words,entry)
+            modules['driver.c']='#include "ac4_cpu.h"\n'+extra_source+driver
+            for name,raw in modules.items():
+                (Path(folder)/name).write_text(raw,encoding='utf-8')
+            sources=[str(path) for path in sorted(Path(folder).glob('*.c'))]
+        else:
+            source.write_text(emit_program(words, entry) + extra_source + driver, encoding='utf-8')
+            sources=[str(source)]
+        build = subprocess.run([cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',*sources, '-o', str(exe)],
                                capture_output=True, text=True, env=environment)
         if build.returncode:
             raise AssertionError(build.stderr)

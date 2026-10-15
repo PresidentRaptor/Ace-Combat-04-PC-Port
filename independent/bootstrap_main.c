@@ -29,6 +29,9 @@ int main(int argc, char **argv) {
     cpu.memory=ram; cpu.memory_size=32*1024*1024; cpu.pc=AC4_PROGRAM_ENTRY;
     cpu.ee_memory_map=1;
     cpu.verify_instruction_bytes=1;
+    /* Explicit application startup profile, not a captured BIOS Status value. */
+    const uint32_t initial_status=UINT32_C(0x20000000);
+    cpu.cp0_status=initial_status;
     cpu.device_state=&devices; cpu.device_read=ac4_device_read; cpu.device_write=ac4_device_write;
     int status=ac4_bootstrap_run(&cpu,&boot,UINT64_C(5000000));
     printf("{\"scope\":\"experimental-bootstrap-diagnostic\",\"status\":%d,"
@@ -36,11 +39,15 @@ int main(int argc, char **argv) {
            "\"steps\":%" PRIu64 ",\"services_completed\":%u,\"last_syscall\":%u,"
            "\"stack_pointer\":%u,\"heap_start\":%u,\"heap_end\":%u,"
            "\"override_target\":%u,\"current_thread\":%u,\"context_switches\":%u,"
+           "\"sif0_waiting\":%u,\"last_device_read_address\":%u,\"last_device_read_value\":%" PRIu64 ","
+           "\"initial_cp0_status\":%u,"
            "\"a0\":%" PRIu64 ",\"a1\":%" PRIu64 ",\"a2\":%" PRIu64 "}\n",
            status,cpu.pc,cpu.fault_pc,cpu.fault_address,cpu.fault_delay,cpu.steps,
            boot.calls,boot.last_number,boot.stack_pointer,boot.heap_start,boot.heap_end,
            boot.last_number<256 ? boot.syscall_overrides[boot.last_number] : 0,
            boot.current_thread,boot.context_switches,
+           devices.sif0_waiting,devices.last_read_address,devices.last_read_value,
+           initial_status,
            cpu.gpr[4][0],cpu.gpr[5][0],cpu.gpr[6][0]);
     free(ram);
     /* Diagnostic stops are explicitly unsuccessful execution, not a game exit. */
