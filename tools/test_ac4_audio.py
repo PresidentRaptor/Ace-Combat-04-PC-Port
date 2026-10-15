@@ -1,8 +1,8 @@
 """Run the real AC4 streaming implementation against synthetic ADPCM blocks."""
 from pathlib import Path
-import os
 import subprocess
 import tempfile
+from test_support import compiler_environment
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'runtime/src/ps2_hle_ac4.c').read_text()
@@ -95,11 +95,10 @@ int main(void) {
     puts("PASS: final block, refill ordering, stereo/volume/mute, overlapping staging reads, oversized transfers, active buffer invalidation");
 }
 '''
-env = os.environ.copy()
-env['PATH'] = 'C:/msys64/ucrt64/bin;' + env['PATH']
+compiler, env = compiler_environment()
 with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
     (tmp/'test.c').write_text(prelude + source[start:end] + test)
-    subprocess.run(['C:/msys64/ucrt64/bin/gcc.exe','-std=c23','-O2',str(tmp/'test.c'),
+    subprocess.run([compiler,'-std=gnu2x','-O2',str(tmp/'test.c'),
                     '-o',str(tmp/'test.exe'),'-lpthread'], check=True, env=env)
     subprocess.run([str(tmp/'test.exe')], check=True, env=env)

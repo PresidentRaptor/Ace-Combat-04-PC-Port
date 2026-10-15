@@ -1,8 +1,8 @@
 """Exercise the actual widescreen HUD code with synthetic GS draws."""
 from pathlib import Path
-import os
 import subprocess
 import tempfile
+from test_support import compiler_environment
 
 root = Path(__file__).resolve().parents[1]
 src = (root/'runtime/src/ps2_gs.c').read_text()
@@ -153,10 +153,10 @@ int main(void) {
     puts("PASS: menu highlights/cells/guides agree; objectives scan stays centered; clears/copies unchanged; 512-column flight cannot pillarbox without HUD; menu/fade expiry; seeker follows target across caption/warning/corner rows; captions stay distinct; widescreen-off unchanged");
 }
 '''
-env=dict(os.environ, PATH='C:/msys64/ucrt64/bin;'+os.environ['PATH'])
+compiler, env = compiler_environment()
 with tempfile.TemporaryDirectory() as tmp:
     tmp=Path(tmp); c=tmp/'test.c'; exe=tmp/'test.exe'
     c.write_text(prelude+src[start:end]+test)
-    subprocess.run(['C:/msys64/ucrt64/bin/gcc.exe','-std=c23','-O2',
+    subprocess.run([compiler,'-std=gnu2x','-O2',
                     '-I'+str(root/'runtime/include'),str(c),'-lm','-o',str(exe)],check=True,env=env)
     subprocess.run([str(exe)],check=True,env=env)

@@ -1,0 +1,21 @@
+name: Support question
+description: Ask about installation, controls or supported behavior.
+title: '[Question] '
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: Read README.md, SUPPORT.md and docs/compatibility.md first. Do not request or attach game downloads, ISOs, original executables or extracted assets.
+  - type: input
+    id: version
+    attributes:
+      label: Release version and Windows version
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question and what you tried
+      description: Include relevant hardware and settings. Review logs for personal information before attaching them.
+    validations:
+      required: true

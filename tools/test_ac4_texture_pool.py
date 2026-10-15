@@ -1,8 +1,8 @@
 """Compile the actual pool functions in isolation (no Vulkan/window required)."""
 from pathlib import Path
-import os
 import subprocess
 import tempfile
+from test_support import compiler_environment
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'runtime/src/ps2_video.c').read_text()
@@ -24,11 +24,10 @@ void ps2_log(const char *, ...);
 header += between('typedef struct {\n    u64 id, key;', 'static ps2_vk_vertex *rec_verts;')
 header += between('static vk_texture textures[', 'static pthread_mutex_t list_lock')
 header += between('int ps2_vk_texture_is(', 'void ps2_vk_invalidate(')
-env = os.environ.copy()
-env['PATH'] = 'C:/msys64/ucrt64/bin;' + env['PATH']
+compiler, env = compiler_environment()
 with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
     (tmp / 'texture_pool_under_test.h').write_text(header)
-    subprocess.run(['C:/msys64/ucrt64/bin/gcc.exe', '-std=c23', '-O2', '-I'+str(tmp),
+    subprocess.run([compiler, '-std=gnu2x', '-O2', '-I'+str(tmp),
                     str(root/'tools/texture_pool_test.c'), '-o', str(tmp/'test.exe')], check=True, env=env)
     subprocess.run([str(tmp/'test.exe')], check=True, env=env)

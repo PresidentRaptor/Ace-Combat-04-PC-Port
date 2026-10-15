@@ -1,0 +1,29 @@
+name: Private contact request
+description: Request a private reporting route without disclosing sensitive details.
+title: '[Contact] Private maintainer contact requested'
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is NOT a private conversation. Do not include incident details,
+        names of affected people, exploit information, passwords or contact details.
+        The maintainer can arrange a private reporting route. No public email is listed.
+        Use GitHub's Report a vulnerability option instead if it is available.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Contact category
+      options:
+        - Security report
+        - Code of Conduct report
+        - Other sensitive matter
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: I am only requesting a private contact route; I have included no sensitive details.
+          required: true

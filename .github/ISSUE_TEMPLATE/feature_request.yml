@@ -1,0 +1,26 @@
+name: Feature proposal
+description: Propose an improvement consistent with faithful AC4 play.
+title: '[Feature] '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Correctness and stable native play take priority. Search existing proposals before submitting; requests do not imply a delivery date.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Explain who encounters it and why existing settings do not address it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and validation
+      description: Note effects on original gameplay, saves, mods, performance and testing where known.

@@ -262,6 +262,19 @@ For reports, include the mission, camera view, graphics settings, steps to repro
 and `diagnostics.log` from `DIAGNOSTICS.bat`. Keep game assets and captures containing
 game data out of public source commits.
 
+## Contributing and support
+
+See the [contribution guide](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md),
+[support guide](SUPPORT.md), [security policy](SECURITY.md) and
+[compatibility checklist](docs/compatibility.md). Use the repository's issue forms
+for reports and proposals. AC4 bugs belong here rather than in the upstream AC5
+tracker. Never attach ISOs or extracted game data.
+
+Run `python tools/run_checks.py` for the game-data-free checks used in GitHub
+Actions. They do not establish full Windows or campaign compatibility. See the
+[change history](CHANGELOG.md) and [maintainer checklist](docs/maintaining.md)
+for release practices and current repository limitations.
+
 ## Credits
 
 - **sal063**: original Ace Combat 5 static recompilation, including the shared recompiler, runtime, renderer, settings menu and tooling.

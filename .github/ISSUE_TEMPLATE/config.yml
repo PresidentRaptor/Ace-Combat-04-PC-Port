@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation, support and compatibility
+    url: https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/blob/main/SUPPORT.md
+    about: Read the support guide and use the relevant issue form.
+  - name: Security reporting instructions
+    url: https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/security/policy
+    about: Do not disclose vulnerabilities or private information in a normal issue.

@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible AC4 PC Port defect.
+title: '[Bug] '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. Do not upload ISOs, original executables,
+        generated game code, extracted assets, memory dumps or full graphics captures.
+        For security concerns, use the private contact request instead.
+  - type: input
+    id: version
+    attributes:
+      label: Release version or commit
+      placeholder: 'Example: 2.2.0 Beta, or the exact source commit'
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Windows, GPU and graphics driver
+      description: Include your CPU and controller if relevant.
+    validations:
+      required: true
+  - type: input
+    id: scene
+    attributes:
+      label: Mission, menu and camera
+      description: Include difficulty and aircraft if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Give exact steps and say how often it happens.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Rendering settings and mods
+      description: Include resolution, widescreen, HUD layout, FXAA, texture pack and mods. Say whether testing original textures or 4:3 changes the result.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Diagnostic log and screenshots
+      description: Run DIAGNOSTICS.bat if possible. Remove personal paths and account information before attaching diagnostics.log. Explain if a log is unavailable.
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and reviewed the compatibility notes.
+          required: true
+        - label: My report contains no game files or private information, and I will follow the Code of Conduct.
+          required: true
