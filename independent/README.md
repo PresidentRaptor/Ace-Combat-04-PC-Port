@@ -36,6 +36,9 @@ It emits metadata only; it neither translates nor executes game code.
 Use `--allow-other` only to inspect synthetic fixtures or another MIPS ELF.
 See MILESTONES.md for completion gates and current progress.
 
+Cloud development and local acceptance follow [CLOUD_HANDOFF.md](CLOUD_HANDOFF.md).
+Repository-level AGENTS.md records the implementation boundaries for cloud tasks.
+
 ## Disc inspection
 
 ```
