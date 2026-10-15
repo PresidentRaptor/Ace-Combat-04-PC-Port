@@ -92,6 +92,15 @@ AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
   of the target (a menu, briefing, hangar overlay or movie), the presentation scissors the
   picture to the 4:3 middle for that and the next 12 fields (`ps2_ws_pillar_frame`), so the
   sides show black instead of stretched leftovers and half-covered 3D.
+  Z-zero menu highlights always use the menu transform, including red
+  rectangles beside weapon cells; flight lock-cue exemptions do not apply to
+  them. Far-plane flight HUD glyphs override the menu-coverage heuristic for
+  the current and preceding field, so pausing and resuming does not crop the
+  gameplay/HUD to the menu's middle. `tools/test_ac4_widescreen.py` exercises
+  these cases against the actual C layout code. `gsreplay --widescreen` applies
+  the layout to a capture taken with a widened camera; it does not widen an
+  already recorded camera. `PS2_TRACE_WS_CUES=1` logs small target/cue draw
+  coordinates every 30 fields for diagnosing marker projection.
 - High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the

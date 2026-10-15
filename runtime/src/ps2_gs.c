@@ -3629,6 +3629,14 @@ u64 ps2_kernel_vblank_count(void);
 static float ws_area;
 static u32 ws_area_frame = ~0u;
 u32 ps2_ws_pillar_frame = 0x80000000u;
+static u32 ws_flight_frame = 0x80000000u;
+
+int ps2_gs_ws_pillar(void) {
+    /* Flight HUD remains drawn behind the pause menu. Its far-plane glyphs
+       take priority over Z-zero menu coverage, including repeated overlays. */
+    return ps2_gs_frame_count - ps2_ws_pillar_frame <= 12u
+        && ps2_gs_frame_count - ws_flight_frame > 1u;
+}
 
 #define WS_MARKERS 256
 static float ws_marker[2][WS_MARKERS][4];
@@ -3656,11 +3664,24 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
             if (v[k].y < y0) y0 = v[k].y;
             if (v[k].y > y1) y1 = v[k].y;
         }
+        {   static int cues = -1;
+            if (cues < 0) cues = getenv("PS2_TRACE_WS_CUES") != NULL;
+            if (cues && ps2_gs_frame_count % 30u == 0u
+                && (!realz || (n == 2 && !st->tme))
+                && ((st->zte && st->ztst != 1u) || v[0].r > 1.5f*v[0].g+8.0f)
+                && x1-x0 <= 128.0f && y1-y0 <= 128.0f)
+                ps2_log("ws-cue: f%u n%d tex%d ztest%u/%u z%g x%g..%g y%g..%g rgb%g,%g,%g",
+                    ps2_gs_frame_count,n,st->tme,st->zte,st->ztst,v[0].z,
+                    x0,x1,y0,y1,v[0].r,v[0].g,v[0].b);
+        }
         if (ws_marker_frame != ps2_gs_frame_count) {
             ws_marker_frame = ps2_gs_frame_count;
             ws_mcur ^= 1u;
             ws_nmarker[ws_mcur] = 0;
         }
+        if (!realz && v[0].z >= 0.99999f && st->tme && st->fst
+            && n == 6 && x1 - x0 < (float)st->fb_w * 0.5f && y1 - y0 < 64.0f)
+            ws_flight_frame = ps2_gs_frame_count;
         if (st->zte && st->ztst != 1u) {
             /* a target box or label (at the far plane or at the target's own
                depth): placed by the widened camera, left alone; remembered
@@ -3684,7 +3705,7 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
        text (captions, speaker names, the WARNING sign) is drawn with sprites. */
     {   float sx = 512.0f / (float)st->fb_w, cyn = (y0 + y1) * 0.5f, cxn = (x0 + x1) * 0.5f * sx;
         int warning = n == 6 && cxn > 192.0f && cxn < 320.0f && cyn > 136.0f && cyn < 180.0f;
-        if (!(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
+        if (v[0].z != 0.0f && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
             && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
             && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && !(n == 6 && cyn < 104.0f) && !warning) {
             gs_stat_ws_cue++;
@@ -3693,7 +3714,7 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     }
     /* the arrow: small untextured shapes touching a target box of this frame
        or the last (the boxes come later in the frame) */
-    if (!st->tme && n != 6 && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f && st->scissor[0] == 0
+    if (v[0].z != 0.0f && !st->tme && n != 6 && x1 - x0 <= 64.0f && y1 - y0 <= 64.0f && st->scissor[0] == 0
         && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f)))   /* not tape ticks */
         for (u32 b = 0; b < 2u; b++)
             for (u32 m = 0; m < ws_nmarker[b]; m++) {

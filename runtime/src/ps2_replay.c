@@ -355,6 +355,7 @@ static void usage(const char *argv0) {
 "  --fields N      stop each pass after N fields\n"
 "  --bench         time every pass and print the phase profile\n"
 "  --preset N      graphics preset: 0 low, 1 medium, 2 high, 3 ultra\n"
+"  --widescreen    apply widescreen HUD layout (capture must use a wide camera)\n"
 "  --hidden        render through Vulkan without showing a window\n"
 "  --novideo       run headless -- but NOT the fast path and NOT what you\n"
 "                  want for a measurement: with no Vulkan device, vertex_kick\n"
@@ -396,6 +397,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--loud")) quiet = 0;
         else if (!strcmp(argv[i], "--census")) census = 1;
         else if (!strcmp(argv[i], "--bench")) bench = 1;
+        else if (!strcmp(argv[i], "--widescreen")) {
+            ps2_cfg.widescreen = 1;
+            ps2_cfg.hud_layout = PS2_HUD_EDGES;
+        }
         else if (!strcmp(argv[i], "--preset") && i + 1 < argc) {
             char *end;
             long preset = strtol(argv[++i], &end, 10);
