@@ -54,6 +54,20 @@ For implementation details and test coverage, see the
 
 ## Build and run
 
+### Windows installer
+
+The [2.2.0 Beta release](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.0-beta)
+includes a Windows setup executable. Select your unmodified USA ISO (SLUS-20152),
+choose an empty game folder, and leave the desktop-shortcut option enabled if
+wanted. Setup verifies the game executable, copies the ISO and creates the local
+memory image. The download contains no ISO or extracted memory image. About
+4 GB free space and Windows' .NET Framework 4.8 are needed in addition to a
+Vulkan 1.3-capable GPU/driver. No compiler or Python is required to install.
+
+The installer uses a folder under your account by default. Install updates into
+a new folder and copy your saves; existing game folders are not overwritten.
+For packaging details, see the [installer guide](packaging/ac4/installer/README.md).
+
 The following steps are for building from source. If you already have a locally
 assembled game folder, launch `Ace Combat 04.exe` or `PLAY.bat` there.
 

@@ -1,0 +1,37 @@
+Ace Combat 04: Shattered Skies - PC Port 2.2.0 Beta
+=================================================
+
+Run Ace-Combat-04-PC-Port-2.2.0-beta-Setup.exe on Windows 10/11 x64.
+Select your own uncompressed USA game ISO (SLUS-20152) and an empty
+destination folder. Setup copies the ISO as game.iso, creates the runtime
+memory image from the verified executable inside it, and adds a desktop
+shortcut unless you clear that option. The original ISO is left untouched.
+
+The default folder is under your user's Local AppData\Games. No administrator
+access, Python, MSYS2 or compiler is needed to install and play. Windows'
+.NET Framework 4.8 and a Vulkan 1.3-capable GPU/driver are required. About
+4 GB of free space is needed. Keep the ISO in the installed folder.
+
+This beta includes the runtime, shaders and required runtime DLLs. It does
+not include an ISO, extracted game files, a memory image or HD texture pack.
+Other regions, modified executables and compressed disc formats are rejected.
+
+F4 opens settings. Widescreen, smooth UI sampling and FXAA are enabled;
+the initial rendering setting is High (3x). Adjust it for your GPU. HD texture
+replacement is off; the original artwork is used. Mission 01 has been
+completed in live play; the full campaign still needs testing.
+
+Your saves are in saves\ inside the installed game folder. Settings are in
+runtime\ac4_settings.ini. PLAY.bat is an alternate launcher. For bug reports,
+run DIAGNOSTICS.bat and include diagnostics.log, the mission and settings.
+
+Updating: install a new release into a separate empty folder, then copy your
+saves\ folder from the old installation. Keep backups of your saves.
+Removing: close the game, preserve your saves and ISO if needed, then remove
+the game folder and its desktop shortcut. This folder-based installer does
+not register a system service or an Apps & Features uninstaller.
+
+Source and issue reports:
+https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port
+
+See licenses\ for the project and third-party license notices.
