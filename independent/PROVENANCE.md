@@ -104,3 +104,42 @@ synthetic ISO fixtures only. The ELF adapter test temporarily substitutes the
 identity of its synthetic ELF within the test; production identity constants
 and the default verified-image requirement are unchanged. No game bytes,
 external emulator implementation or inherited test oracle are inputs.
+
+## M2b local continuation (2026-10-15)
+
+New extensions were written from format/ISA descriptions and fresh inspection
+of the user's verified AC4 disc. No legacy decoder, symbol map, runtime or AC5
+implementation was used. The M2a implemented-group list above is historical;
+the following groups are now added (decoding only):
+
+- LQ/SQ; MFSA/MTSA/MTSAB/MTSAH.
+- LWC1/SWC1; MFC1/MTC1/CFC1/CTC1; BC1F/T/FL/TL.
+- ADD/SUB/MUL/DIV/RSQRT/MAX/MIN/MADD/MSUB single-precision forms;
+  SQRT/ABS/MOV/NEG; ADDA/SUBA/MULA/MADDA/MSUBA; four EE comparisons;
+  CVT.W.S and CVT.S.W. No FPU arithmetic or register execution is implemented.
+
+References consulted:
+
+- Sony **EE Core Instruction Set Manual**, version 6.0 (April 2002),
+  chapters 3 and 5, and appendix 7.4. Public text mirror:
+  https://studylib.net/doc/28989088/ee-insns . In particular, SQRT p. 376
+  uses ft; CFC1/CTC1 pp. 353-354 have different FCR restrictions; the EE
+  comparison/accumulator forms have no destination FPR. No manual text or PDF
+  is distributed. Encoding recognition does not imply arithmetic correctness.
+- TIS **ELF Specification**, version 1.2, Book I section-header format and
+  SHF_ALLOC/SHF_EXECINSTR/PROGBITS definitions:
+  https://refspecs.linuxfoundation.org/elf/elf.pdf . The new section reader
+  selects only executable allocated sections that agree with the load mapping.
+- User's USA AC4 ISO, verified through independent readers. The expected case
+  addresses in validate_ac4.py were reviewed from these bytes. A separate raw
+  field inspection checked primary opcodes/registers and signed offsets without
+  calling the decoder, then checked the target arithmetic against the manual.
+  Only addresses, names, target conclusions and aggregate counts are recorded;
+  no game bytes, extracted assets or generated guest source are committed.
+
+The local checks establish static encoding/graph consistency for selected cases.
+They are not an independent CPU execution oracle or a campaign validation claim.
+Synthetic tests add malformed section mapping cases and nonallocated vendor
+section handling, quadword prologue/return-slot behavior, distinct FPU/GPR
+namespaces, restricted FCR writes, unary/accumulator field restrictions and FP
+likely annulment across an unsupported slot.

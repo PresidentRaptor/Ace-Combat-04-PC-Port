@@ -109,7 +109,11 @@ No cloud AC4 analysis results are available. Commands deliberately use
 `--summary` to emit identity, counts and diagnostic addresses without raw words
 or a disassembly. The ISO adapter reads the executable in memory through the
 independent disc reader and then verifies its identity with the ELF inspector.
-Only file-backed executable segments are inventoried; zero-fill is excluded.
+Allocated executable PROGBITS sections are inventoried when present. Each must
+agree with an executable load mapping. Nonallocated vendor/debug sections and
+allocated data are excluded. Stripped files use the explicitly reported
+file-backed executable-load fallback. Zero-fill is always excluded. Section
+flags still do not prove that every selected word is code.
 
 ```powershell
 python -B -m unittest discover -s independent/tests -v
@@ -145,3 +149,16 @@ For detailed local review, omitting `--summary` prints words and a graph; keep
 that output local. M2 remains in progress until broader instruction coverage,
 indirect-target validation and AC4-derived gates pass. Windows/Vulkan, disc
 runtime behavior, controllers, audio and campaign testing remain on the PC.
+
+## Repeat local static acceptance
+
+```
+python -B independent/validate_ac4.py --iso "path/to/Ace Combat 04.iso"
+```
+
+An extracted executable can be supplied with `--elf` instead. The command
+requires the original supported identity, checks five reviewed branch/call/return
+and delay-slot cases, and reports metadata/inventory/entry-analysis results only.
+It does not execute game code or produce extracted files. See MILESTONES.md for
+the measured local result and remaining M2 gates. The suite now contains 48 tests;
+FPU and quadword/SA decoding have been added since the M2a cloud baseline.

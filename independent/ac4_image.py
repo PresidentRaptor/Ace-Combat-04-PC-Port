@@ -12,6 +12,7 @@ AC4_SHA256 = '38ecebd6965c2f74ec8973f538781506bf3a2cfad86f908deb6c5d585d528301'
 AC4_SIZE = 3248756
 HEADER = struct.Struct('<16sHHIIIIIHHHHHH')
 PROGRAM = struct.Struct('<IIIIIIII')
+SECTION = struct.Struct('<IIIIIIIIII')
 ADDRESS_LIMIT = 1 << 32
 
 
@@ -88,6 +89,58 @@ def inspect(data: bytes, *, require_ac4: bool = True) -> dict:
             for s in segments
         ],
     }
+
+
+def code_ranges(data: bytes, segments: list[Segment]) -> tuple[str, list[dict]]:
+    """Select allocated executable PROGBITS sections, or flagged loads if stripped.
+
+    Section flags narrow candidate inventory; they do not prove that every word
+    is code. Every selected section must map to the same bytes in an executable
+    load segment. No names, symbols or external maps are inputs.
+    """
+    if len(data) < HEADER.size:
+        raise ImageError('truncated ELF header')
+    header = HEADER.unpack_from(data)
+    shoff, shsize, shcount = header[6], header[11], header[12]
+    if not shoff:
+        if shcount:
+            raise ImageError('section count without section table')
+        return 'executable-load-segments', [
+            {'address': s.address, 'offset': s.offset, 'size': s.file_size}
+            for s in segments if s.flags & 1 and s.file_size
+        ]
+    if not shcount or shsize != SECTION.size or shoff < HEADER.size:
+        raise ImageError('unsupported section table format')
+    if shoff + shsize * shcount > len(data):
+        raise ImageError('section table outside file')
+    selected = []
+    for index in range(shcount):
+        (_name, kind, flags, address, offset, size, _link, _info,
+         alignment, _entrysize) = SECTION.unpack_from(data, shoff + index * shsize)
+        if flags & 6 != 6 or not size:
+            continue
+        if kind != 1:
+            raise ImageError('executable section must be allocated PROGBITS')
+        if address % 4 or size % 4 or address + size > ADDRESS_LIMIT:
+            raise ImageError('invalid executable section word range')
+        if offset + size > len(data):
+            raise ImageError('executable section outside file')
+        if alignment > 1 and (alignment & (alignment - 1) or address % alignment):
+            raise ImageError('invalid executable section alignment')
+        mapped = any(
+            s.flags & 1 and s.address <= address and
+            address + size <= s.address + s.file_size and
+            offset == s.offset + address - s.address
+            for s in segments
+        )
+        if not mapped:
+            raise ImageError('executable section disagrees with load mapping')
+        selected.append({'address': address, 'offset': offset, 'size': size})
+    selected.sort(key=lambda item: item['address'])
+    for left, right in zip(selected, selected[1:]):
+        if left['address'] + left['size'] > right['address']:
+            raise ImageError('overlapping executable sections')
+    return 'allocated-executable-sections', selected
 
 
 def main() -> int:

@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
 
-from ac4_image import ImageError, inspect, read_layout
+from ac4_image import ImageError, code_ranges, inspect, read_layout
 from r5900 import DecodeError, Instruction, MASK, decode
 
 
@@ -136,9 +136,13 @@ def executable_words(data: bytes):
     metadata = inspect(data)
     entry, segments = read_layout(data)
     words = {}
-    for segment in segments:
-        if segment.flags & 1:
-            words.update(stream_words(data[segment.offset:segment.offset + segment.file_size], segment.address))
+    selection, ranges = code_ranges(data, segments)
+    for region in ranges:
+        words.update(stream_words(data[region['offset']:region['offset'] + region['size']], region['address']))
+    if entry not in words:
+        raise ImageError('ELF entry outside selected executable ranges')
+    metadata['code_selection'] = selection
+    metadata['code_ranges'] = [dict(region, address=f"0x{region['address']:08x}") for region in ranges]
     return words, entry, metadata
 
 

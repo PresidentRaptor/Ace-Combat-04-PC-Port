@@ -104,3 +104,60 @@ M2 stays **In progress**. M2a's bounded cloud implementation and synthetic tests
 are ready for review; remaining instruction groups and local AC4 acceptance
 must pass before M2 can be completed. No PR was opened; any future PR must target
 `independent-ac4`, never `main`.
+
+## M2a local review and M2b continuation (2026-10-15)
+
+Fetched and reviewed cloud commit `79d72cb`; fast-forwarded the clean local
+independent-ac4 branch. All 34 cloud tests passed on local Python 3.11.0.
+The verified local ISO adapter passed. Baseline entry analysis visited five
+addresses and stopped at 0x00100018 because SQ was unsupported.
+
+Implemented M2b locally:
+
+- Quadword LQ/SQ and SA register forms MFSA/MTSA/MTSAB/MTSAH.
+- COP1 transfers, supported FCR restrictions, BC1 branches/likely forms,
+  LWC1/SWC1, single-precision arithmetic/accumulator/compare/conversion decoding.
+  SQRT uses ft; other unary operations use fs. CTC1 permits only FCR31.
+- ELF section selection excludes allocated data even within the single RWX
+  load segment, and ignores nonallocated vendor/debug sections. Stripped
+  executables retain an explicitly reported load-segment fallback. Invalid
+  executable section extents, alignments, overlaps and mappings are rejected.
+- Repeatable metadata-only local verification in validate_ac4.py. Five AC4
+  cases cover backward branch, direct call, unresolved return, integer likely
+  annulment and FP likely annulment. Branch opcode fields and target arithmetic
+  were separately checked from disc bytes against the hardware descriptions.
+
+Validation commands from repository root:
+
+```
+python -B -m unittest discover -s independent/tests -v
+python -B independent/validate_ac4.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso"
+git diff --check
+```
+
+Observed: **48 tests pass**, all five static disc checks pass, identity matches
+the unchanged supported SHA-256. Two executable sections at 0x00100000 and
+0x00297c00 contain 422,413 candidate words (previous whole-segment inventory:
+804,299). Current decoder accepts 412,068 and rejects 10,345 candidates.
+These are encoding inventory counts, not verified code or execution coverage.
+
+Entry analysis now visits 23 addresses, decodes 24 including contextual slots,
+and records 24 edges with no unsupported-instruction diagnostic. It ends at
+the explicit SYSCALL at 0x00100064. This is a correct analysis boundary for
+the current exception model, **not evidence of booting or executing AC4**.
+
+Reviewed local cases (metadata only; no words/guest source committed):
+
+| Address | Instruction | Target | Slot |
+| --- | --- | --- | --- |
+| 0x0010002c | BNE | 0x00100018 | ADDIU |
+| 0x00100084 | JAL | 0x0026b2d0 | SLL |
+| 0x001000c8 | JR ra | Unresolved | ADDIU |
+| 0x00100354 | BEQL | 0x0010036c | ANDI |
+| 0x001027e0 | BC1TL | 0x001027f4 | LWC1 |
+
+Remaining: packed MMI, COP0/COP2/VU decoding, CACHE/PREF, unsupported encodings,
+register propagation and jump tables, full indirect-target acceptance, and an
+independent execution oracle. Local static checks do not validate floating-point
+arithmetic, memory access, timing, syscall execution, graphics or gameplay.
+M2 remains **In progress**; M3 and later stages remain pending.

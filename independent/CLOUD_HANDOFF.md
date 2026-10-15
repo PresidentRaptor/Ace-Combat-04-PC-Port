@@ -63,3 +63,16 @@ If creating a PR, its base must be independent-ac4, not main.
 
 Keep the existing playable build for behavior comparisons. Windows graphics,
 sound, controllers and campaign validation remain local acceptance requirements.
+
+## Return status and next bounded work
+
+M2a was pushed as 79d72cb and reviewed locally. M2b adds section-aware inventory,
+quadword/SA/FPU decoding, 48 passing tests and five passing local static checks.
+Read the latest milestone evidence before starting another task; do not repeat
+M2a or use its historical unsupported-group list as the current implementation.
+
+Next bounded scope: complete remaining EE/MMI and COP0 decoding from primary
+hardware references, then add COP2/VU coverage. Preserve explicit unsupported
+boundaries and do not treat system calls as successful fallthrough. Register
+propagation, jump-table recovery and execution-oracle evidence remain separate
+acceptance work. M2 must remain in progress until its full gate is met.

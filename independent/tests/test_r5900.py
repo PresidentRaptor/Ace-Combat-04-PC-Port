@@ -87,9 +87,9 @@ class DecoderTests(unittest.TestCase):
                 decode(word, 0)
 
     def test_unsupported_groups_never_become_nops(self):
-        # COP0 (including ERET), FPU branch, COP2, MMI, LQ, CACHE, reserved op.
-        for word in [0x42000018, 0x45010001, 0x48000000, 0x70000000,
-                     0x78000000, 0xbc000000, 0xc0000001]:
+        # COP0 (including ERET), unsupported FPU format, COP2, MMI, CACHE, reserved op.
+        for word in [0x42000018, 0x46200000, 0x48000000, 0x70000000,
+                     0xbc000000, 0xc0000001]:
             with self.subTest(word=hex(word)), self.assertRaises(DecodeError):
                 decode(word, 0)
         self.assertEqual(decode(0, 0).mnemonic, 'sll')

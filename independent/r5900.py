@@ -1,4 +1,4 @@
-"""Independent EE scalar decoder; addresses are 32-bit guest virtual addresses.
+"""Independent EE scalar/FPU decoder; addresses are 32-bit guest virtual addresses.
 
 No execution semantics or inherited implementation inputs. See PROVENANCE.md.
 Unsupported, reserved and architecturally undefined encodings raise DecodeError.
@@ -73,11 +73,52 @@ def decode(word: int, pc: int) -> Instruction:
     if op == 15:
         zero(rs)
         return emit('lui', {'rt': rt, 'immediate': imm})
-    memory = {26: 'ldl', 27: 'ldr', 32: 'lb', 33: 'lh', 34: 'lwl', 35: 'lw',
+    memory = {26: 'ldl', 27: 'ldr', 30: 'lq', 31: 'sq',
+              32: 'lb', 33: 'lh', 34: 'lwl', 35: 'lw',
               36: 'lbu', 37: 'lhu', 38: 'lwr', 39: 'lwu', 40: 'sb', 41: 'sh',
               42: 'swl', 43: 'sw', 44: 'sdl', 45: 'sdr', 46: 'swr', 55: 'ld', 63: 'sd'}
     if op in memory:
         return emit(memory[op], {'rt': rt, 'base': rs, 'offset': signed})
+    if op in (49, 57):
+        return emit('lwc1' if op == 49 else 'swc1',
+                    {'ft': rt, 'base': rs, 'offset': signed})
+    if op == 1 and rt in (24, 25):
+        return emit('mtsab' if rt == 24 else 'mtsah', {'rs': rs, 'immediate': imm})
+    if op == 17:
+        if rs == 8 and rt <= 3:
+            target = (pc + 4 + signed * 4) & MASK
+            return emit(('bc1f', 'bc1t', 'bc1fl', 'bc1tl')[rt],
+                        {'immediate': signed}, 'branch', target, bool(rt & 2))
+        if rs in (0, 2, 4, 6):
+            zero(word & 0x7ff)
+            control = rs in (2, 6)
+            if rs == 2 and rd not in (0, 31) or rs == 6 and rd != 31:
+                raise DecodeError('unsupported FPU control register')
+            return emit({0: 'mfc1', 2: 'cfc1', 4: 'mtc1', 6: 'ctc1'}[rs],
+                        {'rt': rt, 'fcr' if control else 'fs': rd})
+        if rs == 16:
+            binary = {0: 'add.s', 1: 'sub.s', 2: 'mul.s', 3: 'div.s',
+                      22: 'rsqrt.s', 28: 'madd.s', 29: 'msub.s',
+                      40: 'max.s', 41: 'min.s'}
+            if fn in binary:
+                return emit(binary[fn], {'fd': sa, 'fs': rd, 'ft': rt})
+            if fn == 4:
+                # EE SQRT uses ft, unlike the other unary operations.
+                zero(rd)
+                return emit('sqrt.s', {'fd': sa, 'ft': rt})
+            if fn in (5, 6, 7, 36):
+                zero(rt)
+                return emit({5: 'abs.s', 6: 'mov.s', 7: 'neg.s', 36: 'cvt.w.s'}[fn],
+                            {'fd': sa, 'fs': rd})
+            accumulator = {24: 'adda.s', 25: 'suba.s', 26: 'mula.s',
+                           30: 'madda.s', 31: 'msuba.s'}
+            comparisons = {48: 'c.f.s', 50: 'c.eq.s', 52: 'c.lt.s', 54: 'c.le.s'}
+            if fn in accumulator or fn in comparisons:
+                zero(sa)
+                return emit((accumulator | comparisons)[fn], {'fs': rd, 'ft': rt})
+        if rs == 20 and fn == 32:
+            zero(rt)
+            return emit('cvt.s.w', {'fd': sa, 'fs': rd})
     immediate_traps = {8: 'tgei', 9: 'tgeiu', 10: 'tlti', 11: 'tltiu',
                        12: 'teqi', 14: 'tnei'}
     if op == 1 and rt in immediate_traps:
@@ -105,6 +146,12 @@ def decode(word: int, pc: int) -> Instruction:
         if fn in (17, 19):
             zero(rt, rd, sa)
             return emit('mthi' if fn == 17 else 'mtlo', {'rs': rs})
+        if fn == 40:
+            zero(rs, rt, sa)
+            return emit('mfsa', {'rd': rd})
+        if fn == 41:
+            zero(rt, rd, sa)
+            return emit('mtsa', {'rs': rs})
         if fn in (8, 9):
             zero(rt, sa, rd if fn == 8 else 0)
             if fn == 9 and rs == rd:
