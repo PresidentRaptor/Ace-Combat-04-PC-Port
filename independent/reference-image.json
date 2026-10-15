@@ -1,0 +1,19 @@
+{
+  "source": "User-supplied USA AC4 ISO; root SLUS_201.52;1",
+  "sha256": "38ecebd6965c2f74ec8973f538781506bf3a2cfad86f908deb6c5d585d528301",
+  "file_size": 3248756,
+  "supported_ac4": true,
+  "entry": "0x00100008",
+  "load_segments": [
+    {
+      "address": "0x00100000",
+      "offset": 4096,
+      "file_size": 3217196,
+      "memory_size": 3983180,
+      "zero_fill_size": 765984,
+      "flags": 7,
+      "alignment": 4096
+    }
+  ],
+  "iso_executable": {"sector": 1733982, "size": 3248756}
+}

@@ -1,0 +1,24 @@
+name: Independent AC4 checks
+
+on:
+  push:
+    branches: [independent-ac4]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Test independent tools without game data
+        run: python -B -m unittest discover -s independent/tests -v
