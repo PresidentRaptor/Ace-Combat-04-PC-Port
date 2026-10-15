@@ -64,6 +64,29 @@ int main(void) {
     assert(!ps2_gs_ws_pillar(512)); /* flight with absent/stale HUD markers */
     ps2_gs_frame_count=116; assert(!ps2_gs_ws_pillar(640));
     {
+        /* Mission objectives uses a 512-column display. Its blue scan is a
+           full-width PSMT8 sprite, while the background uses narrower tiles. */
+        ps2_vk_state scan={0}; scan.fb_w=512; scan.fb_h=448;
+        scan.tme=scan.fst=1;
+        scan.scissor[1]=511; scan.scissor[3]=447;
+        ps2_vk_vertex band[6]={{0}};
+        band[0].y=158.9f; band[2].x=512; band[2].y=272.9f;
+        texture_reg=0x2007D082A9307E90ull;
+        ws_hud(&scan,band,6);
+        assert(fabsf(band[0].x-64.125f)<0.001f);
+        assert(fabsf(band[2].x-448.125f)<0.001f);
+        assert(scan.scissor[0]==64 && scan.scissor[1]==447);
+        assert(!ps2_gs_ws_pillar(512)); /* Never mask flight at presentation. */
+        /* Clears and framebuffer copies must still cover the full display. */
+        for(int copy=0;copy<2;copy++) {
+            scan.tme=copy; scan.tex_rt=copy;
+            band[0].x=0; band[2].x=512;
+            ws_hud(&scan,band,6);
+            assert(band[0].x==0 && band[2].x==512);
+        }
+        texture_reg=0;
+    }
+    {
         ps2_vk_state feedback={0}; feedback.fb_w=512; feedback.fb_h=448;
         feedback.tme=feedback.fst=1;
         ps2_vk_vertex strip[6]={{0}};
@@ -127,7 +150,7 @@ int main(void) {
     ps2_vk_state st={0}; st.fb_w=512; st.fb_h=448;
     ps2_vk_vertex v[2]={{0}}; v[0].x=120; v[1].x=140;
     ws_hud(&st,v,2); assert(v[0].x==120 && v[1].x==140);
-    puts("PASS: menu highlights/cells/guides agree; 512-column flight cannot pillarbox without HUD; menu/fade expiry; seeker follows target across caption/warning/corner rows; captions stay distinct; widescreen-off unchanged");
+    puts("PASS: menu highlights/cells/guides agree; objectives scan stays centered; clears/copies unchanged; 512-column flight cannot pillarbox without HUD; menu/fade expiry; seeker follows target across caption/warning/corner rows; captions stay distinct; widescreen-off unchanged");
 }
 '''
 env=dict(os.environ, PATH='C:/msys64/ucrt64/bin;'+os.environ['PATH'])

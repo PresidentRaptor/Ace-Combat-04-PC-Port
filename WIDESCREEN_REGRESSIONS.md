@@ -1,5 +1,25 @@
 # Widescreen regression follow-up
 
+## Mission objectives scan contained (2026-10-14)
+
+The user confirmed that startup audio and the downward chase view are now
+correct. The remaining blue scan leaking into the objectives screen's black
+side bars was reproduced in a scripted Mission 01 recording.
+
+This screen displays 512 columns, like flight. Its background is drawn in
+64-pixel tiles, but one PSMT8 scan sprite covers x0..512, y158.9..272.9 at Z0.
+The full-width copy/fade exemption left that sprite outside the menu transform.
+Full-width indexed Z-zero UI sprites now use the centered transform and scissor;
+framebuffer copies, high-plane feedback and untextured clears remain exempt.
+The 512-column presentation gate remains intact, preventing flight pillarboxing.
+
+The synthetic regression failed on the old code and passes with the fix.
+Before/after Vulkan replay of the same objectives recording shows the left
+bar changing from RGB maxima (8,11,23) to (0,0,0). Both bars are black. Flight,
+target-diamond, hangar and widescreen-disabled objectives replays are each
+pixel-identical before/after. Recordings and images remain local under
+`review/objectives-recording`, outside source control.
+
 Reviewed the main branch through `0bb242f`, including the widescreen camera,
 HUD layout, menu pillarboxing, and the removal of AC5-only runtime components.
 The local checkout matched GitHub main before edits.

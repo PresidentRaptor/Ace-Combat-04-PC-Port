@@ -3632,8 +3632,10 @@ u32 ps2_ws_pillar_frame = 0x80000000u;
 static u32 ws_flight_frame = 0x80000000u;
 
 int ps2_gs_ws_pillar(u32 display_w) {
-    /* AC4 menus/movies display 640 columns; flight displays 512, even when
-       its backing render target is 640 wide. Use the displayed viewport,
+    /* Most menus/movies display 640 columns; flight displays 512, even when
+       its backing render target is 640 wide. The 512-column objectives UI
+       is confined by its own transformed draws, not this presentation mask.
+       Use the displayed viewport,
        not HUD visibility or accumulated overlay area, as a hard flight gate. */
     if (display_w < 640u) return 0;
     /* Flight HUD remains drawn behind the pause menu. Its far-plane glyphs
@@ -3768,8 +3770,15 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     /* The hangar's crosshair guides span the menu. They must transform with
        its selector, unlike full-screen copies, fades and clearing strips. */
     int menu_line = n == 2 && !st->tme && v[0].z == 0.0f;
+    /* The objectives screen's scan spans all 512 columns, unlike its tiled
+       background. Ordinary indexed Z-zero UI sprites share the menu layout
+       even at full width. RT copies and high-plane feedback were excluded
+       above; untextured clears/fades remain full width. Do not enable the
+       presentation pillarbox for 512-column flight to hide this UI effect. */
+    int menu_sprite = n == 6 && st->tme && st->fst && v[0].z == 0.0f
+                      && (psm == 19u || psm == 20u); /* PSMT8 / PSMT4 */
     if (x0 <= 1.0f && x1 >= (float)st->fb_w - 0.5f
-        && !(menu_line && y1 - y0 < 0.5f)) return;
+        && !menu_sprite && !(menu_line && y1 - y0 < 0.5f)) return;
     if (!st->tme && y0 <= 1.0f && y1 >= (float)st->fb_h - 0.5f
         && !(menu_line && x1 - x0 < 0.5f)) return;
     s = (4.0f / 3.0f) / aspect;
