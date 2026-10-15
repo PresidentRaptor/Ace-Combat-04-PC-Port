@@ -29,6 +29,7 @@ typedef struct {
     int memory_error;
     unsigned ee_memory_map;
     unsigned verify_instruction_bytes;
+    uint32_t cp0_status;
     unsigned char scratchpad[16384];
     void *device_state;
     int (*device_read)(void *,uint32_t,unsigned,uint64_t *,uint64_t *);
@@ -295,6 +296,28 @@ def translate(ins):
                 lines.append(f'c->gpr[{o["rt"]}][1]=high;')
         else:
             lines.append(f'if (!ac4_store(c,address,{width},{rt},c->gpr[{o["rt"]}][1])) return c->memory_error;')
+    elif name in ('pand','por','pxor','pnor','pcpyld','pcpyud','pcpyh'):
+        if o['rd']:
+            rs_high=f'c->gpr[{o.get("rs",0)}][1]'
+            rt_high=f'c->gpr[{o["rt"]}][1]'
+            if name=='pcpyld':
+                low,high=rt,rs
+            elif name=='pcpyud':
+                low,high=rs_high,rt_high
+            elif name=='pcpyh':
+                low=f'({rt}&UINT64_C(0xffff))*UINT64_C(0x0001000100010001)'
+                high=f'({rt_high}&UINT64_C(0xffff))*UINT64_C(0x0001000100010001)'
+            else:
+                operator={'pand':'&','por':'|','pxor':'^','pnor':'|'}[name]
+                invert='~' if name=='pnor' else ''
+                low=f'{invert}({rs}{operator}{rt})'
+                high=f'{invert}({rs_high}{operator}{rt_high})'
+            lines.extend([f'uint64_t low={low},high={high};',
+                          write(o['rd'],'low'),f'c->gpr[{o["rd"]}][1]=high;'])
+    elif name in ('ei','di'):
+        lines.append('if ((c->cp0_status&UINT32_C(0x20006)) || !(c->cp0_status&UINT32_C(0x18))) {')
+        lines.append('c->cp0_status '+('|=UINT32_C(0x10000);' if name=='ei' else '&=~UINT32_C(0x10000);'))
+        lines.append('}')
     elif name == 'sync':
         lines.append('if (delay) return AC4_UNDEFINED_SLOT;')
         # Otherwise single-threaded; no timing/inter-thread model.

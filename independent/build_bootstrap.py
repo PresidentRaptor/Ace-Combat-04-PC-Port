@@ -84,7 +84,9 @@ def build(data, output, cc, *, limit=1024, extra_entries=(), copied_regions=()):
         ram_file = root/'ram.bin'
         ram_file.write_bytes(ram)
         executable = root/('ac4-independent-bootstrap.exe' if os.name=='nt' else 'ac4-independent-bootstrap')
-        command=[cc,'-std=c11','-O1','-Wall','-Wextra','-Werror','-I',str(root),'-I',str(HERE),
+        # Large diagnostic dispatch maps prioritize bounded compilation latency;
+        # optimized code generation is still exercised by the native unit suite.
+        command=[cc,'-std=c11','-O0','-Wall','-Wextra','-Werror','-I',str(root),'-I',str(HERE),
                  str(HERE/'bootstrap_main.c'),'-o',str(executable)]
         if os.name=='nt':
             command.append('-Wl,--no-insert-timestamp')
@@ -101,13 +103,13 @@ def build(data, output, cc, *, limit=1024, extra_entries=(), copied_regions=()):
             raise ValueError('invalid diagnostic response')
         version = subprocess.run([cc,'--version'],capture_output=True,text=True,
                                  env=environment,check=True,timeout=10).stdout.splitlines()[0]
-        manifest = dict(schema=1,scope='experimental bootstrap diagnostic; NOT PLAYABLE',
+        manifest = dict(schema=1,scope='experimental bootstrap diagnostic; NOT PLAYABLE',optimization='O0',
                         image_sha256=image['sha256'],compiler=version,
                         generated_source_sha256=hashlib.sha256(program.encode()).hexdigest(),
                         ram_sha256=hashlib.sha256(ram).hexdigest(),
                         executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
                         selection=selection,observation=observation,
-                        limitations=['provisional single-thread stack/heap policy',
+                        limitations=['provisional startup stack/heap policy and cooperative scheduler ABI',
                                      'ordinary-function guest syscall bridge; no CP0 privilege transition',
                                      'no hardware execution oracle or complete exception delivery',
                                      'unknown services/instructions and missing dispatch targets stop',

@@ -1,19 +1,124 @@
 {
   "schema": 1,
   "scope": "experimental bootstrap diagnostic; NOT PLAYABLE",
+  "optimization": "O0",
   "image_sha256": "38ecebd6965c2f74ec8973f538781506bf3a2cfad86f908deb6c5d585d528301",
   "compiler": "gcc.exe (Rev5, Built by MSYS2 project) 16.2.0",
-  "generated_source_sha256": "b73551bb4f18911c3a7b6dc6801a61de8cdc6fa292fb5bb814ebda6967d49c68",
+  "generated_source_sha256": "49d96ca54613906f4b07c03c7d5b085e029c8b7a395422a4816a43c2c09f35f0",
   "ram_sha256": "1490680da7975cc25f4e1a366ca6812397d729f5e7c3fbb034993721a65c006c",
-  "executable_sha256": "690b550675d44c6e5e4944bc9afd9de5e99940934001d8b5882a2d9b2db1e1a3",
+  "executable_sha256": "821919c3685fba9908ea31bad5f85c70dbe7cab15bd2c079243322f27c0ea87a",
   "selection": {
-    "selected_addresses": 2048,
-    "selection_limit": 2048,
-    "pending_addresses": 12,
+    "selected_addresses": 16384,
+    "selection_limit": 16384,
+    "pending_addresses": 260,
     "boundaries": [
       {
-        "address": "0x00100094",
-        "reason": "0x100094: unsupported operation ei"
+        "address": "0x00100d48",
+        "reason": "0x100d48: unsupported operation swc1"
+      },
+      {
+        "address": "0x00102508",
+        "reason": "0x102508: unsupported operation lwc1"
+      },
+      {
+        "address": "0x0010254c",
+        "reason": "0x10254c: unsupported operation mtc1"
+      },
+      {
+        "address": "0x001026bc",
+        "reason": "0x1026bc: unsupported operation mtc1"
+      },
+      {
+        "address": "0x001044fc",
+        "reason": "0x1044fc: unsupported operation mtc1"
+      },
+      {
+        "address": "0x00104f10",
+        "reason": "0x104f10: unsupported operation lwc1"
+      },
+      {
+        "address": "0x00105810",
+        "reason": "0x105810: unsupported operation swc1"
+      },
+      {
+        "address": "0x0010599c",
+        "reason": "0x10599c: unsupported operation mtc1"
+      },
+      {
+        "address": "0x001059b0",
+        "reason": "0x1059b0: unsupported operation lwc1"
+      },
+      {
+        "address": "0x001059d4",
+        "reason": "0x1059d4: unsupported operation lwc1"
+      },
+      {
+        "address": "0x002121c4",
+        "reason": "0x2121c4: unsupported operation mtc1"
+      },
+      {
+        "address": "0x00213ea0",
+        "reason": "0x213ea0: unsupported operation mtc1"
+      },
+      {
+        "address": "0x0021908c",
+        "reason": "0x21908c: unsupported operation mtc1"
+      },
+      {
+        "address": "0x0021986c",
+        "reason": "0x21986c: unsupported operation lwc1"
+      },
+      {
+        "address": "0x0021a1c8",
+        "reason": "0x21a1c8: unsupported operation swc1"
+      },
+      {
+        "address": "0x0021a720",
+        "reason": "0x21a720: unsupported operation mov.s"
+      },
+      {
+        "address": "0x0021a8e8",
+        "reason": "0x21a8e8: unsupported operation lwc1"
+      },
+      {
+        "address": "0x0021e7dc",
+        "reason": "0x21e7dc: unsupported operation mtc1"
+      },
+      {
+        "address": "0x0021fb7c",
+        "reason": "0x21fb7c: unsupported operation swc1"
+      },
+      {
+        "address": "0x0021fe98",
+        "reason": "0x21fe98: unsupported operation swc1"
+      },
+      {
+        "address": "0x002618b0",
+        "reason": "0x2618b0: unsupported operation cfc2"
+      },
+      {
+        "address": "0x00261d9c",
+        "reason": "0x261d9c: unsupported operation cfc2"
+      },
+      {
+        "address": "0x00261f98",
+        "reason": "0x261f98: unsupported operation cfc2"
+      },
+      {
+        "address": "0x00263c18",
+        "reason": "0x263c18: unsupported operation cfc2"
+      },
+      {
+        "address": "0x0026470c",
+        "reason": "0x26470c: unsupported operation mfc0"
+      },
+      {
+        "address": "0x0026485c",
+        "reason": "0x26485c: unsupported operation mfc0"
+      },
+      {
+        "address": "0x0026492c",
+        "reason": "0x26492c: unsupported operation mfc0"
       },
       {
         "address": "0x0026b228",
@@ -24,14 +129,52 @@
         "reason": "0x26b270: unsupported operation mfc0"
       },
       {
-        "address": "0x80076638",
-        "reason": "0x80076638: unsupported operation ei"
+        "address": "0x0026bf08",
+        "reason": "0x26bf08: unsupported operation cache.dhwbin"
+      },
+      {
+        "address": "0x0026bf2c",
+        "reason": "0x26bf2c: unsupported operation cache.dhwbin"
+      },
+      {
+        "address": "0x002707f8",
+        "reason": "0x2707f8: unsupported operation mfc0"
+      },
+      {
+        "address": "0x002917b0",
+        "reason": "0x2917b0: unsupported operation psubb"
+      },
+      {
+        "address": "0x002924c0",
+        "reason": "0x2924c0: unsupported operation psubb"
+      },
+      {
+        "address": "0x00292778",
+        "reason": "0x292778: unsupported operation psubw"
+      },
+      {
+        "address": "0x002928bc",
+        "reason": "0x2928bc: unsupported operation psubb"
+      },
+      {
+        "address": "0x002929c4",
+        "reason": "0x2929c4: unsupported operation psubb"
+      },
+      {
+        "address": "0x00292b1c",
+        "reason": "0x292b1c: unsupported operation psubw"
+      },
+      {
+        "address": "0x00297974",
+        "reason": "0x297974: unsupported operation mfc0"
       }
     ],
     "syscall_continuations_selected": true,
     "entry_seeds": [
       "0x00100008",
       "0x00264a88",
+      "0x001001a4",
+      "0x0027c680",
       "0x80076000"
     ],
     "observed_code_copies": [
@@ -44,28 +187,30 @@
   },
   "observation": {
     "scope": "experimental-bootstrap-diagnostic",
-    "status": 32,
-    "pc": 2506404,
-    "fault_pc": 2506404,
-    "fault_address": 2506404,
+    "status": 3,
+    "pc": 2607172,
+    "fault_pc": 2607172,
+    "fault_address": 2607172,
     "delay": 0,
-    "steps": 339303,
-    "services_completed": 23,
-    "last_syscall": 32,
+    "steps": 339768,
+    "services_completed": 29,
+    "last_syscall": 100,
     "stack_pointer": 32505856,
     "heap_start": 5031756,
     "heap_end": 32505856,
     "override_target": 0,
-    "a0": 32505728,
-    "a1": 4282864,
-    "a2": 1024
+    "current_thread": 1,
+    "context_switches": 2,
+    "a0": 32505664,
+    "a1": 4242008,
+    "a2": 18446744073709551615
   },
   "limitations": [
-    "provisional single-thread stack/heap policy",
+    "provisional startup stack/heap policy and cooperative scheduler ABI",
     "ordinary-function guest syscall bridge; no CP0 privilege transition",
     "no hardware execution oracle or complete exception delivery",
     "unknown services/instructions and missing dispatch targets stop",
     "no graphics, input, audio, disc runtime or gameplay"
   ],
-  "validation_note": "Two local builds have identical executable and RAM SHA-256; no hardware oracle or playable-build acceptance."
+  "validation_note": "Local Windows diagnostic with two modeled guest thread switches; no hardware oracle or playable-build acceptance. Earlier binary reproducibility measurements are historical."
 }

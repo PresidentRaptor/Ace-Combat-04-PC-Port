@@ -292,3 +292,20 @@ Startup stack/heap policy and the guest syscall bridge are experimental and
 have not passed a hardware/emulator oracle comparison. The bridge supplies
 ordinary-function returns rather than full CP0 exception delivery. MILESTONES.md
 and reference-bootstrap.json record exactly how far the local build gets.
+
+
+## Cooperative thread continuation (M4b)
+
+The diagnostic now supports a bounded cooperative thread/semaphore model and
+conditional EI/DI status changes. Local AC4 execution records two context
+switches and gets past CreateThread into initialization. It still has no graphics
+or gameplay. The latest exact build command, additional observed PC seeds,
+selection-limit effects and remaining boundary are in MILESTONES.md; older
+commands/results above describe earlier stages.
+
+Current native CPU context covers implemented GPR/HI/LO/partial Status state and
+guest syscall frames. FPU/vector context, IRQ-driven scheduling, full CP0 and
+suspend/terminate APIs are not implemented. No-ready-thread waits stop with
+IDLE rather than inventing external events. Scheduler return/stack policies
+still need an independent trace. Diagnostic packages now use O0 compilation;
+the native synthetic suite continues to check optimized generated C.

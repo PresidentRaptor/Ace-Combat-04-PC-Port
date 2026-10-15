@@ -35,10 +35,12 @@ int main(int argc, char **argv) {
            "\"pc\":%u,\"fault_pc\":%u,\"fault_address\":%u,\"delay\":%u,"
            "\"steps\":%" PRIu64 ",\"services_completed\":%u,\"last_syscall\":%u,"
            "\"stack_pointer\":%u,\"heap_start\":%u,\"heap_end\":%u,"
-           "\"override_target\":%u,\"a0\":%" PRIu64 ",\"a1\":%" PRIu64 ",\"a2\":%" PRIu64 "}\n",
+           "\"override_target\":%u,\"current_thread\":%u,\"context_switches\":%u,"
+           "\"a0\":%" PRIu64 ",\"a1\":%" PRIu64 ",\"a2\":%" PRIu64 "}\n",
            status,cpu.pc,cpu.fault_pc,cpu.fault_address,cpu.fault_delay,cpu.steps,
            boot.calls,boot.last_number,boot.stack_pointer,boot.heap_start,boot.heap_end,
            boot.last_number<256 ? boot.syscall_overrides[boot.last_number] : 0,
+           boot.current_thread,boot.context_switches,
            cpu.gpr[4][0],cpu.gpr[5][0],cpu.gpr[6][0]);
     free(ram);
     /* Diagnostic stops are explicitly unsuccessful execution, not a game exit. */

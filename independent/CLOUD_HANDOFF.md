@@ -106,3 +106,14 @@ review sources and provisional stack/heap/bridge policy before extending it.
 Do not declare scheduling/interrupt correctness without independent evidence.
 Keep missing services/timers/system instructions explicit and preserve byte
 checks for copied or modified code. See reference-bootstrap.json for exact data.
+
+
+M4b adds cooperative thread/semaphore services, preservation of implemented CPU
+state and nested syscall frames, EI/DI conditional state changes and a small
+128-bit logical/copy execution subset. Current local validation: 167 tests,
+2/2 CTest, 19 static disc checks. AC4 records two context switches and 339,768
+attempted instructions, then FETCH at 0x0027c844 with the documented 16,384-address
+selection. This is still a diagnostic, not a playable build. Next bounded work:
+verified dispatch expansion and the remaining CPU/kernel/device boundaries;
+scheduler/stack policies still need independent trace validation. Read the
+latest milestone evidence rather than repeating the completed CreateThread work.

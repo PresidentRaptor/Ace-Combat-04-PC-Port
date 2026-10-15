@@ -20,6 +20,8 @@ int test_boot(Ac4Cpu *c, uint64_t budget) {
     c->gpr[21][0]=bootstrap.semaphores[0].maximum;
     c->gpr[22][0]=bootstrap.call_depth;
     c->gpr[23][0]=bootstrap.timer3_handler;
+    c->gpr[24][0]=bootstrap.current_thread;
+    c->gpr[25][0]=bootstrap.context_switches;
     return status;
 }
 '''

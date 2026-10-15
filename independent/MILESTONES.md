@@ -387,3 +387,65 @@ exception/interrupt semantics, active timers and COP0/remaining CPU execution,
 then SIF/disc/device services. Validate the provisional bootstrap policy against
 an independent oracle before closing M3/M4. M2/M3/M4 stay In progress; M5-M10
 remain pending. No independent playable build is ready.
+
+
+## M4b cooperative scheduling and local continuation (2026-10-15)
+
+Implemented a bounded 256-slot cooperative thread model from published kernel
+ABI documentation: dormant thread creation/deletion, start/exit/delete-exit,
+priority changes, equal-priority ready-queue rotation, current-thread identity,
+sleep/wake and pending wake counts. Added semaphore delete/signal/wait/poll with
+explicit blocking. No runnable thread returns diagnostic IDLE (38), not success
+or a fabricated wake-up. Unsupported suspend/terminate/status APIs remain stops.
+
+Context switches preserve the implemented CPU state: both 64-bit halves of all
+GPRs, both HI/LO banks, PC, partial Status state and nested guest syscall-return
+frames. Memory, scratchpad, devices and the global instruction budget remain
+shared. No floating-point/vector context is claimed while those execution
+families remain unsupported. New threads inherit heap/process settings and
+use the documented parameter structure; stack alignment/initial layout, return
+values and FIFO semaphore wait ordering remain provisional model policies until
+an independent scheduler trace is available.
+
+EI/DI now implement the EE manual's conditional EIE-bit changes for kernel,
+EDI, EXL and ERL states. They do not deliver interrupts or establish a complete
+COP0 privilege/exception implementation. Added 128-bit PAND/POR/PXOR/PNOR and
+PCPYLD/PCPYUD/PCPYH execution with source sampling before alias writes. These
+unblocked the title's early memory initialization routines.
+
+Validation: **167 independent tests pass** with the native compiler required;
+**2/2 CTest pass**; **19 static disc checks pass** and the original native
+first-syscall check still passes. New scheduler tests verify priority-driven
+switch/return, full GPR halves and HI/LO preservation, argument/GP delivery,
+sleep/wake preemption, semaphore handoff, FIFO rotation, no-ready-thread stops,
+invalid inputs, bounded global budgets and nested syscall frames across switches.
+EI/DI mode cases and packed logical/copy aliases are checked independently.
+These are implementation-model checks, not hardware-oracle acceptance.
+
+The local AC4 run now gets past CreateThread/StartThread and EI, recording
+**two context switches**, **29 completed modeled service calls**, and
+**339,768 attempted instructions**. Its next boundary is a missing selected
+instruction at **0x0027c844**, reported as FETCH (3). This is a translation-map
+boundary, not evidence of an invalid guest address. The current map selects
+16,384 addresses; unsupported system/FPU/vector/packed operations remain
+explicit. No menus, rendering or gameplay have been reached.
+
+Command for this exact diagnostic (choose a fresh output directory):
+
+```
+python -B independent/build_bootstrap.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --output ../dev/ac4-bootstrap-local-scheduler --cc C:/msys64/ucrt64/bin/gcc.exe --limit 16384 --entry 0x264a88 --entry 0x1001a4 --entry 0x27c680 --copied-code 0x3fabd8:0x80076000:1856
+```
+
+Additional entry seeds were observed as missing PCs during guarded local runs
+and verified in the supported CPU image. They are code-selection seeds, not
+proved function boundaries or complete indirect-target recovery. A smaller
+bounded selection can stop earlier, including at a missing slot; adding seeds
+can change what fits within the limit. Current metadata is in
+reference-bootstrap.json. Larger diagnostic maps now compile at **O0** to bound
+compiler latency; synthetic execution tests retain optimized native compilation.
+No performance or new cross-build reproducibility result is inferred.
+
+**Next:** expand verified dispatch selection for observed initialization paths,
+COP0/FPU/vector execution and remaining kernel/device services; independently
+validate scheduler and startup ABI policies. M2/M3/M4 remain In progress. The
+local diagnostic is still not a playable build, and later milestones stay open.

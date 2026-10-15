@@ -54,9 +54,9 @@ or manual text is redistributed in this change):
 
 - Sony Computer Entertainment, **EE Core Instruction Set Manual**, version 6.0,
   April 2002. [Document mirror](https://github.com/ninjadynamics/PS2Docs/blob/3a6e97416b0e23c4e94288515adef521cf077682/EE_Core_Instruction_Set_Manual.pdf).
-  Chapter 2, pp. 24Ã¢â‚¬â€œ134: scalar encoding pictures, operands and restrictions;
-  especially BEQ/BEQL pp. 30Ã¢â‚¬â€œ31, link branches pp. 33Ã¢â‚¬â€œ34 and 41Ã¢â‚¬â€œ42,
-  J/JAL/JALR/JR pp. 65Ã¢â‚¬â€œ68, SYNC p. 121 and explicit exceptions pp. 122Ã¢â‚¬â€œ134.
+  Chapter 2, pp. 24ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“134: scalar encoding pictures, operands and restrictions;
+  especially BEQ/BEQL pp. 30ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“31, link branches pp. 33ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“34 and 41ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“42,
+  J/JAL/JALR/JR pp. 65ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“68, SYNC p. 121 and explicit exceptions pp. 122ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“134.
   Chapter 3, MULT/MULTU pp. 154/156: EE's optional destination GPR extension.
   Consulted encoding pictures for sign extension, shift widths, fixed-zero
   fields and trap code fields as well as the descriptive text. Where the
@@ -277,3 +277,29 @@ The diagnostic executable and initial RAM contain private game-derived material
 and stay outside Git. reference-bootstrap.json contains hashes/addresses/counts
 only. Its observations are results from this experimental implementation, not a
 separate execution oracle. Existing derived source/notices remain untouched.
+
+
+## M4b thread model and CPU extensions (2026-10-15)
+
+The new cooperative scheduler was written from PS2tek's BIOS EE Threading and
+EE Syscalls descriptions, cross-checking the thread parameter field offsets
+against PS2SDK's published kernel.h declarations:
+https://ps2dev.github.io/ps2sdk/kernel_8h_source.html . No scheduler implementation,
+TCB source, inherited runtime or AC5 map was copied/adapted. Internal context
+storage, queue ordering and shadow syscall frames are new implementation choices.
+Model choices such as semaphore FIFO wake ordering, some return values and new
+stack layout are provisional, not claims of exact BIOS behavior. The primary
+references do not replace independent execution-oracle validation.
+
+Conditional EI/DI effects were checked against Sony EE Core Instruction Set
+Manual v6.0 pp. 314-315; Status bit positions were cross-checked against PS2tek.
+No interrupt delivery, privilege transition or complete COP0 model is inferred.
+Packed logical and copy operations use the same Sony manual's individual PAND,
+POR/PXOR/PNOR and PCPYH/PCPYLD/PCPYUD descriptions (copy pp. 189-191), with fresh
+synthetic alias/upper-half expectations and no emulator implementation inputs.
+
+Additional local selection seeds 0x001001a4 and 0x0027c680 came from explicit
+FETCH boundaries in guarded runs of the user's verified image. They do not
+establish complete function boundaries or global dispatch coverage. Runtime
+observations still reflect the provisional startup/scheduler model, not a
+physical-console trace. No game words, generated source or artifacts enter Git.
