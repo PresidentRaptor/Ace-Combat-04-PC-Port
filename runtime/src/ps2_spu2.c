@@ -166,6 +166,11 @@ void ps2_spu2_key_on(u32 i, u32 ssa, u32 lsax, u32 pitch,
     v->voll = voll; v->volr = volr;
     v->adsr1 = adsr1; v->adsr2 = adsr2;
     v->phase = ADSR_ATTACK; v->env = 0; v->env_clock = 0; v->on = 1;
+    if (getenv("PS2_SPU2_TRACE"))
+        ps2_log("spu2: key-on voice=%u ssa=%06X pitch=%u adsr=%04X/%04X volume=%d/%d header=%02X/%02X",
+            i, v->ssa, v->pitch, adsr1, adsr2, voll, volr,
+            v->ssa < SPU2_RAM_SIZE-1u ? ps2_spu2_ram[v->ssa] : 0,
+            v->ssa < SPU2_RAM_SIZE-1u ? ps2_spu2_ram[v->ssa+1u] : 0);
     spu2_endx &= ~(1u << (i & 31u));
 }
 

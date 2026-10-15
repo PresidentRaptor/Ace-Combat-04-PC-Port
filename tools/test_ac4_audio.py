@@ -12,6 +12,7 @@ prelude = r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
 typedef uint8_t u8; typedef uint32_t u32; typedef uint64_t u64;
@@ -70,7 +71,28 @@ int main(void) {
     memset(out,0,sizeof out);
     vag_run(out,3);
     for (int i=0;i<6;i++) assert(out[i]==0);
-    puts("PASS: final 28-sample block, same-field refill ordering, stereo routing, volume, mute");
+    /* Real startup pattern: sound-bank staging and music reuse IOP RAM.
+       Partial overlaps must invalidate old descriptions, not replay them. */
+    memset(vag_fills,0,sizeof vag_fills);
+    ps2_ac4_iop_fill(0xA0180,67584);
+    ps2_ac4_iop_fill(0xA0180,196608);
+    ps2_ac4_iop_fill(0xD0180,196608);
+    ps2_ac4_iop_fill(0xA0180,176128);
+    ps2_ac4_iop_fill(0xC0180,131072);
+    vag_begin(1,10584064,2,3764);
+    int next=vag_next_fill(&vag[1]);
+    assert(next>=0 && vag_fills[next].addr==0xC0180 && vag_fills[next].size==131072);
+    int live=0; for(int i=0;i<VAG_FILLS;i++) live+=vag_fills[i].size && !vag_fills[i].used;
+    assert(live==1);
+    /* A current oversized staging read is never a playable ring buffer. */
+    ps2_ac4_iop_fill(0xE0180,196608);
+    next=vag_next_fill(&vag[1]);
+    assert(next>=0 && vag_fills[next].addr==0xC0180);
+    /* A new write also detaches an active reference to overwritten memory. */
+    vag[1].fill=next; vag[1].pos=128;
+    ps2_ac4_iop_fill(0xC0180,131072);
+    assert(vag[1].fill==-1 && vag[1].pos==0);
+    puts("PASS: final block, refill ordering, stereo/volume/mute, overlapping staging reads, oversized transfers, active buffer invalidation");
 }
 '''
 env = os.environ.copy()

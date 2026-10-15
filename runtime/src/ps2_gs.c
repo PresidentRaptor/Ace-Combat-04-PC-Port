@@ -3675,6 +3675,12 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     int k, edge;
     if (!ps2_cfg.widescreen || ps2_cfg.hud_layout == PS2_HUD_STRETCHED) return;
     if (ps2_gif_path == 1 || st->tex_rt || st->fb_w < 480u || st->fb_h < 400u) return;
+    /* High-plane indexed formats reinterpret framebuffer alpha, including
+       haze/shadow passes whose current decode can fall back to VRAM. They
+       retain screen coverage even when no GPU target binding was found. */
+    u32 psm = (u32)((tex0_reg() >> 20) & 63u);
+    if (st->shuffle_rg || st->index_rt || st->zcopy
+        || (st->tme && (psm == PSM_T8H || psm == PSM_T4HL || psm == PSM_T4HH))) return;
     aspect = ps2_vk_game_aspect();
     if (!(aspect > 1.34f)) return;
     {   int realz = 0;
@@ -3845,9 +3851,10 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
         vb = at >= 0 ? ps2_kernel_vblank_count() : 0u;
         if (at >= 0 && vb >= (u64)at && vb <= (u64)to)
             ps2_log("ws: v%llu path%d prim%u n%d tme%d tex0 %016llX x[%.1f..%.1f] y[%.1f..%.1f] "
-                    "z%.0f fb%ux%u", (unsigned long long)vb, ps2_gif_path,
+                    "z%.0f fb%ux%u mask%08X shuffle%d zcopy%d", (unsigned long long)vb, ps2_gif_path,
                     (unsigned)(gs_prim & 7u), n, st->tme, (unsigned long long)tex0_reg(),
-                    x0, x1, v[0].y, v[n - 1].y, v[0].z, st->fb_w, st->fb_h);
+                    x0, x1, v[0].y, v[n - 1].y, v[0].z, st->fb_w, st->fb_h,
+                    st->fb_mask, st->shuffle_rg, st->zcopy);
     }
     l = ws_map((float)st->scissor[0], edge, s, gx, (float)st->fb_w);
     r = ws_map((float)st->scissor[1] + 1.0f, edge, s, gx, (float)st->fb_w);

@@ -371,7 +371,7 @@ static int vag_next_fill(const vag_chan *c) {
     int best = -1;
     for (int k = 0; k < VAG_FILLS; k++) {
         const vag_fill *f = &vag_fills[k];
-        if (f->used || !f->size || !vag_in(c, f->addr)) continue;
+        if (f->used || !f->size || f->size > c->buf_size || !vag_in(c, f->addr)) continue;
         if (best < 0 || f->order < vag_fills[best].order)
             best = k;
     }
@@ -382,8 +382,21 @@ static int vag_next_fill(const vag_chan *c) {
 void ps2_ac4_iop_fill(u32 addr, u32 size) {
     int slot = -1;
     addr &= PS2_IOP_RAM_SIZE - 1u;
-    if (!vag_base) return;
+    if (!vag_base || !size) return;
     pthread_mutex_lock(&vag_lock);
+    /* These notifications include sound-bank staging reads as well as VAG
+       buffers. A record describes bytes still resident in IOP RAM, not an
+       owned copy. Reusing any part of that memory invalidates its old record;
+       otherwise first menu playback decodes stale bank transfers as music. */
+    for (int k = 0; k < VAG_FILLS; k++) {
+        vag_fill *f = &vag_fills[k];
+        if (!f->used && f->size && (u64)addr < (u64)f->addr + f->size
+            && (u64)f->addr < (u64)addr + size) {
+            f->used = 1;
+            for (int i = 0; i < VAG_IOP_CHANS; i++)
+                if (vag[i].fill == k) { vag[i].fill = -1; vag[i].pos = 0; }
+        }
+    }
     for (int k = 0; k < VAG_FILLS; k++)
         if (vag_fills[k].used || !vag_fills[k].size) { slot = k; break; }
     if (slot < 0) slot = 0;
@@ -502,6 +515,17 @@ static void vag_begin(u32 ee, u32 length, u32 nch, u32 pitch) {
     /* the module moves to its next buffer when a stream begins */
     c->next_buf = (keep_next + 1u) % 3u;
     c->status = VAG_ST_PLAY;
+    if (getenv("PS2_AC4_AUDIO_TRACE"))
+        for (int k = 0; k < VAG_FILLS; k++) {
+            const vag_fill *f = &vag_fills[k];
+            if (!f->used && f->size && vag_in(c, f->addr)) {
+                u8 header[2];
+                ps2_get_mem(header, PS2_IOP_RAM_BASE+f->addr, sizeof header);
+                ps2_log("ac4-vag: ch%u queued addr=%06X size=%u age=%llu order=%llu header=%02X/%02X",
+                    ee,f->addr,f->size,(unsigned long long)(ps2_kernel_vblank_count()-f->field),
+                    (unsigned long long)f->order,header[0],header[1]);
+            }
+        }
     vag_starts++;
     ps2_log("ac4-vag: ch%u begin, %u bytes a voice, %d voice(s), pitch %u",
                 ee, length, c->nch, c->pitch);

@@ -150,6 +150,9 @@ void ps2_finish(const char *why) {
     }
     u32 vu_unknown;
     watchdog_armed = 0;
+    /* Quiesce the callback before reporting/shutting down video. This also
+       finalizes diagnostic WAV headers before the final _exit below. */
+    ps2_audio_stop();
     ps2_gfxq_drain();
     ps2_gs_stats(&prims, &pixels, &regs);
     ps2_vu_stats(&vu_unknown);

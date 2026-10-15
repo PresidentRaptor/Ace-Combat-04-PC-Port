@@ -19,10 +19,14 @@ ps2_settings ps2_cfg;
 int ps2_gif_path = 2;
 u32 ps2_gs_frame_count, gs_prim;
 u64 gs_stat_ws_hud, gs_stat_ws_cue;
+#define PSM_T8H 27
+#define PSM_T4HL 36
+#define PSM_T4HH 44
+static u64 texture_reg;
 float ps2_vk_game_aspect(void) { return ps2_cfg.widescreen ? 16.0f/9.0f : 4.0f/3.0f; }
 u64 ps2_kernel_vblank_count(void) { return ps2_gs_frame_count; }
 void ps2_log(const char *fmt, ...) { (void)fmt; }
-u64 tex0_reg(void) { return 0; }
+u64 tex0_reg(void) { return texture_reg; }
 static int sprite_clamp_axis(float a,float b,float c,float d,u32 *e) { return 0; }
 '''
 test = r'''
@@ -59,6 +63,21 @@ int main(void) {
     assert(ps2_gs_ws_pillar(640));
     assert(!ps2_gs_ws_pillar(512)); /* flight with absent/stale HUD markers */
     ps2_gs_frame_count=116; assert(!ps2_gs_ws_pillar(640));
+    {
+        ps2_vk_state feedback={0}; feedback.fb_w=512; feedback.fb_h=448;
+        feedback.tme=feedback.fst=1;
+        ps2_vk_vertex strip[6]={{0}};
+        strip[2].x=44; strip[0].y=181.25f; strip[2].y=448.5f;
+        /* The recorded down-view haze strip has no direct RT binding.
+           Its PSMT8H source still describes framebuffer feedback, not UI. */
+        unsigned formats[3]={PSM_T8H,PSM_T4HL,PSM_T4HH};
+        for(int k=0;k<3;k++) {
+            texture_reg=(u64)formats[k]<<20;
+            ws_hud(&feedback,strip,6);
+            assert(strip[0].x==0 && strip[2].x==44);
+        }
+        texture_reg=0;
+    }
     {
         ps2_vk_state st={0}; st.fb_w=640; st.fb_h=448;
         st.scissor[1]=639; st.scissor[3]=447;

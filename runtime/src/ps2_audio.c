@@ -21,6 +21,7 @@ static u64 audio_bytes;
 static int audio_started;
 static FILE *wav_fp;
 static u32 wav_bytes;
+static FILE *stem_fp[3];
 
 static void wav_open(void) {
     const char *path = getenv("PS2_AUDIO_WAV");
@@ -31,6 +32,14 @@ static void wav_open(void) {
     memset(hdr, 0, sizeof hdr);
     fwrite(hdr, 1, sizeof hdr, wav_fp);
     ps2_log("audio: tapping the mix to %s", path);
+    if (getenv("PS2_AUDIO_STEMS")) {
+        const char *names[3] = {"spu2", "vag", "adma"};
+        for (int i = 0; i < 3; i++) {
+            char name[1200];
+            int n = snprintf(name, sizeof name, "%s.%s.s16", path, names[i]);
+            if (n > 0 && (size_t)n < sizeof name) stem_fp[i] = fopen(name, "wb");
+        }
+    }
 }
 
 static void wav_put(const void *buf, int len) {
@@ -42,6 +51,8 @@ static void wav_put(const void *buf, int len) {
 static void wav_close(void) {
     u8 h[44];
     u32 v;
+    for (int i = 0; i < 3; i++)
+        if (stem_fp[i]) { fclose(stem_fp[i]); stem_fp[i] = NULL; }
     if (!wav_fp) return;
     memcpy(h, "RIFF", 4);   v = 36u + wav_bytes;      memcpy(h + 4, &v, 4);
     memcpy(h + 8, "WAVEfmt ", 8);
@@ -71,8 +82,11 @@ static void SDLCALL audio_cb(void *userdata, SDL_AudioStream *stream,
         frames = want_bytes / (int)(AUDIO_CHANNELS * sizeof(s16));
         if (frames <= 0) break;
         ps2_spu2_mix(buf, (u32)frames);
+        if (stem_fp[0]) fwrite(buf, 4, (size_t)frames, stem_fp[0]);
         ps2_ac4_vag_mix(buf, (u32)frames);
+        if (stem_fp[1]) fwrite(buf, 4, (size_t)frames, stem_fp[1]);
         ps2_ac4_snd_mix(buf, (u32)frames);
+        if (stem_fp[2]) fwrite(buf, 4, (size_t)frames, stem_fp[2]);
         {   /* master volume (F4 > Quick > Audio) and the background mute */
             float g = ps2_cfg.volume;
             if (ps2_cfg.mute_unfocused && !ps2_video_focused()) g = 0.0f;
