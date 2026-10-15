@@ -1,6 +1,6 @@
 # Completion milestones
 
-Status: M0 and M1 complete; M2 in progress. No independent playable build yet.
+Status: M0 and M1 complete; M2 and M3 in progress. No independent playable build yet.
 Progress is measured by passed gates, not lines written or guessed percentages.
 
 | ID | Status | Deliverable | Completion gate |
@@ -8,7 +8,7 @@ Progress is measured by passed gates, not lines written or guessed percentages.
 | M0 | Complete | Isolated development area, provenance rules, audit and plan | New branch from main; existing port preserved; replacement scope recorded |
 | M1 | Complete | Independent AC4 executable and disc inspection | ELF reader tested; supported disc executable validated locally; ISO reader extracts/verifies executable; reference manifest recorded |
 | M2 | In progress | R5900 decoding and static analysis | Instruction classes, branch/delay-slot behavior and indirect targets verified with synthetic and AC4-derived cases |
-| M3 | Pending | CPU translation and minimal execution harness | Deterministic C generation; arithmetic, memory, exceptions and call dispatch verified against an independent oracle; repeatable AC4 translation |
+| M3 | In progress | CPU translation and minimal execution harness | Deterministic C generation; arithmetic, memory, exceptions and call dispatch verified against an independent oracle; repeatable AC4 translation |
 | M4 | Pending | Boot services | Memory, kernel, interrupts, disc services, SIF and input reach stable interactive menus with a basic graphics path |
 | M5 | Pending | Graphics fallback and vector units | VIF/VU/GS behavior renders menus, hangar and flight correctly; captures match documented reference scenes |
 | M6 | Pending | Sound, movies and persistent saves | AC4 sound protocols, streaming and movie sync work; saves reload across process restarts and mission transitions |
@@ -26,7 +26,7 @@ M10 is the completion gate for the requested outcome.
 - Branch: independent-ac4, created from main.
 - Independent ELF and ISO inspectors implemented; 10 synthetic test methods pass, including malformed inputs and rejection of unsupported game data.
 - Direct ISO validation passed on 2026-10-15. Executable size: 3,248,756 bytes; SHA-256 matches the supported USA image. Metadata is recorded in reference-image.json.
-- Independent CMake/runtime/renderer do not exist yet.
+- A standalone scalar CMake harness exists. Kernel/device runtime and renderer are pending.
 
 ## Progress updates
 
@@ -244,3 +244,61 @@ analysis remains bounded by the explicit SYSCALL at 0x00100064.
 verified AC4 patterns, account for analysis boundaries, and add an independent
 execution oracle before progressing to translation/runtime acceptance. M2
 remains **In progress**; no independent playable build exists.
+
+
+## M2e jump-table candidates and M3a native scalar harness (2026-10-15)
+
+Added strict guarded absolute-table recognition using initial non-writable ELF
+sections. Guards, scaling, register aliases, known external entries, exact bounds,
+file mappings and destination alignment are checked. The verified local image
+contains **77 candidates, 1,562 entries and 702 distinct destinations** under this
+one pattern. Global guard dominance and runtime immutability are not proven;
+these candidates do not add assumed edges to normal analysis. Stripped images
+cannot establish the section property. Other table/function-pointer forms remain.
+
+Added a new deterministic C11 scalar translator, flat-memory CPU state, bounded
+execution and standalone CMake target. Each supplied instruction becomes C for
+its guest address; unsupported operations reject generation. Implements scalar
+integer arithmetic/shifts/comparisons, branches/likely/link/indirect dispatch,
+loads/stores including both LQ/SQ halves, HI/LO transfers, multiply/accumulate
+and divide in both banks. Word results sign-extend the lower 64 GPR bits while
+preserving the upper 64. Native synthetic tests check independently calculated
+outcomes, overflow, address faults, slot timing/annulment, links, HI/LO separation,
+endianness, zero register and budget/resume. Undefined arithmetic inputs stop
+with a host diagnostic. These stops are not guest CP0 exception delivery.
+
+Commands from repository root (GCC-compatible compiler required for native checks):
+
+```
+python -B -m unittest discover -s independent/tests -v
+python -B independent/validate_ac4.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso"
+python -B independent/r5900_analysis.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --summary --recover-switches
+python -B independent/validate_native_ac4.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --cc C:/msys64/ucrt64/bin/gcc.exe
+cmake -S independent -B ../dev/build-independent -G Ninja -DCMAKE_C_COMPILER=C:/msys64/ucrt64/bin/gcc.exe -DCMAKE_BUILD_TYPE=Release
+cmake --build ../dev/build-independent
+ctest --test-dir ../dev/build-independent --output-on-failure
+git diff --check
+```
+
+Observed locally: **114 tests pass**, including 18 native compilation/execution
+methods (20 codegen methods total); **19 static disc checks pass**; standalone
+CMake configure/build and **1/1 CTest pass** using GNU C 16.2.0. Native tests compile
+with C11, optimization and warnings treated as errors. CI now requires a compiler
+rather than silently skipping native tests, and also builds/runs the CMake target.
+Remote CI execution is separate from these local observations.
+
+Verified-image entry translation selects **24 addresses**. Native execution runs
+**335,107 attempted instructions**, clears poisoned startup RAM 0x00411780 through
+0x004cc75f, and stops at **SYSCALL 0x00100064**, with syscall register v1=60,
+v0=0x004cc760 and gp=0x004159f0. The original ELF load mapping initializes private
+32 MiB RAM. Expected startup results were calculated from reviewed fields and
+loop behavior, not physical-hardware traces or a separate CPU emulator. The
+validator generates source/RAM/executable in a temporary directory and removes
+it afterward. No game payload or generated guest source is added to Git.
+
+M2 and M3 remain **In progress**. This is a bounded scalar execution check, not
+successful syscall execution, boot, menus or gameplay. Missing M3 gates include
+an independent CPU oracle, full exceptions/privilege/device memory semantics,
+remaining instruction execution (FPU/MMI/VU/system), complete dispatch recovery
+and larger repeatable translation. M4-M10 remain pending. Existing derived code
+and its notices are preserved until the replacement passes its acceptance gates.

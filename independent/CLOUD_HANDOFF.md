@@ -84,3 +84,13 @@ local static checks pass. Read the latest tracker evidence: the seeded AC4 run
 proves zero constant register destinations. Next bounded task is independently
 verified jump-table/function-pointer analysis; do not claim the constant pass
 resolved the remaining targets, and do not repeat completed decoder work.
+
+
+M2e/M3a now add guarded absolute-table candidates and a new scalar C generator,
+native execution checks and standalone CMake smoke target. Read the latest
+MILESTONES.md evidence: 114 tests, 19 static disc checks and 1/1 CTest pass locally;
+bounded native AC4 startup stops at syscall 60, not boot. CI requires a C compiler.
+Next work: independent execution-oracle comparisons, full exception/system
+semantics and broader translated execution; retain unsupported-operation failures.
+Do not silently turn candidate table targets into proven dispatch edges or treat
+hand-calculated entry results as a hardware trace. Game files stay local.

@@ -23,6 +23,31 @@ def fixture():
 
 
 class SectionTests(unittest.TestCase):
+    def test_readonly_table_bytes_require_allocated_nonwritable_file_mapping(self):
+        data = fixture()
+        self.assertIsNone(image.readonly_bytes(data, 0x1040, 16))
+        image.SECTION.pack_into(data, 0x250, 0, 1, 2, 0x1040, 0x140, 16, 0, 0, 4, 0)
+        self.assertEqual(image.readonly_bytes(data, 0x1044, 4), b'inst')
+        for address, size in ((0x103f, 4), (0x104f, 2), (0x1080, 4), (-1, 4),
+                              (0x1040, 0), (0xffffffff, 4)):
+            with self.subTest(address=address, size=size):
+                self.assertIsNone(image.readonly_bytes(data, address, size))
+
+    def test_readonly_table_rejects_truncated_and_inconsistent_sections(self):
+        for offset, size in ((0x141, 16), (0x140, 0x200), (0x140, 0x50)):
+            data = fixture()
+            image.SECTION.pack_into(data, 0x250, 0, 1, 2, 0x1040, offset, size, 0, 0, 4, 0)
+            with self.subTest(offset=offset, size=size):
+                with self.assertRaises(image.ImageError):
+                    image.readonly_bytes(data, 0x1040, 4)
+
+    def test_stripped_image_cannot_establish_readonly_section(self):
+        data = fixture()
+        h = list(image.HEADER.unpack_from(data))
+        h[6], h[11], h[12], h[13] = 0, 0, 0, 0
+        image.HEADER.pack_into(data, 0, *h)
+        self.assertIsNone(image.readonly_bytes(data, 0x1000, 4))
+
     def test_rwx_data_and_zero_fill_excluded(self):
         data = fixture()
         with patch.object(image, 'AC4_SIZE', len(data)), patch.object(

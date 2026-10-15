@@ -164,6 +164,36 @@ def code_ranges(data: bytes, segments: list[Segment], *, architecture='ee') -> t
     return 'allocated-executable-sections', selected
 
 
+def readonly_bytes(data: bytes, address: int, size: int) -> bytes | None:
+    """Read initial bytes only from an allocated, non-writable PROGBITS section.
+
+    This is an image property, not proof the guest never modifies those bytes.
+    Stripped images without sections do not establish this property.
+    """
+    _, segments = read_layout(data)
+    code_ranges(data, segments)  # Validate section table/mappings before lookup.
+    if address < 0 or size <= 0 or address + size > ADDRESS_LIMIT:
+        return None
+    h = HEADER.unpack_from(data)
+    if not h[6]:
+        return None
+    for index in range(h[12]):
+        s = SECTION.unpack_from(data, h[6] + index * h[11])
+        if s[1] != 1 or not s[2] & 2 or s[2] & 1:
+            continue
+        if s[3] <= address and address + size <= s[3] + s[5]:
+            if s[4] + s[5] > len(data):
+                raise ImageError('read-only section outside file')
+            if not any(segment.address <= s[3] and
+                       s[3] + s[5] <= segment.address + segment.file_size and
+                       s[4] == segment.offset + s[3] - segment.address
+                       for segment in segments):
+                raise ImageError('read-only section disagrees with load mapping')
+            offset = s[4] + address - s[3]
+            return data[offset:offset + size]
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('executable', type=Path)

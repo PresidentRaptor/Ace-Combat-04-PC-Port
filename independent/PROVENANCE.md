@@ -54,9 +54,9 @@ or manual text is redistributed in this change):
 
 - Sony Computer Entertainment, **EE Core Instruction Set Manual**, version 6.0,
   April 2002. [Document mirror](https://github.com/ninjadynamics/PS2Docs/blob/3a6e97416b0e23c4e94288515adef521cf077682/EE_Core_Instruction_Set_Manual.pdf).
-  Chapter 2, pp. 24–134: scalar encoding pictures, operands and restrictions;
-  especially BEQ/BEQL pp. 30–31, link branches pp. 33–34 and 41–42,
-  J/JAL/JALR/JR pp. 65–68, SYNC p. 121 and explicit exceptions pp. 122–134.
+  Chapter 2, pp. 24â€“134: scalar encoding pictures, operands and restrictions;
+  especially BEQ/BEQL pp. 30â€“31, link branches pp. 33â€“34 and 41â€“42,
+  J/JAL/JALR/JR pp. 65â€“68, SYNC p. 121 and explicit exceptions pp. 122â€“134.
   Chapter 3, MULT/MULTU pp. 154/156: EE's optional destination GPR extension.
   Consulted encoding pictures for sign extension, shift widths, fixed-zero
   fields and trap code fields as well as the descriptive text. Where the
@@ -211,3 +211,31 @@ added as metadata to validate_ac4.py. Constants are tracked only in the lower
 guest-PC model. No memory-load constants, runtime exception semantics, dynamic
 entry coverage or CPU execution oracle is claimed. Call-return continuations
 discard all GPR facts. Reporting a constant never expands the partial graph.
+
+
+## M2e and M3a implementation inputs (2026-10-15)
+
+- `r5900_switches.py`: newly written strict pattern matcher from fresh local AC4
+  instruction-field observations and the already documented ELF/EE references.
+  No inherited symbol maps, signature databases or recompiler implementation.
+  Initial section read-only flags are not runtime immutability evidence.
+- `r5900_codegen.py`: newly written C11 scalar generator and bounded flat-memory
+  harness from Sony EE Core Instruction Set Manual v6.0, chapters 2 and 3.
+  Consulted scalar descriptions, branch/link/delay rules, LQ/SQ address masking,
+  HI/LO transfer/multiply/accumulate and divide descriptions (pp. 51-53,
+  138-145 and 146-157 for division/extended HI/LO). The archived primary manual
+  and SHA-256 were recorded above. No emulator or inherited implementation was
+  imported, adapted or used as an execution oracle. No timing/interlock model.
+- `tests/test_codegen.py` and `scalar_smoke.c`: synthetic instructions and
+  independently calculated expected outcomes; native C compilation/execution.
+  `validate_native_ac4.py`: verified user's disc, ELF layout and reviewed startup
+  fields; expected entry-loop results calculated separately from generated C.
+  This is not a second CPU emulator or hardware-trace comparison. Undefined
+  non-word multiply/divide inputs and division by zero stop with a host diagnostic,
+  not a fabricated guest exception or guessed implementation-defined result.
+- `CMakeLists.txt`: new standalone synthetic harness build with Python-generated
+  C and the host standard C library; no old runtime/tools/build dependencies.
+
+All game-derived payloads and generated guest source remain local and untracked.
+No attribution is removed from the existing derived implementation. These
+components are partial replacements, not completion of the port/provenance gate.

@@ -177,10 +177,14 @@ def main():
                         help='report conservative register constants on the supplied partial graph')
     parser.add_argument('--seed-direct-calls', action='store_true',
                         help='also explore candidate in-range direct call targets, not verified functions')
+    parser.add_argument('--recover-switches', action='store_true',
+                        help='report strictly bounded read-only-image jump-table candidates')
     args = parser.parse_args()
     try:
         metadata = None
         if args.words is not None:
+            if args.recover_switches:
+                raise ValueError('switch recovery requires a verified ELF or ISO image')
             if any(not 0 <= w <= MASK for w in args.words):
                 raise ValueError('word outside 32 bits')
             words = stream_words(b''.join(w.to_bytes(4, 'little') for w in args.words), args.base)
@@ -221,6 +225,9 @@ def main():
         if args.resolve_indirects:
             from r5900_constants import resolve_indirects, target_summary
             output['indirect_resolution'] = target_summary(resolve_indirects(words, sorted(entries), result))
+        if args.recover_switches:
+            from r5900_switches import recover_switches, switch_summary
+            output['switch_recovery'] = switch_summary(recover_switches(data))
     except (OSError, ImageError, ValueError) as error:
         parser.exit(1, f'{error}\n')
     print(json.dumps(output, indent=2))

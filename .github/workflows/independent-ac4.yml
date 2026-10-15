@@ -21,4 +21,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test independent tools without game data
+        env:
+          AC4_REQUIRE_NATIVE_TESTS: '1'
+          AC4_TEST_CC: gcc
         run: python -B -m unittest discover -s independent/tests -v
+      - name: Configure standalone scalar harness
+        run: cmake -S independent -B build-independent -DCMAKE_BUILD_TYPE=Release
+      - name: Build standalone scalar harness
+        run: cmake --build build-independent --parallel 2
+      - name: Execute standalone scalar harness
+        run: ctest --test-dir build-independent --output-on-failure

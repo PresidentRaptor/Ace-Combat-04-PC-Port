@@ -215,3 +215,48 @@ the measured unresolved cases require further function-pointer/table analysis.
 
 Current validation: 86 synthetic tests and 19 local static disc checks pass.
 See MILESTONES.md for exact inventory/graph counts and remaining acceptance work.
+
+
+## M2e bounded table candidates
+
+Add `--recover-switches` to the verified ELF/ISO analysis command for strict
+bounded absolute-table candidates. The report includes guard/table/destination
+metadata and its assumptions. It does not change reachability or prove immutable
+tables/global guard dominance. Current local results are recorded in MILESTONES.md.
+
+## M3a standalone scalar build and native checks
+
+Python 3.10+ remains sufficient for parsing/decoding tests. Native execution tests
+also need a GCC-compatible C11 compiler; set `AC4_TEST_CC` to its name/full path.
+Set `AC4_REQUIRE_NATIVE_TESTS=1` to fail if no compiler exists, as CI does.
+
+```
+cmake -S independent -B ../dev/build-independent -DCMAKE_BUILD_TYPE=Release
+cmake --build ../dev/build-independent
+ctest --test-dir ../dev/build-independent --output-on-failure
+```
+
+Choose a generator/compiler installed on your system. On this Windows machine,
+use `-G Ninja -DCMAKE_C_COMPILER=C:/msys64/ucrt64/bin/gcc.exe` and put that compiler's
+bin directory on PATH. This target compiles a synthetic ADDIU/BREAK program; it
+has no game assets, old build inputs, kernel/device runtime or renderer.
+
+The experimental `r5900_codegen.py --words ... --base ... --output ...` emits C11
+for supplied synthetic instructions. Unsupported instructions reject translation.
+`--elf`/`--iso` instead selects the verified image's bounded entry graph and
+requires an explicit output file; keep generated game source outside Git.
+No indirect-target assumptions are added; uncovered fetches stop diagnostically.
+
+For repeatable local AC4 entry execution without keeping generated game files:
+
+```
+python -B independent/validate_native_ac4.py --iso "path/to/Ace Combat 04.iso" --cc C:/msys64/ucrt64/bin/gcc.exe
+```
+
+This creates private temporary source/RAM/native binary, executes the initial
+clear loop and stops at the first syscall. It compares metadata/register/memory
+results calculated from the reviewed entry sequence. It is not an independent
+hardware oracle or evidence of boot. C stop codes describe bounded-harness
+faults; there is no guest CP0 exception-vector delivery, MMU, devices, kernel,
+floating-point/vector execution or timing model. See MILESTONES.md for actual
+local results and the remaining M3 gates.

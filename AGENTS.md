@@ -34,6 +34,8 @@ python -B -m unittest discover -s independent/tests -v
 git diff --check
 ```
 
-Python 3.10+ and its standard library suffice for the current tests. Do not run
+Python 3.10+ and its standard library suffice for parser/decoder tests. Native
+execution tests require a GCC-compatible C11 compiler; set AC4_TEST_CC as needed.
+CI sets AC4_REQUIRE_NATIVE_TESTS=1 so native checks cannot silently skip. Do not run
 the legacy build scripts for independent work. See `independent/CLOUD_HANDOFF.md`
 for the next bounded task and return procedure.
