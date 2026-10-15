@@ -10,8 +10,8 @@ The user confirmed that startup audio and looking down in chase view are
 correct. The objectives-screen scan leak was then reproduced and fixed;
 its replay has black side bars. Flight, target-diamond, hangar and original
 4:3 objectives replays remain pixel-identical across that fix. See
-[the widescreen notes](WIDESCREEN_REGRESSIONS.md) and
-[audio/render notes](AUDIO_RENDER_FOLLOWUP.md).
+[the widescreen notes](widescreen.md) and
+[audio/render notes](audio-and-rendering.md).
 
 The AC4 widescreen camera correction is implemented and has live-play coverage.
 Later missions, long sessions and device/display transitions still need testing.
@@ -58,14 +58,10 @@ map readability need further live testing. The widescreen camera and subsequent
 layout fixes are covered by the follow-up above. Texture work does not close
 the remaining coverage gaps.
 
-The separate `PLAY_EDGE_TEST.bat` package uses its own graphics settings and
-shader folder, the normal saves, and original textures. It permits comparison
-with the existing PLAY.bat build while Windows has that executable open.
-
-After the user's live-play approval, the build and shaders were promoted to
-the main `runtime/ac4.exe` package. The approved test settings (6x resolution,
-FXAA, UI smoothing and 0.10 sharpening) were transferred to its settings file;
-replacement textures were disabled to match the test launcher. The main package
-completed the same 180-field ISO startup check with exit code 0. The normal game
-launcher now uses this build. The preceding executable, settings and shaders
-were backed up locally under `review/main-smoothing-backup`.
+The separate edge-smoothing comparison launcher was retired after the user's
+live-play approval. The tested build and shaders were promoted to the normal
+`runtime/ac4.exe` package, along with 6x resolution, FXAA, UI smoothing and
+0.10 sharpening in the local settings. Replacement textures were disabled for
+that comparison. The normal launcher completed the same 180-field ISO startup
+check with exit code 0. Historical binaries, settings and shaders remain local
+review artifacts and are excluded from the repository.

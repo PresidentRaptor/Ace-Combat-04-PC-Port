@@ -16,9 +16,7 @@ fix_*.txt
 *.png
 *.bin
 
-out/*
-!out/capture.gscap
-!out/mission.pad
+/out/
 
 __pycache__/
 *.py[cod]
@@ -28,4 +26,20 @@ __pycache__/
 
 *.PAC
 *.pac
-saves/mods/
+/saves/
+
+# Local game data and diagnostics; none belong in source commits.
+*.iso
+*.chd
+*.cso
+*.zso
+SLUS_*
+SLES_*
+*.gscap
+*.pam
+*.wav
+*.s16
+*.log
+*.cache
+ac4_pipelines.*
+ac4_settings.ini

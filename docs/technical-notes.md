@@ -7,7 +7,7 @@ The recompiler and shared runtime originated in
 [sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation)
 (commit 078662b). Original attribution and the Apache 2.0 license are retained.
 
-For player-facing setup and the current support summary, see [README.md](README.md).
+For player-facing setup and the current support summary, see [README.md](../README.md).
 
 ## Building
 
@@ -115,7 +115,7 @@ AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
   transformed with its selector; copies, fades and clearing strips retain
   full coverage. Full-width indexed Z-zero UI sprites, including the objectives
   scan, use the centered transform and scissor even on a 512-column display.
-  See [the regression notes](WIDESCREEN_REGRESSIONS.md) for recorded evidence.
+  See [the regression notes](widescreen.md) for recorded evidence.
 - High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution unless a replacement-texture pack is enabled. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the

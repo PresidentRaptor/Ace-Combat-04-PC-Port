@@ -48,9 +48,9 @@ Repository: [PresidentRaptor/Ace-Combat-04-PC-Port](https://github.com/President
   See the [mod guide](mods/README.md).
 
 For implementation details and test coverage, see the
-[technical notes](README_AC4.md), [Windows validation](WINDOWS_VALIDATION.md),
-[widescreen fixes](WIDESCREEN_REGRESSIONS.md) and
-[audio/render follow-up](AUDIO_RENDER_FOLLOWUP.md).
+[technical notes](docs/technical-notes.md), [Windows validation](docs/windows-validation.md),
+[widescreen fixes](docs/widescreen.md) and
+[audio/render follow-up](docs/audio-and-rendering.md).
 
 ## Build and run
 
@@ -202,7 +202,7 @@ Replacements are read in the background the first time they're drawn, and use up
 
 ## What was fixed for AC4
 
-Implementation details and diagnostic switches are in the [technical notes](README_AC4.md). The main corrections include:
+Implementation details and diagnostic switches are in the [technical notes](docs/technical-notes.md). The main corrections include:
 
 - **VU pair hazards**: when a lower instruction loads a register the upper one reads in the same cycle, the upper must see the old value (aircraft were invisible).
 - **24-bit texture uploads** (font palettes: smudged text, over-bright menus), **64-pixel channel shuffles** (self-shadowed aircraft drew black).
@@ -233,6 +233,7 @@ Implementation details and diagnostic switches are in the [technical notes](READ
 - `runtime/shaders/`: the GLSL shaders, compiled at build time
 - `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks
 - `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat`, `MAKE_HD_TEXTURES.bat` and the player README
+- `docs/`: technical notes, validation evidence and optional texture-work checkpoints
 - `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (mod scripts; see `mods/README.md`)
 - `generated/`: the recompiler's output, created in step 2
 
