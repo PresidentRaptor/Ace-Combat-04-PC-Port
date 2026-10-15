@@ -1,4 +1,4 @@
-# Ace Combat 04 on the ps2recomp runtime
+# Ace Combat 04 PC Port - Technical Notes
 
 This project builds **Ace Combat 04: Shattered Skies (USA, SLUS-20152)** as
 `ac4.exe` for Windows. It runs independently of an Ace Combat 5 installation.
@@ -6,6 +6,8 @@ This project builds **Ace Combat 04: Shattered Skies (USA, SLUS-20152)** as
 The recompiler and shared runtime originated in
 [sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation)
 (commit 078662b). Original attribution and the Apache 2.0 license are retained.
+
+For player-facing setup and the current support summary, see [README.md](README.md).
 
 ## Building
 
@@ -74,7 +76,7 @@ AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
   off (or ZTE 0) are pulled towards the centre by (4/3) / aspect, scissor included. Left
   alone: depth-tested draws (target boxes, their dotted trails and FRND/TGT labels are drawn
   with ZTST GREATER, even the parts at Z max, and were already placed by the widened camera),
-  draws with real depth (sun flare, lens ghosts), full-width draws, untextured full-height
+  draws with real depth (sun flare, lens ghosts), full-width copies and non-UI draws, untextured full-height
   ones (fades and clears, drawn in 64-pixel strips), render-target copies and off-screen
   targets (the 512 x 128 cloud target). Movies and menus come out pillarboxed 4:3. With
   widescreen off nothing changes: the 12 captures replay pixel-identical. The lock-on arrow
@@ -97,7 +99,7 @@ AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
   Z-zero menu highlights always use the menu transform, including red
   rectangles beside weapon cells; flight lock-cue exemptions do not apply to
   them. Far-plane flight HUD glyphs override the menu-coverage heuristic for
-  the current and preceding field, so pausing and resuming does not crop the
+  the current and following field, so pausing and resuming does not crop the
   gameplay/HUD to the menu's middle. `tools/test_ac4_widescreen.py` exercises
   these cases against the actual C layout code. `gsreplay --widescreen` applies
   the layout to a capture taken with a widened camera; it does not widen an
@@ -110,9 +112,11 @@ AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
   flight's 512-column viewport cannot trigger menu bars, even if HUD sprites
   disappear during camera changes or the 640-column backing target retains
   earlier menu coverage. The hangar's full-width/full-height line guides are
-  transformed with its selector; only copies, fades and clearing strips keep
-  the full-screen exemption.
-- High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
+  transformed with its selector; copies, fades and clearing strips retain
+  full coverage. Full-width indexed Z-zero UI sprites, including the objectives
+  scan, use the centered transform and scissor even on a 512-column display.
+  See [the regression notes](WIDESCREEN_REGRESSIONS.md) for recorded evidence.
+- High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution unless a replacement-texture pack is enabled. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the
   async thread back; see below).

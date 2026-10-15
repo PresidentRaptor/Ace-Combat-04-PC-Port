@@ -4,6 +4,18 @@ The priority is faithful play with the existing game assets. HD art remains
 optional. These checks establish a development baseline, not error-free coverage
 of the entire campaign.
 
+## Current follow-up (2026-10-14)
+
+The user confirmed that startup audio and looking down in chase view are
+correct. The objectives-screen scan leak was then reproduced and fixed;
+its replay has black side bars. Flight, target-diamond, hangar and original
+4:3 objectives replays remain pixel-identical across that fix. See
+[the widescreen notes](WIDESCREEN_REGRESSIONS.md) and
+[audio/render notes](AUDIO_RENDER_FOLLOWUP.md).
+
+The AC4 widescreen camera correction is implemented and has live-play coverage.
+Later missions, long sessions and device/display transitions still need testing.
+
 ## Edge smoothing
 
 High and Ultra now enable FXAA and smooth UI texture sampling, with sharpening
@@ -42,8 +54,9 @@ still need equivalent fixtures.
 
 Later campaign missions, saving/loading across mission transitions, prolonged
 audio/video playback, device reconnection, fullscreen changes, expanded mission
-map readability and a verified AC4 widescreen camera patch need further live
-testing. Texture work does not close those gaps.
+map readability need further live testing. The widescreen camera and subsequent
+layout fixes are covered by the follow-up above. Texture work does not close
+the remaining coverage gaps.
 
 The separate `PLAY_EDGE_TEST.bat` package uses its own graphics settings and
 shader folder, the normal saves, and original textures. It permits comparison

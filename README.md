@@ -1,31 +1,63 @@
-# ps2recomp: Ace Combat 04: Shattered Skies
+# Ace Combat 04: Shattered Skies - PC Port
 
-A static recompilation of **Ace Combat 04: Shattered Skies** (PS2, NTSC-U, SLUS-20152) for Windows.
+A work-in-progress native Windows port of **Ace Combat 04: Shattered Skies**
+(PlayStation 2, USA, SLUS-20152), built through static recompilation.
 
-This project is built on [sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the recompiler, the runtime and most of what is described here are their work. This fork adds an Ace Combat 04 configuration, the AC4-specific system code, and a set of emulation and renderer fixes that AC4 needed. The AC5 build, its config and its native renderer have been removed; sal063's repository has them.
+The priority is faithful gameplay with the original assets: correct rendering,
+audio, controls, saving and widescreen presentation. Higher rendering resolutions,
+edge smoothing and replacement textures are available; HD texture packs are optional.
+This is not a complete remaster or a fully validated campaign release.
 
-The game's main CPU code isn't emulated. A Python tool reads the original executable and translates every function into C ahead of time, and GCC compiles that together with a runtime that stands in for the rest of the console: the GS (drawn through Vulkan), the VU vector units, SPU2 audio, the IPU for the movies, the IOP modules, memory cards and controllers. The result is a normal `ac4.exe`.
+The original executable's main CPU functions are translated to C ahead of time
+and compiled into `ac4.exe`. A shared runtime implements the console services,
+Vulkan GS graphics, vector units, audio, movie decoding, memory cards and input.
+The port runs independently of an Ace Combat 5 installation.
 
-There's no game code or assets in this repo. You bring your own copy of the game; the recompiler builds the C code from it on your machine, which is why `generated/` is in `.gitignore`.
+The recompiler and shared runtime originate in
+[sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation).
+This project adds the AC4 configuration, native AC4 sound services, and the
+rendering, widescreen and Windows fixes described below. Original attribution
+and licenses are retained.
 
-## Status
+You must supply the supported game executable and disc data. The recompiled
+game source and extracted game assets are not distributed; `generated/` is
+created locally from your copy of the game.
 
-- Boot, memory card, the opening movie, title and menus, story movies with sound, briefings, the hangar, and **Mission 01 in flight** (HUD, radio, music, voices, effects) are checked start to finish at native resolution and at 6x internal resolution.
-- **Saving and loading** work (pre-mission SAVE, title-screen LOAD and CONTINUE).
-- **Controller vibration**, rebindable keyboard and controller, PCSX2-style analog settings.
-- Widescreen uses an AC4 camera patch with separate menu and HUD layout handling. Original 4:3 presentation remains available in settings.
-- **HD texture packs**: the game's textures can be saved, upscaled with Real-ESRGAN and drawn in place of the PS2 originals (aircraft, hangar, terrain, menus). See [HD textures](#hd-textures).
-- The F4 system menu has a **Mods** page for viewing installed mods and changing which ones load at the next launch.
-- The Windows executable uses the Ace Combat 04 ISAF insignia as its application icon.
-- Later missions haven't been played yet. The title screen's demonstration flights, recorded in several of them (snowy mountains, a bridge, a low pass through a city, the cockpit view), render correctly.
+Repository: [PresidentRaptor/Ace-Combat-04-Static-Recompilation](https://github.com/PresidentRaptor/Ace-Combat-04-Static-Recompilation).
 
-How AC4 differs from AC5 under the hood:
+## Current status
 
-- AC4 is drawn entirely through the emulated GS. AC5's native renderer was written for AC5's own VU1 programs and has been removed.
-- AC4's sound modules (`SOUND.IRX`, `VAG.IRX`) are replaced by native code written from their own symbol tables.
-- The config files in `config/ac4/` were rebuilt from the executable alone, without IDA or the PS2 SDK. `README_AC4.md` explains how.
+- **Mission 01 completed in live play.** Boot, opening and story movies,
+  briefings, aircraft/weapon selection, and flight have been checked at native
+  and 6x internal resolution. Later campaign missions still need full playthroughs;
+  title-screen demonstration flights provide only limited additional coverage.
+- **Audio and saving:** music, radio, voices and effects work in the tested
+  sections; pre-mission SAVE and title-screen LOAD/CONTINUE have been verified.
+  The startup audio spike is fixed and confirmed in live play.
+- **Widescreen:** an AC4 camera correction widens the 3D view while menus and
+  movies retain their 4:3 layout. HUD placement is configurable. Target diamonds,
+  hangar selector guides, downward-view effects and the objectives screen's scan
+  overlay have received separate fixes. Original 4:3 presentation remains available.
+- **Windows controls and display:** keyboard/controller rebinding, analog settings,
+  vibration, fullscreen, an ISAF application icon and an F4 settings menu.
+- **Image quality:** up to 8x internal resolution, UI smoothing, FXAA and sharpening.
+  These smooth the original assets; they do not add missing texture detail.
+  [Optional replacement texture packs](#hd-textures) can supply higher-resolution art.
+- **Mods:** F4 lists installed mods and selects which load at startup. Lua mods
+  use `ac4`; native mods use `ac4mod.h`. Legacy API names remain compatible.
+  See the [mod guide](mods/README.md).
 
-## What you need
+For implementation details and test coverage, see the
+[technical notes](README_AC4.md), [Windows validation](WINDOWS_VALIDATION.md),
+[widescreen fixes](WIDESCREEN_REGRESSIONS.md) and
+[audio/render follow-up](AUDIO_RENDER_FOLLOWUP.md).
+
+## Build and run
+
+The following steps are for building from source. If you already have a locally
+assembled game folder, launch `Ace Combat 04.exe` or `PLAY.bat` there.
+
+### Requirements
 
 - **The game.** The US release, SLUS-20152, as an ISO (or extracted disc files). Other regions won't work: the config files are tied to addresses in the US executable.
 - **64-bit Windows** and a GPU with a Vulkan 1.3 driver.
@@ -40,7 +72,7 @@ How AC4 differs from AC5 under the hood:
   GCC must be 15 or newer: the generated code relies on guaranteed tail calls (`[[gnu::musttail]]`).
 - **CMake** 3.20+, **Ninja**, and **Python 3** (standard library only).
 
-## Step 1: get the executable off the disc
+### Step 1: get the executable off the disc
 
 The recompiler needs one file from the disc, `SLUS_201.52`, in the root of the ISO. Mount the ISO (double-click it in Explorer) or open it with 7-Zip and copy the file out. Check it:
 
@@ -54,7 +86,7 @@ Get-FileHash .\SLUS_201.52 -Algorithm SHA256
 
 It should be exactly 3,248,756 bytes. If the hash doesn't match, stop: a different region or a modified executable won't line up with the config files. Keep the ISO; the game reads its models, textures, sound and movies from it while you play.
 
-## Step 2: recompile and build
+### Step 2: recompile and build
 
 From an MSYS2 UCRT64 shell (or Git Bash with `C:\msys64\ucrt64\bin` on the PATH), in the root of this repo:
 
@@ -62,7 +94,9 @@ From an MSYS2 UCRT64 shell (or Git Bash with `C:\msys64\ucrt64\bin` on the PATH)
 bash tools/build_ac4.sh path/to/SLUS_201.52
 ```
 
-That runs the recompiler with the AC4 config (about 5,950 functions into `generated/`), configures CMake the first time, and builds. Expect several minutes: every generated file is essentially one huge function. You get:
+That translates the game functions into `generated/` using the AC4 configuration,
+configures CMake the first time, and builds. Expect several minutes for the
+initial compilation. You get:
 
 - `build/gcc/ac4.exe`: the game
 - `build/gcc/shaders/`: the compiled shaders (must stay next to the exe, or set `PS2_SHADER_DIR`)
@@ -80,14 +114,15 @@ python -m ps2recomp "C:\path\to\SLUS_201.52" -o generated `
     --overrides config/ac4/overrides.json --hooks config/ac4/hooks.json
 cmake -S . -B build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Release `
     -DCMAKE_C_COMPILER=C:/msys64/ucrt64/bin/gcc.exe `
-    -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/c++.exe
+    -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/c++.exe `
+    -DCMAKE_PREFIX_PATH=C:/msys64/ucrt64
 cmake --build build/gcc
 ```
 
 Use every flag: the overrides replace SDK functions that talk to hardware the PC doesn't have (SIF RPC, the CD drive, the pads) with native handlers, and without them the game waits forever.
 </details>
 
-## Step 3: play
+### Step 3: play
 
 Quickest, from the repo root:
 
@@ -95,17 +130,29 @@ Quickest, from the repo root:
 .\build\gcc\ac4.exe --data generated --disc "C:\path\to\Ace Combat 04 - Shattered Skies (USA).iso" --watchdog 0
 ```
 
-For a folder you can double-click, lay it out like this (the files in `packaging/ac4/` do the rest):
+For a folder you can double-click, copy the scripts and player README from
+`packaging/ac4/` and arrange the local build as follows:
 
 ```
 Ace Combat 04/
-  Ace Combat 04.exe        <- build with packaging/ac4/launcher/build-launcher.bat (no console window)
+  Ace Combat 04.exe        <- optional launcher, built as described below
   PLAY.bat, DIAGNOSTICS.bat, README.txt   <- from packaging/ac4/
+  MAKE_HD_TEXTURES.bat     <- optional, from packaging/ac4/
   your ISO
   runtime/
     ac4.exe, shaders/, ps2_image.bin (from generated/),
     SDL3.dll, libwinpthread-1.dll, libiconv-2.dll (from C:\msys64\ucrt64\bin)
 ```
+
+For the optional launcher, copy `packaging/ac4/launcher/` to `launcher/` inside
+that game folder, then run its `build-launcher.bat`. It writes
+`Ace Combat 04.exe` into the parent game folder and uses `icon.ico` if present.
+`ac4.exe` is the runtime; `Ace Combat 04.exe` is the small launcher. Keep these
+filenames when updating, because the scripts and launcher use them.
+
+To use `MAKE_HD_TEXTURES.bat`, also keep the source checkout in the game
+folder as `src/`; that script calls `src/tools/texture_pack.py`. Building and
+playing with original textures do not require Real-ESRGAN or Pillow.
 
 The launcher and `PLAY.bat` find the ISO in the folder, keep saves in `saves/`, and write the session log to `last-play.log`. `DIAGNOSTICS.bat` runs with profiling and the developer hotkeys on and writes `diagnostics.log`.
 
@@ -141,7 +188,7 @@ Replacements are read in the background the first time they're drawn, and use up
 
 ## What was fixed for AC4
 
-The details, with the debug switches used to find each one, are in `README_AC4.md`. In short:
+Implementation details and diagnostic switches are in the [technical notes](README_AC4.md). The main corrections include:
 
 - **VU pair hazards**: when a lower instruction loads a register the upper one reads in the same cycle, the upper must see the old value (aircraft were invisible).
 - **24-bit texture uploads** (font palettes: smudged text, over-bright menus), **64-pixel channel shuffles** (self-shadowed aircraft drew black).
@@ -150,6 +197,8 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - **Per-pixel mip levels** for `TEX1.LCM=0`, blended between levels as the game asks (trilinear): distant terrain lives only in the small levels of AC4's terrain texture cache (islands were big wrong squares at a distance, then showed seams between tiles).
 - **Palette indices read from the frame** (PSMT8H from a render target): the haze and sea-detail layer is weighted by an alpha remap of the back buffer (the haze was uniform and the sea nearly black).
 - **Presentation**: fields are never dropped, each field keeps its own display buffer, and present semaphores are per swapchain image (single frames of an older picture flashed on screen).
+- **Widescreen layout**: camera/HUD alignment, menu selector guides, objectives scan clipping and framebuffer effects are handled separately so menu fixes do not crop gameplay.
+- **Streaming audio**: stale IOP staging reads are invalidated before playback, preventing the startup spike.
 - **Upscaled 2D**: sprites keep to the texels the PS2 samples at native resolution (thin lines around text boxes at higher resolutions).
 
 ## Troubleshooting
@@ -173,11 +222,35 @@ The details, with the debug switches used to find each one, are in `README_AC4.m
 - `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (mod scripts; see `mods/README.md`)
 - `generated/`: the recompiler's output, created in step 2
 
-Tests: the scripts in `tools/` named `test_*.py` and `check_*.py` run without the game; `ac4.exe --vu-test --novideo` runs the VU self-test.
+## Development and validation
+
+From the source root, with the UCRT64 compiler on `PATH`, these focused checks
+run without the game disc:
+
+```powershell
+python tools/test_ac4_audio.py
+python tools/test_ac4_widescreen.py
+python tools/test_ac4_texture_pool.py
+python tools/test_patch.py
+python tools/test_settings.py
+python tools/check_gs_sampling.py
+```
+
+Some other tests need additional fixtures or dependencies. In particular,
+`tools/test_ac4_mod_api.py` needs the built Windows runtime, generated data and
+the supported ISO in the source checkout's parent folder; it verifies native/Lua
+API names and compatibility aliases. Texture-pack tests need Pillow.
+`ac4.exe --vu-test --novideo` runs the VU self-test.
+
+A passing test or capture replay does not establish full campaign compatibility.
+For reports, include the mission, camera view, graphics settings, steps to reproduce,
+and `diagnostics.log` from `DIAGNOSTICS.bat`. Keep game assets and captures containing
+game data out of public source commits.
 
 ## Credits
 
-- **sal063**: the Ace Combat 5 static recompilation this is built on: recompiler, runtime, renderer, settings menu and tooling.
+- **sal063**: original Ace Combat 5 static recompilation, including the shared recompiler, runtime, renderer, settings menu and tooling.
+- **AC4 port contributors and testers**: AC4 configuration, sound services, renderer corrections, widescreen integration, Windows packaging and playtesting; see the repository commit history.
 - PCSX2's game database was the reference for which GS behaviours AC04 depends on.
 - Dear ImGui and Lua, under their own licenses.
 

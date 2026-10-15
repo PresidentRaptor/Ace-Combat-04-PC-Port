@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ps2recomp_ac C CXX)
+project(ac4_pc_port C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)

@@ -18,8 +18,8 @@ oversized transfers, active-reference invalidation, final-block draining,
 stereo routing and volume.
 
 Waveforms were captured through SDL's dummy audio driver, avoiding playback
-through the speakers. Perceived startup audio still needs the user's check
-through the normal device.
+through the speakers. On 2026-10-14 the user confirmed normal startup audio
+through the normal playback device.
 
 Normal shutdown stops the audio callback before video teardown and final
 `_exit`, also finalizing diagnostic WAV headers. Optional `PS2_AUDIO_WAV=PATH`
@@ -42,3 +42,6 @@ the recorded strip without a direct target binding. The corrected dive replay
 changes the affected left-hand haze region and no longer transforms that pass
 as UI. This is separate from the viewport black-bar guard and working seeker
 diamond source-cell rule.
+
+On 2026-10-14 the user also confirmed that looking down in chase view is
+correct in normal play.

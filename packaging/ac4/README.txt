@@ -1,12 +1,14 @@
-Ace Combat 04: Shattered Skies - recompiled for PC
-==================================================
+Ace Combat 04: Shattered Skies - PC Port
+======================================
 
 Windows 10/11, 64-bit. Needs a GPU/driver with Vulkan 1.3. Connect a
 controller before starting.
 
 The game's own code (SLUS_201.52 from the US disc, SLUS-20152) is
 recompiled to native code; the disc data is read from your ISO while you
-play. Game data is not included.
+play. Game data is not included. This is a work-in-progress Windows port,
+focused on faithful play with the original assets. It runs independently
+of an Ace Combat 5 installation. HD textures are optional.
 
 Playing
 -------
@@ -75,7 +77,9 @@ Fixed in this build
 - The sun showed as a large square of rainbow rings. Its glow colours are
   drawn by the game on the graphics chip each frame and are now read from
   there; the sun is a soft round glow again.
-- The F4 settings/mod menu now uses Ace Combat 04's blue colours.
+- The F4 settings/mod menu uses Ace Combat 04's blue colours.
+- Startup audio no longer decodes stale staging buffers as music. The
+  corrected audio and downward chase-view effects were confirmed in play.
 - Hangar (aircraft select): black shapes cut into the aircraft and the
   floor, the canopy was a black blob and parts of the hangar were missing.
   The game clears its depth buffer by drawing into it like a picture; that
@@ -107,8 +111,7 @@ Fixed in this build
 - Esc no longer ends the game on the spot: it asks first, with just a
   small "Quit?" box (the settings menu no longer opens behind it). The settings
   menu (F4) gained a master volume, "mute in the background" and a Quit
-  button. The
-  F6-F10 debugging keys only work in DIAGNOSTICS.bat now, so a stray key
+  button. The F6-F10 debugging keys only work in DIAGNOSTICS.bat now, so a stray key
   press can't fill the folder with capture files.
 - 16:9 widescreen: F4 > Display > "Widescreen (16:9)" (off by default).
   The game's own camera is widened, so flight, the carrier deck, the
@@ -125,13 +128,16 @@ Fixed in this build
   map: a leftover value from the 3D drawing made the map picture repeat
   thousands of times across the panel. It now shows the islands.
 
-Known limits
-------------
+Presentation and remaining coverage
+-----------------------------------
 - Graphics use the Vulkan GS renderer. Higher internal resolutions (F4)
   work; resolution 6 was checked through Mission 01.
-- Widescreen: target boxes and their labels keep the 4:3 HUD's shape, so
-  they look a little wide. On the weapon select screen the tinted panel
-  behind the text covers only the 4:3 middle.
+- Widescreen widens the 3D camera while keeping menus and movies in a
+  centered 4:3 layout. The HUD has configurable placement. Target diamonds,
+  hangar selection guides and the mission-objectives scan have layout fixes;
+  the scan stays inside the menu rather than crossing the black side bars.
+- Higher internal resolution, UI smoothing and FXAA reduce jagged edges.
+  They do not recreate detail absent from the original textures.
 - The graphics machine runs on the game thread by default; a modern CPU
   holds full speed. On a slower CPU, PS2_ASYNC_GFX=1 runs it on its own
   thread (re-tested in Mission 01 without the stray triangles it used to
@@ -143,5 +149,9 @@ Known limits
 
 Rebuilding
 ----------
-The source is in src. src\README_AC4.md explains how the AC4 build is
-made from the AC5 recompilation project.
+The local source checkout is in src. Start with src\README.md for build
+and setup instructions; src\README_AC4.md contains technical notes.
+
+Source: https://github.com/PresidentRaptor/Ace-Combat-04-Static-Recompilation
+The shared recompiler/runtime originated in sal063's Ace Combat 5 project.
+Original attribution and licenses are retained in the source repository.
