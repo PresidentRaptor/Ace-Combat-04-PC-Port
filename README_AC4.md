@@ -104,6 +104,12 @@ AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
   The textured seeker diamond is recognised by its HUD source cell, so it
   stays with its target when crossing captions, warnings or corner blocks;
   a screen-position exclusion must not squeeze that sprite like text.
+  Pillarboxing is restricted to a displayed width of at least 640 columns:
+  flight's 512-column viewport cannot trigger menu bars, even if HUD sprites
+  disappear during camera changes or the 640-column backing target retains
+  earlier menu coverage. The hangar's full-width/full-height line guides are
+  transformed with its selector; only copies, fades and clearing strips keep
+  the full-screen exemption.
 - High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the

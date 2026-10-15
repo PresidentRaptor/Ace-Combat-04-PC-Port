@@ -47,16 +47,36 @@ int main(void) {
     /* Red selection rectangles and white cells must use the same transform. */
     for(int i=0;i<3;i++) { draw(120+i*100,170,16,16,0,1,0);
         draw(120+i*100,170,16,16,0,0,1); }
-    draw(0,0,400,400,0,0,1); assert(ps2_gs_ws_pillar());
+    draw(0,0,400,400,0,0,1); assert(ps2_gs_ws_pillar(640));
+    assert(!ps2_gs_ws_pillar(512));
     /* A paused mission can draw enough Z-zero overlays to trigger the old
        menu heuristic, but its flight HUD keeps the world full width. */
     ps2_gs_frame_count=101; draw(20,20,40,12,1,0,1);
-    draw(0,0,400,400,0,0,1); assert(!ps2_gs_ws_pillar());
-    ps2_gs_frame_count=102; assert(!ps2_gs_ws_pillar());
+    draw(0,0,400,400,0,0,1); assert(!ps2_gs_ws_pillar(512));
+    ps2_gs_frame_count=102; assert(!ps2_gs_ws_pillar(512));
     /* A real menu without flight glyphs can pillarbox again. */
     ps2_gs_frame_count=103; draw(0,0,400,400,0,0,1);
-    assert(ps2_gs_ws_pillar());
-    ps2_gs_frame_count=116; assert(!ps2_gs_ws_pillar());
+    assert(ps2_gs_ws_pillar(640));
+    assert(!ps2_gs_ws_pillar(512)); /* flight with absent/stale HUD markers */
+    ps2_gs_frame_count=116; assert(!ps2_gs_ws_pillar(640));
+    {
+        ps2_vk_state st={0}; st.fb_w=640; st.fb_h=448;
+        st.scissor[1]=639; st.scissor[3]=447;
+        ps2_vk_vertex line[2]={{0}};
+        line[0].x=line[1].x=185.5f; line[0].y=0.5f; line[1].y=448.5f;
+        ws_hud(&st,line,2);
+        float expected=320.5f+(185.5f-320.5f)*0.75f;
+        assert(fabsf(line[0].x-expected)<0.001f && line[1].x==line[0].x);
+        assert(line[1].y==448.5f);
+        /* The horizontal guide is squeezed into the same menu viewport. */
+        line[0].x=0; line[1].x=640; line[0].y=line[1].y=200;
+        ws_hud(&st,line,2);
+        assert(fabsf(line[0].x-80.125f)<0.001f);
+        assert(fabsf(line[1].x-560.125f)<0.001f && line[0].y==200);
+        /* A full-height clear strip must retain its original coverage. */
+        ps2_vk_vertex clear[6]={{0}}; clear[2].x=64; clear[2].y=448;
+        ws_hud(&st,clear,6); assert(clear[0].x==0 && clear[2].x==64);
+    }
     /* Recorded seeker cell from the user capture. The diamond must share
        the target box's projection even over captions, warnings and corners. */
     for(int row=0;row<3;row++) for(int side=0;side<3;side++) {
@@ -88,7 +108,7 @@ int main(void) {
     ps2_vk_state st={0}; st.fb_w=512; st.fb_h=448;
     ps2_vk_vertex v[2]={{0}}; v[0].x=120; v[1].x=140;
     ws_hud(&st,v,2); assert(v[0].x==120 && v[1].x==140);
-    puts("PASS: menu highlights and cells agree; flight/pause suppress menu crop; menu/fade expiry; seeker follows target across caption/warning/corner rows; captions stay distinct; widescreen-off unchanged");
+    puts("PASS: menu highlights/cells/guides agree; 512-column flight cannot pillarbox without HUD; menu/fade expiry; seeker follows target across caption/warning/corner rows; captions stay distinct; widescreen-off unchanged");
 }
 '''
 env=dict(os.environ, PATH='C:/msys64/ucrt64/bin;'+os.environ['PATH'])

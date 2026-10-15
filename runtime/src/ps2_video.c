@@ -3066,10 +3066,10 @@ static void present_frame(VkCommandBuffer cmd, u32 image_index) {
            (ps2_gs.c ws_hud); show black beside them rather than what the
            sides last held */
         extern u32 ps2_gs_frame_count;
-        extern int ps2_gs_ws_pillar(void);
+        extern int ps2_gs_ws_pillar(u32 display_w);
         float ga = ps2_vk_game_aspect();
         pillar = ga > 1.34f && ps2_cfg.hud_layout != PS2_HUD_STRETCHED
-                 && ps2_gs_ws_pillar();
+                 && ps2_gs_ws_pillar(present_w);
         if (pillar) { pillar_w = (4.0f / 3.0f) / ga; letterboxed = 1; }
         {   static int was = -1;
             if (pillar != was) {

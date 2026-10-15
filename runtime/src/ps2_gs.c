@@ -3631,7 +3631,11 @@ static u32 ws_area_frame = ~0u;
 u32 ps2_ws_pillar_frame = 0x80000000u;
 static u32 ws_flight_frame = 0x80000000u;
 
-int ps2_gs_ws_pillar(void) {
+int ps2_gs_ws_pillar(u32 display_w) {
+    /* AC4 menus/movies display 640 columns; flight displays 512, even when
+       its backing render target is 640 wide. Use the displayed viewport,
+       not HUD visibility or accumulated overlay area, as a hard flight gate. */
+    if (display_w < 640u) return 0;
     /* Flight HUD remains drawn behind the pause menu. Its far-plane glyphs
        take priority over Z-zero menu coverage, including repeated overlays. */
     return ps2_gs_frame_count - ps2_ws_pillar_frame <= 12u
@@ -3687,6 +3691,12 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
                 cues = e != NULL;
                 if (e && !strcmp(e, "all")) cue_step = 1;
             }
+            if (cues && ps2_gs_frame_count % (u32)cue_step == 0u
+                && !st->tme && v[0].z == 0.0f
+                && ((y1-y0 >= (float)st->fb_h-1.0f && x1-x0 < 2.0f)
+                    || (x1-x0 >= (float)st->fb_w-1.0f && y1-y0 < 2.0f)))
+                ps2_log("ws-guide: f%u n%d x%g..%g y%g..%g fb%ux%u",
+                    ps2_gs_frame_count,n,x0,x1,y0,y1,st->fb_w,st->fb_h);
             if (cues && ps2_gs_frame_count % (u32)cue_step == 0u
                 && (!realz || (n == 2 && !st->tme))
                 && ((st->zte && st->ztst != 1u) || v[0].r > 1.5f*v[0].g+8.0f)
@@ -3749,8 +3759,13 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
                 }
             }
     gx = (float)st->fb_w * 0.5f;
-    if (x0 <= 1.0f && x1 >= (float)st->fb_w - 0.5f) return;
-    if (!st->tme && y0 <= 1.0f && y1 >= (float)st->fb_h - 0.5f) return;
+    /* The hangar's crosshair guides span the menu. They must transform with
+       its selector, unlike full-screen copies, fades and clearing strips. */
+    int menu_line = n == 2 && !st->tme && v[0].z == 0.0f;
+    if (x0 <= 1.0f && x1 >= (float)st->fb_w - 0.5f
+        && !(menu_line && y1 - y0 < 0.5f)) return;
+    if (!st->tme && y0 <= 1.0f && y1 >= (float)st->fb_h - 0.5f
+        && !(menu_line && x1 - x0 < 0.5f)) return;
     s = (4.0f / 3.0f) / aspect;
     cx = gx + 0.5f;
     /* "corners at the edges": the flight HUD's corner blocks keep their 4:3

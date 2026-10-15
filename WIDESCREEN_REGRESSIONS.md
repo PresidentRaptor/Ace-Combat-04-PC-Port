@@ -15,6 +15,21 @@ The local checkout matched GitHub main before edits.
   cannot crop the world and clip the HUD's outer blocks while those sprites
   remain visible. Menus without a flight HUD retain their black sides.
 
+The HUD-based guard alone proved insufficient in live play. Pillarboxing now
+also requires the **displayed viewport** to be at least 640 columns. AC4's flight
+viewport is 512 columns, even when its backing render target is 640 wide. This
+hard gate prevents menu bars independently of missing/stale HUD draws. Ext,
+dive and fly8 replays all present the full viewport width. Regression tests
+explicitly check 512-column flight with no recent HUD draw and active menu
+coverage.
+
+The hangar guides were separately caught by the full-screen fade/copy
+exemptions. A capture confirms a vertical line at x185.5, y0.5..448.5 and a
+horizontal line across x0.5..640.5. These Z-zero untextured line primitives now
+transform with the menu. Full-height rectangular clear strips remain exempt.
+The corrected hangar replay visually aligns the vertical guide with its cell.
+The user's target-diamond replay remains pixel-identical after these changes.
+
 `tools/test_ac4_widescreen.py` compiles the actual C layout function and checks
 highlight/cell alignment, flight/pause priority, real-menu eligibility, fade
 expiry and the disabled-widescreen path. Sampling and texture-pool checks pass.
