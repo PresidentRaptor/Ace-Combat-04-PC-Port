@@ -22,7 +22,7 @@ replacement is off; the original artwork is used. Mission 01 has been
 completed in live play; the full campaign still needs testing.
 
 Your saves are in saves\ inside the installed game folder. Settings are in
-runtime\ac4_settings.ini. PLAY.bat is an alternate launcher. For bug reports,
+runtime\ac4_settings.ini. For bug reports,
 run DIAGNOSTICS.bat and include diagnostics.log, the mission and settings.
 
 Updating: install a new release into a separate empty folder, then copy your

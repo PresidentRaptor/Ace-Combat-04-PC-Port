@@ -1,4 +1,4 @@
-// Ace Combat 04 launcher: does what PLAY.bat does, without a console window.
+// Ace Combat 04 launcher: starts the runtime without a console window.
 // Rebuild with build-launcher.bat in this folder.
 using System;
 using System.Collections;
@@ -48,7 +48,7 @@ static class Launcher
             RedirectStandardError = true,
         };
 
-        // Clear any inherited PS2_* variables, then set the ones PLAY.bat sets.
+        // Clear inherited PS2_* variables, then configure shaders and saves.
         var keys = new ArrayList(psi.EnvironmentVariables.Keys);
         foreach (string key in keys)
             if (key.StartsWith("PS2_", StringComparison.OrdinalIgnoreCase))

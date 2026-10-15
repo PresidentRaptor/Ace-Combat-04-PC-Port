@@ -12,8 +12,8 @@ of an Ace Combat 5 installation. HD textures are optional.
 
 Playing
 -------
-Double-click "Ace Combat 04.exe" (or PLAY.bat). Either one uses the ISO in
-this folder; you can also drag an ISO onto them. Saves go to the saves
+Double-click "Ace Combat 04.exe". It uses the ISO in this folder;
+you can also drag an ISO onto it. Saves go to the saves
 folder - keep it when updating the build.
 
 Keyboard: Enter = Start, arrows = D-pad, X = Cross, S = Circle,

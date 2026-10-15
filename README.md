@@ -69,7 +69,7 @@ a new folder and copy your saves; existing game folders are not overwritten.
 For packaging details, see the [installer guide](packaging/ac4/installer/README.md).
 
 The following steps are for building from source. If you already have a locally
-assembled game folder, launch `Ace Combat 04.exe` or `PLAY.bat` there.
+assembled game folder, launch `Ace Combat 04.exe` there.
 
 ### Requirements
 
@@ -150,7 +150,7 @@ For a folder you can double-click, copy the scripts and player README from
 ```
 Ace Combat 04/
   Ace Combat 04.exe        <- optional launcher, built as described below
-  PLAY.bat, DIAGNOSTICS.bat, README.txt   <- from packaging/ac4/
+  DIAGNOSTICS.bat, README.txt   <- from packaging/ac4/
   MAKE_HD_TEXTURES.bat     <- optional, from packaging/ac4/
   your ISO
   runtime/
@@ -168,7 +168,7 @@ To use `MAKE_HD_TEXTURES.bat`, also keep the source checkout in the game
 folder as `src/`; that script calls `src/tools/texture_pack.py`. Building and
 playing with original textures do not require Real-ESRGAN or Pillow.
 
-The launcher and `PLAY.bat` find the ISO in the folder, keep saves in `saves/`, and write the session log to `last-play.log`. `DIAGNOSTICS.bat` runs with profiling and the developer hotkeys on and writes `diagnostics.log`.
+The launcher finds the ISO in the folder, keeps saves in `saves/`, and writes the session log to `last-play.log`. `DIAGNOSTICS.bat` runs with profiling and the developer hotkeys on and writes `diagnostics.log`.
 
 - **Saves** go to `saves/` (or `PS2_SAVE_DIR`). They use this runtime's own card format, not PCSX2's.
 - **Settings** are saved to `ac4_settings.ini` next to `ac4.exe`; compiled GPU pipelines are cached in `ac4_pipelines.*` (safe to delete).
@@ -232,7 +232,7 @@ Implementation details and diagnostic switches are in the [technical notes](docs
 - `runtime/`: everything that stands in for the console, plus the settings menu; `runtime/src/ps2_hle_ac4.c` is AC4's sound system
 - `runtime/shaders/`: the GLSL shaders, compiled at build time
 - `config/ac4/`: AC4's function entries, jump tables, symbols, overrides and hooks
-- `packaging/ac4/`: the launcher source, `PLAY.bat`, `DIAGNOSTICS.bat`, `MAKE_HD_TEXTURES.bat` and the player README
+- `packaging/ac4/`: the launcher source, `DIAGNOSTICS.bat`, `MAKE_HD_TEXTURES.bat` and the player README
 - `docs/`: technical notes, validation evidence and optional texture-work checkpoints
 - `third_party/`: Dear ImGui (settings menu) and Lua 5.4 (mod scripts; see `mods/README.md`)
 - `generated/`: the recompiler's output, created in step 2

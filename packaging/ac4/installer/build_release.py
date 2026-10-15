@@ -47,7 +47,7 @@ def main():
     for name in ['gs.vert', 'gs.frag', 'present.vert', 'present.frag',
                  'gs_zcopy.frag', 'colclip.frag']:
         copy(BUILD / 'shaders' / (name + '.spv'), 'runtime/shaders/' + name + '.spv')
-    for name in ['PLAY.bat', 'DIAGNOSTICS.bat']:
+    for name in ['DIAGNOSTICS.bat']:
         copy(HERE.parent / name, name)
     copy(HERE / 'INSTALL.txt', 'README.txt')
     copy(HERE / 'INSTALL.txt', 'INSTALL.txt')
