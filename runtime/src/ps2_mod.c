@@ -36,7 +36,7 @@ typedef struct {
     unsigned nopts;
     u32 files;
     u32 natives_ok, natives_failed, patches, symbols;
-    const ac5_api *api;
+    const ac4_api *api;
 } mod_info;
 
 static mod_info *mods;
@@ -388,10 +388,10 @@ static void requirements_resolve(void) {
     for (u32 i = 0; i < nmods; i++) {
         mod_info *m = &mods[i];
         if (!m->enabled) continue;
-        if (m->abi > AC5_ABI_VERSION) {
+        if (m->abi > AC4_ABI_VERSION) {
             char why[200];
             snprintf(why, sizeof why, "it needs mod ABI %d, and this runtime "
-                     "has %d", m->abi, AC5_ABI_VERSION);
+                     "has %d", m->abi, AC4_ABI_VERSION);
             switch_off(m, why);
         } else if (m->game[0] && strcmp(m->game, PS2_GAME_SERIAL)) {
             char why[200];
@@ -645,12 +645,12 @@ int ps2_mod_set_enabled_at(unsigned i, int enabled) {
     return 0;
 }
 
-static const ac5_api *api_of(mod_info *m) {
+static const ac4_api *api_of(mod_info *m) {
     if (!m->api) m->api = ps2_modapi_for(m->id, m->priority, mod_config_get);
     return m->api;
 }
 
-const ac5_api *ps2_mod_api_at(unsigned i) {
+const ac4_api *ps2_mod_api_at(unsigned i) {
     return i < ps2_mod_count() ? api_of(&mods[load_order[i]]) : NULL;
 }
 
@@ -686,8 +686,8 @@ static void natives_load(mod_info *m) {
 #ifdef _WIN32
         char rel[1024], full[1024];
         HMODULE h;
-        ac5_mod_main_fn entry;
-        const ac5_api *api = api_of(m), *prev;
+        ac4_mod_main_fn entry;
+        const ac4_api *api = api_of(m), *prev;
         int rc;
         snprintf(rel, sizeof rel, "%s/%s", m->dir, names[i]);
         if (!_fullpath(full, rel, sizeof full)) {
@@ -703,9 +703,12 @@ static void natives_load(mod_info *m) {
             free(names[i]);
             continue;
         }
-        entry = (ac5_mod_main_fn)(void (*)(void))GetProcAddress(h, "ac5_mod_main");
+        entry = (ac4_mod_main_fn)(void (*)(void))GetProcAddress(h, "ac4_mod_main");
+        /* Keep installed AC4 mods built against the original entry name working. */
+        if (!entry)
+            entry = (ac4_mod_main_fn)(void (*)(void))GetProcAddress(h, "ac5_mod_main");
         if (!entry) {
-            ps2_log("mod: %s: %s exports no ac5_mod_main; unloaded", m->id,
+            ps2_log("mod: %s: %s exports no supported mod entry point; unloaded", m->id,
                     names[i]);
             FreeLibrary(h);
             m->natives_failed++;
@@ -717,7 +720,7 @@ static void natives_load(mod_info *m) {
         rc = entry(api);
         ps2_modapi_leave(prev);
         if (rc) {
-            ps2_log("mod: %s: %s's ac5_mod_main returned %d (failure); anything "
+            ps2_log("mod: %s: %s's mod entry point returned %d (failure); anything "
                     "it attached first stays attached", m->id, names[i], rc);
             m->natives_failed++;
         } else {

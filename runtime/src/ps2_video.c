@@ -955,6 +955,7 @@ static void pipe_write_file(const char *path, const void *a, size_t na,
     rename(tmp, path);
 }
 
+/* Shared cache format signature; retain compatibility with existing caches. */
 #define PIPE_KEYS_MAGIC "AC5PIPE1"
 
 static void pipe_cache_open(void) {
@@ -1016,7 +1017,7 @@ static void pipe_warm_step(u64 budget_ns) {
     u64 t0 = vk_mono_ns();
     while (pipe_warm_i < pipe_warm_n) {
         u64 k = pipe_warm[pipe_warm_i++];
-        if (k >> 48) continue;   /* AC5's native mesh pipelines */
+        if (k >> 48) continue;   /* Legacy native mesh pipelines */
         (void)get_pipeline((u32)((k >> 40) & 0xFFu), (u32)((k >> 16) & 0xFFFFFFu),
                            (u32)(k & 0xFFFFu));
         stat_pipe_warm++;

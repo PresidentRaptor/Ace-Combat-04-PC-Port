@@ -104,7 +104,7 @@ enum {
     PS2_CAP_OP_STATS  = 12,
     PS2_CAP_OP_END    = 13,
     PS2_CAP_OP_VIFCLR = 14,
-    PS2_CAP_OP_TAG    = 15,   /* AC5 renderer records: replay skips them */
+    PS2_CAP_OP_TAG    = 15,   /* Legacy native-renderer records: replay skips them */
     PS2_CAP_OP_INTENT = 16
 };
 

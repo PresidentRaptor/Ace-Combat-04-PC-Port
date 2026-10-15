@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
     {
         FILE *fp = fopen(pnach, "w");
         fputs("// a comment line\n"
-              "gametitle=Ace Combat 5 (SLUS-20851)\n"
+              "gametitle=Ace Combat 04 (SLUS-20152)\n"
               "[Widescreen 16:9]\n"
               "gsaspectratio=16:9\n"
               "author=nemesis2000\n"

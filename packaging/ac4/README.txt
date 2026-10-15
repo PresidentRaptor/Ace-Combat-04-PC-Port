@@ -107,7 +107,7 @@ Fixed in this build
 - Esc no longer ends the game on the spot: it asks first, with just a
   small "Quit?" box (the settings menu no longer opens behind it). The settings
   menu (F4) gained a master volume, "mute in the background" and a Quit
-  button, and lost the widescreen option that only applied to AC5. The
+  button. The
   F6-F10 debugging keys only work in DIAGNOSTICS.bat now, so a stray key
   press can't fill the folder with capture files.
 - 16:9 widescreen: F4 > Display > "Widescreen (16:9)" (off by default).
@@ -127,9 +127,8 @@ Fixed in this build
 
 Known limits
 ------------
-- Graphics run through the emulated GS. The native renderer the AC5 port
-  uses was written for AC5's VU1 programs and is not included. Higher internal
-  resolutions (F4) work; resolution 6 was checked through Mission 01.
+- Graphics use the Vulkan GS renderer. Higher internal resolutions (F4)
+  work; resolution 6 was checked through Mission 01.
 - Widescreen: target boxes and their labels keep the 4:3 HUD's shape, so
   they look a little wide. On the weapon select screen the tinted panel
   behind the text covers only the 4:3 middle.

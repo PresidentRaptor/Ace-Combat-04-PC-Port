@@ -73,7 +73,7 @@ int ps2_hle_selftest(const char *disc) {
     fail += invoke(hle_sceVibGetProfile, 0, recv, 0) != 1;
     fail += ps2_r8(recv) != 3;
     {
-        /* AC4 uses the original libpad, not AC5's input consumer at 32ad00. */
+        /* AC4 uses the original libpad interface. */
         fail += invoke(hle_scePadInit, 0, 0, 0) != 1;
         fail += invoke(hle_scePadRead, 0, 0, recv) != 0;
         fail += invoke(hle_scePadPortOpen, 0, 1, send) != 0;

@@ -27,16 +27,17 @@ mods/
 | Layer | How | Example |
 | --- | --- | --- |
 | Files | `files/` | music, briefings, movies |
-| Memory | `.pnach`, `ac5.patch` | a PCSX2 data patch |
-| Functions | `ac5.hook_before/after/replace`, `ac5.redirect` | new weapon behaviour |
-| Over time | `ac5.every`, `ac5.after`, field callbacks | a HUD counter |
-| The controller | `ac5.on_input`, `ac5.pad` | remapping, macros |
-| Between runs | `ac5.store`, `ac5.stored` | unlocks, statistics |
+| Memory | `.pnach`, `ac4.patch` | a PCSX2 data patch |
+| Functions | `ac4.hook_before/after/replace`, `ac4.redirect` | new weapon behaviour |
+| Over time | `ac4.every`, `ac4.after`, field callbacks | a HUD counter |
+| The controller | `ac4.on_input`, `ac4.pad` | remapping, macros |
+| Between runs | `ac4.store`, `ac4.stored` | unlocks, statistics |
 
-The mod interface was written for the Ace Combat 5 runtime this port grew from,
-which is why its names start with `ac5`. Three of its calls hooked parts of
-AC5 that Ace Combat 04 does not have, and are refused here: `on_frame`,
-`on_scene` and `param`.
+New mods use the `ac4` Lua table and `runtime/include/ac4mod.h` native API.
+Existing AC4 mods can still use the `ac5` table (an alias of the same table),
+`ac5mod.h`, and the legacy `ac5_mod_main` DLL entry point. This preserves API
+compatibility; game addresses and hooks must still target AC4.
+`on_frame`, `on_scene` and `param` are reserved and return failure here.
 
 ## The filesystem the game reads from
 
@@ -63,39 +64,39 @@ every field and 2 means both. Two kinds are refused, each with a message:
 
 Two mods patching the same bytes: the higher priority keeps them.
 
-From a script, `ac5.patch(addr, value, width, original, when)` does the same.
+From a script, `ac4.patch(addr, value, width, original, when)` does the same.
 With `original`, the patch is only written over that value, which protects
 against patching memory that holds something else.
 
 ## Scripts
 
 Every `.lua` file in a mod's directory runs at startup, in name order. Put
-modules for `require` in a subdirectory. A script sees one table, `ac5`, which
-is `runtime/include/ac5mod.h` call for call:
+modules for `require` in a subdirectory. A script sees one table, `ac4`, which
+is `runtime/include/ac4mod.h` call for call:
 
 ```lua
 -- functions: by address, or by name (the recompiler's names, symbols.txt)
-ac5.hook_before(0x00263718, function(ctx) count = count + 1 end)
-ac5.hook_after("sceVu0ViewScreenMatrix", function(ctx)
-    ac5.log("camera set up")
+ac4.hook_before(0x00263718, function(ctx) count = count + 1 end)
+ac4.hook_after("sceVu0ViewScreenMatrix", function(ctx)
+    ac4.log("camera set up")
 end)
-local h = ac5.hook_replace(0x00123456, function(ctx)
+local h = ac4.hook_replace(0x00123456, function(ctx)
     if not wanted then return false end    -- the game's own function runs
-    ac5.set_return(ctx, 1)
+    ac4.set_return(ctx, 1)
 end)
-ac5.unhook(h)
+ac4.unhook(h)
 
-local t = ac5.every(600, function() ac5.log("ten seconds") end)
-ac5.after(60, function() ac5.cancel(t) end)
+local t = ac4.every(600, function() ac4.log("ten seconds") end)
+ac4.after(60, function() ac4.cancel(t) end)
 
 -- the controller, before the game sees it
-ac5.on_input(function(pads)
-    if pads[1].buttons & ac5.BTN.l3 ~= 0 then
-        pads[1].buttons = pads[1].buttons | ac5.BTN.cross
+ac4.on_input(function(pads)
+    if pads[1].buttons & ac4.BTN.l3 ~= 0 then
+        pads[1].buttons = pads[1].buttons | ac4.BTN.cross
     end
 end)
 
-ac5.store("best_score", 12345)          -- saves/mods/<id>.txt
+ac4.store("best_score", 12345)          -- saves/mods/<id>.txt
 local helpers = require("lib.helpers")
 ```
 
@@ -114,10 +115,10 @@ their after-hooks rather than growing the stack; the run summary counts it.
 
 ## Native modules
 
-A DLL exporting `int ac5_mod_main(const ac5_api *api)` loads only when the
+A DLL exporting `int ac4_mod_main(const ac4_api *api)` loads only when the
 mod's manifest says `native = true`. It is ordinary code in the game's process,
 so only enable it for mods you trust. Check `api->abi_version >=
-AC5_ABI_VERSION`: fields are only ever added.
+AC4_ABI_VERSION`: fields are only ever added.
 
 ## mod.toml
 
@@ -135,7 +136,7 @@ abi      = 3             # the mod ABI it needs, at least
 game     = "SLUS-20152"
 
 [config]
-volume   = "0.8"         # read back with ac5.config("volume")
+volume   = "0.8"         # read back with ac4.config("volume")
 ```
 
 A mod whose requirements are not met is switched off, and the log and the run

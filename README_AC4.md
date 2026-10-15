@@ -1,9 +1,11 @@
 # Ace Combat 04 on the ps2recomp runtime
 
-This tree is the AC5 static recompilation (github.com/sal063/Ace-Combat-5-Static-recompilation,
-commit 078662b) extended to build **Ace Combat 04: Shattered Skies (USA, SLUS-20152)**.
-It builds `ac4.exe` only: the AC5 build option, AC5's config and AC5-only tools and tests
-have been removed.
+This project builds **Ace Combat 04: Shattered Skies (USA, SLUS-20152)** as
+`ac4.exe` for Windows. It runs independently of an Ace Combat 5 installation.
+
+The recompiler and shared runtime originated in
+[sal063's Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation)
+(commit 078662b). Original attribution and the Apache 2.0 license are retained.
 
 ## Building
 

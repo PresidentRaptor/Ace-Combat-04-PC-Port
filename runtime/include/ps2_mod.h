@@ -2,7 +2,7 @@
 #define PS2_MOD_H
 
 #include "ps2_runtime.h"
-#include "ac5mod.h"
+#include "ac4mod.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +20,7 @@ const char *ps2_mod_dir_at(unsigned i);
 int ps2_mod_enabled_at(unsigned i);
 int ps2_mod_enabled_setting_at(unsigned i);
 int ps2_mod_set_enabled_at(unsigned i, int enabled);
-const ac5_api *ps2_mod_api_at(unsigned i);
+const ac4_api *ps2_mod_api_at(unsigned i);
 
 #ifdef __cplusplus
 }

@@ -26,6 +26,7 @@ typedef struct {
 } mc_card;
 static mc_card cards[2];
 static struct { int used, card, entry; u32 pos, mode; } handles[MC_HANDLES];
+/* Preserve the original file signature so existing AC4 saves remain readable. */
 static const char magic[8] = "AC5MC01";
 static u16 rd16(const u8 *p) { return p[0] | ((u16)p[1]<<8); }
 static void wr16(u8 *p, u16 n) { p[0]=(u8)n; p[1]=(u8)(n>>8); }

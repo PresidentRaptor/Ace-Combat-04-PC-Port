@@ -18,7 +18,7 @@
 #define FILE_READ_MAX      (64u * 1024u * 1024u)
 
 typedef struct {
-    const ac5_api *api;
+    const ac4_api *api;
     int env;
     unsigned scripts, script_errors, errors, disabled;
     char dir[640];
@@ -84,19 +84,19 @@ static int ctx_ref[LUA_MAX_DEPTH];
 static void push_ctx(unsigned depth, ps2_ctx *ctx) {
     if (!ctx_slot[depth]) {
         ctx_slot[depth] = (ps2_ctx **)lua_newuserdatauv(L, sizeof(ps2_ctx *), 0);
-        luaL_setmetatable(L, "ac5.ctx");
+        luaL_setmetatable(L, "ac4.ctx");
         ctx_ref[depth] = luaL_ref(L, LUA_REGISTRYINDEX);
     }
     *ctx_slot[depth] = ctx;
     lua_rawgeti(L, LUA_REGISTRYINDEX, ctx_ref[depth]);
 }
 
-static ac5_ctx *ctx_arg(lua_State *s, int idx) {
-    ps2_ctx **p = (ps2_ctx **)luaL_checkudata(s, idx, "ac5.ctx");
+static ac4_ctx *ctx_arg(lua_State *s, int idx) {
+    ps2_ctx **p = (ps2_ctx **)luaL_checkudata(s, idx, "ac4.ctx");
     if (!*p)
         luaL_error(s, "this context belongs to a callback that has already "
                       "returned; use the one your callback was given");
-    return (ac5_ctx *)*p;
+    return (ac4_ctx *)*p;
 }
 
 static int lua_msgh(lua_State *s) {
@@ -136,7 +136,7 @@ static void cb_free(lua_cb *cb) {
 static int call_cb(lua_cb *cb, ps2_ctx *ctx, int (*push)(void *), void *extra) {
     unsigned depth;
     int top, base, rc, handled = 0, nargs;
-    const ac5_api *prev;
+    const ac4_api *prev;
     if (!L || cb->dead || cb->release) return 0;
     if (!lua_enter(cb->what)) return 0;
     depth = lua_depth - 1u;
@@ -184,7 +184,7 @@ static int call_cb(lua_cb *cb, ps2_ctx *ctx, int (*push)(void *), void *extra) {
     return handled;
 }
 
-static int hook_call(ac5_ctx *ctx, void *user) {
+static int hook_call(ac4_ctx *ctx, void *user) {
     return call_cb((lua_cb *)user, (ps2_ctx *)ctx, NULL, NULL);
 }
 
@@ -192,7 +192,7 @@ static void field_call(void *user) {
     call_cb((lua_cb *)user, NULL, NULL, NULL);
 }
 
-static void frame_call(ac5_ctx *ctx, void *user) {
+static void frame_call(ac4_ctx *ctx, void *user) {
     call_cb((lua_cb *)user, (ps2_ctx *)ctx, NULL, NULL);
 }
 
@@ -204,7 +204,7 @@ static int push_scene(void *extra) {
     return 5;
 }
 
-static void scene_call(ac5_ctx *ctx, int machine, int major, int minor,
+static void scene_call(ac4_ctx *ctx, int machine, int major, int minor,
                        int from_major, int from_minor, void *user) {
     scene_args a = {{ machine, major, minor, from_major, from_minor }};
     call_cb((lua_cb *)user, (ps2_ctx *)ctx, push_scene, &a);
@@ -213,7 +213,7 @@ static void scene_call(ac5_ctx *ctx, int machine, int major, int minor,
 static const char *const pad_fields[] = {
     "connected", "buttons", "lx", "ly", "rx", "ry", "l2", "r2", NULL };
 
-static void pad_to_table(lua_State *s, const ac5_pad *p) {
+static void pad_to_table(lua_State *s, const ac4_pad *p) {
     lua_createtable(s, 0, 8);
     lua_pushboolean(s, p->connected);   lua_setfield(s, -2, "connected");
     lua_pushinteger(s, p->buttons);     lua_setfield(s, -2, "buttons");
@@ -227,7 +227,7 @@ static void pad_to_table(lua_State *s, const ac5_pad *p) {
 
 static int clamp8(lua_Integer v) { return v < 0 ? 0 : v > 255 ? 255 : (int)v; }
 
-static void pad_from_table(lua_State *s, int idx, ac5_pad *p) {
+static void pad_from_table(lua_State *s, int idx, ac4_pad *p) {
     for (int f = 0; pad_fields[f]; f++) {
         lua_getfield(s, idx, pad_fields[f]);
         if (f == 0) {
@@ -248,7 +248,7 @@ static void pad_from_table(lua_State *s, int idx, ac5_pad *p) {
     }
 }
 
-typedef struct { ac5_pad *pads; int ports; int table; } input_args;
+typedef struct { ac4_pad *pads; int ports; int table; } input_args;
 
 static int push_input(void *extra) {
     input_args *a = (input_args *)extra;
@@ -262,7 +262,7 @@ static int push_input(void *extra) {
     return 1;
 }
 
-static void input_call(ac5_pad *pads, int ports, void *user) {
+static void input_call(ac4_pad *pads, int ports, void *user) {
     input_args a = { pads, ports, LUA_NOREF };
     call_cb((lua_cb *)user, NULL, push_input, &a);
     if (a.table == LUA_NOREF) return;
@@ -362,22 +362,22 @@ static int l_write_bytes(lua_State *s) {
 }
 
 static int l_arg(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     lua_pushinteger(s, MOD(s)->api->arg(c, (int)luaL_checkinteger(s, 2)));
     return 1;
 }
 static int l_set_return(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     MOD(s)->api->set_return(c, checku32(s, 2));
     return 0;
 }
 static int l_reg(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     lua_pushinteger(s, MOD(s)->api->reg(c, (int)luaL_checkinteger(s, 2)));
     return 1;
 }
 static int l_set_reg(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     MOD(s)->api->set_reg(c, (int)luaL_checkinteger(s, 2), checku32(s, 3));
     return 0;
 }
@@ -453,7 +453,7 @@ static int l_redirect(lua_State *s) {
 }
 
 static int l_entry_arg(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     lua_pushinteger(s, MOD(s)->api->entry_arg(c, (int)luaL_checkinteger(s, 2)));
     return 1;
 }
@@ -466,17 +466,17 @@ static int l_return_float(lua_State *s) {
     return 1;
 }
 static int l_set_return_float(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     MOD(s)->api->set_return_float(c, (float)luaL_checknumber(s, 2));
     return 0;
 }
 static int l_reg_float(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     lua_pushnumber(s, MOD(s)->api->reg_float(c, (int)luaL_checkinteger(s, 2)));
     return 1;
 }
 static int l_set_reg_float(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     MOD(s)->api->set_reg_float(c, (int)luaL_checkinteger(s, 2),
                                (float)luaL_checknumber(s, 3));
     return 0;
@@ -521,7 +521,7 @@ static int l_on_shutdown(lua_State *s) {
 }
 
 static int l_pad(lua_State *s) {
-    ac5_pad p;
+    ac4_pad p;
     int port = (int)luaL_optinteger(s, 1, 1);
     if (MOD(s)->api->pad(port - 1, &p) != 0) { lua_pushnil(s); return 1; }
     pad_to_table(s, &p);
@@ -541,10 +541,10 @@ static int l_patch(lua_State *s) {
     u32 addr = checku32(s, 1);
     u8 bytes[256], orig[256];
     size_t len;
-    int has_orig = !lua_isnoneornil(s, 4), when = AC5_PATCH_ONCE, handle;
+    int has_orig = !lua_isnoneornil(s, 4), when = AC4_PATCH_ONCE, handle;
     const char *w = luaL_optstring(s, 5, "once");
-    if (!strcmp(w, "always")) when = AC5_PATCH_ALWAYS;
-    else if (!strcmp(w, "both")) when = AC5_PATCH_BOTH;
+    if (!strcmp(w, "always")) when = AC4_PATCH_ALWAYS;
+    else if (!strcmp(w, "both")) when = AC4_PATCH_BOTH;
     else luaL_argcheck(s, !strcmp(w, "once"), 5, "\"once\", \"always\" or \"both\"");
     if (lua_type(s, 2) == LUA_TSTRING) {
         const char *b = lua_tolstring(s, 2, &len);
@@ -605,7 +605,7 @@ static int l_stored(lua_State *s) {
 static u32 check_addr(lua_State *s, int idx);
 
 static int l_call_guest(lua_State *s) {
-    ac5_ctx *c = ctx_arg(s, 1);
+    ac4_ctx *c = ctx_arg(s, 1);
     u32 addr = check_addr(s, 2);
     u32 args[8];
     int n = lua_gettop(s) - 2;
@@ -687,7 +687,7 @@ static int l_file_to_guest(lua_State *s) {
     return 1;
 }
 
-static const luaL_Reg ac5_lib[] = {
+static const luaL_Reg ac4_lib[] = {
     {"log",           l_log},
     {"read8",         l_read8},
     {"read16",        l_read16},
@@ -805,7 +805,7 @@ static void copy_table(const char *lib) {
     lua_pop(L, 1);
 }
 
-static lua_mod *make_mod(const ac5_api *api, const char *dir) {
+static lua_mod *make_mod(const ac4_api *api, const char *dir) {
     static const char *const globals[] = {
         "assert", "error", "ipairs", "next", "pairs", "pcall", "rawequal",
         "rawget", "rawlen", "rawset", "select", "setmetatable",
@@ -834,7 +834,7 @@ static lua_mod *make_mod(const ac5_api *api, const char *dir) {
     lua_pushcclosure(L, l_print, 1);
     lua_setfield(L, -2, "print");
     lua_pushlightuserdata(L, M);
-    lua_getfield(L, LUA_REGISTRYINDEX, "ac5.rawload");
+    lua_getfield(L, LUA_REGISTRYINDEX, "ac4.rawload");
     lua_pushcclosure(L, l_load, 2);
     lua_setfield(L, -2, "load");
     lua_pushlightuserdata(L, M);
@@ -842,9 +842,9 @@ static lua_mod *make_mod(const ac5_api *api, const char *dir) {
     lua_pushcclosure(L, l_require, 2);
     lua_setfield(L, -2, "require");
 
-    luaL_newlibtable(L, ac5_lib);
+    luaL_newlibtable(L, ac4_lib);
     lua_pushlightuserdata(L, M);
-    luaL_setfuncs(L, ac5_lib, 1);
+    luaL_setfuncs(L, ac4_lib, 1);
     lua_createtable(L, 0, 16);
     for (int b = 0; b < 16; b++) {
         lua_pushinteger(L, 1 << b);
@@ -859,6 +859,9 @@ static lua_mod *make_mod(const ac5_api *api, const char *dir) {
     lua_setfield(L, -2, "abi_version");
     lua_pushstring(L, api->game_id);
     lua_setfield(L, -2, "game_id");
+    lua_setfield(L, -2, "ac4");
+    /* The legacy name refers to the same table for existing AC4 scripts. */
+    lua_getfield(L, -1, "ac4");
     lua_setfield(L, -2, "ac5");
 
     M->env = luaL_ref(L, LUA_REGISTRYINDEX);
@@ -885,7 +888,7 @@ static int state_open(void) {
         lua_pop(L, 1);
     }
     lua_getglobal(L, "load");
-    lua_setfield(L, LUA_REGISTRYINDEX, "ac5.rawload");
+    lua_setfield(L, LUA_REGISTRYINDEX, "ac4.rawload");
     lua_pushliteral(L, "");
     if (lua_getmetatable(L, -1)) {
         lua_pushliteral(L, "string");
@@ -893,8 +896,8 @@ static int state_open(void) {
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
-    luaL_newmetatable(L, "ac5.ctx");
-    lua_pushliteral(L, "ac5.ctx");
+    luaL_newmetatable(L, "ac4.ctx");
+    lua_pushliteral(L, "ac4.ctx");
     lua_setfield(L, -2, "__metatable");
     lua_pop(L, 1);
     return 0;
@@ -905,7 +908,7 @@ static int name_cmp(const void *a, const void *b) {
 }
 
 static void run_script(lua_mod *M, const char *path) {
-    const ac5_api *prev;
+    const ac4_api *prev;
     int base, rc;
     lua_pushcfunction(L, lua_msgh);
     base = lua_gettop(L);

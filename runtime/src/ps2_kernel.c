@@ -942,8 +942,7 @@ void ps2_syscall(ps2_ctx *ctx) {
             u32 e = sdd + (u32)i * 16u;
             u32 src = ps2_r32(e + 0), dst = ps2_r32(e + 4), size = ps2_r32(e + 8);
             if (!size) continue;
-            /* the destination is IOP memory (AC4's native IOP services read
-               it there); AC5's services expect the EE-side copy */
+            /* The destination is IOP memory, read by the native IOP services. */
             if (dst < PS2_IOP_RAM_SIZE) dst += PS2_IOP_RAM_BASE;
             for (u32 k = 0; k < size; k++) ps2_w8(dst + k, ps2_r8(src + k));
             sif_dma_bytes += size;

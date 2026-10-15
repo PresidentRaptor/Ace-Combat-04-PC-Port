@@ -16,7 +16,7 @@ void ps2_mkdir_p(const char *path);
 typedef struct { char *key, *val; } store_kv;
 
 typedef struct {
-    ac5_api api;
+    ac4_api api;
     char id[64];
     const char *(*config_get)(const char *mod_id, const char *key);
     u64 refused;
@@ -29,15 +29,15 @@ static mod_api **apis;
 static unsigned napis, capis;
 static __thread mod_api *current;
 
-static mod_api *as_mod(const ac5_api *api) { return (mod_api *)(void *)api; }
+static mod_api *as_mod(const ac4_api *api) { return (mod_api *)(void *)api; }
 
-const ac5_api *ps2_modapi_enter(const ac5_api *api) {
+const ac4_api *ps2_modapi_enter(const ac4_api *api) {
     mod_api *prev = current;
     current = api ? as_mod(api) : NULL;
     return prev ? &prev->api : NULL;
 }
 
-void ps2_modapi_leave(const ac5_api *previous) {
+void ps2_modapi_leave(const ac4_api *previous) {
     current = previous ? as_mod(previous) : NULL;
 }
 
@@ -128,23 +128,23 @@ static void api_write_bytes(uint32_t a, const void *src, uint32_t n) {
     if (on_ee("write_bytes")) mem_put(a, (const u8 *)src, n);
 }
 
-static uint32_t api_arg(ac5_ctx *ctx, int n) {
+static uint32_t api_arg(ac4_ctx *ctx, int n) {
     if (!ctx || n < 0 || !on_ee("arg")) return 0;
     if (n < 8) return ps2_arg((ps2_ctx *)ctx, n);
     return api_read32((u32)((ps2_ctx *)ctx)->r[29].ud[0] + 4u * (u32)(n - 8));
 }
-static void api_set_return(ac5_ctx *ctx, uint32_t v) {
+static void api_set_return(ac4_ctx *ctx, uint32_t v) {
     if (ctx && on_ee("set_return")) ((ps2_ctx *)ctx)->r[2].sd[0] = (s64)(s32)v;
 }
-static uint32_t api_reg(ac5_ctx *ctx, int n) {
+static uint32_t api_reg(ac4_ctx *ctx, int n) {
     if (!ctx || n < 0 || n > 31 || !on_ee("reg")) return 0;
     return (uint32_t)((ps2_ctx *)ctx)->r[n].uw[0];
 }
-static void api_set_reg(ac5_ctx *ctx, int n, uint32_t v) {
+static void api_set_reg(ac4_ctx *ctx, int n, uint32_t v) {
     if (!ctx || n <= 0 || n > 31) return;
     if (on_ee("set_reg")) ((ps2_ctx *)ctx)->r[n].sd[0] = (s64)(s32)v;
 }
-static uint32_t api_entry_arg(ac5_ctx *ctx, int n) {
+static uint32_t api_entry_arg(ac4_ctx *ctx, int n) {
     int ok;
     u32 v;
     if (!on_ee("entry_arg")) return 0;
@@ -152,22 +152,22 @@ static uint32_t api_entry_arg(ac5_ctx *ctx, int n) {
     if (!ok) return api_arg(ctx, n);
     return v;
 }
-static uint32_t api_return_value(ac5_ctx *ctx) { return api_reg(ctx, 2); }
-static float api_reg_float(ac5_ctx *ctx, int n) {
+static uint32_t api_return_value(ac4_ctx *ctx) { return api_reg(ctx, 2); }
+static float api_reg_float(ac4_ctx *ctx, int n) {
     if (!ctx || n < 0 || n > 31 || !on_ee("reg_float")) return 0.0f;
     return ((ps2_ctx *)ctx)->f[n].f;
 }
-static void api_set_reg_float(ac5_ctx *ctx, int n, float v) {
+static void api_set_reg_float(ac4_ctx *ctx, int n, float v) {
     if (ctx && n >= 0 && n <= 31 && on_ee("set_reg_float"))
         ((ps2_ctx *)ctx)->f[n].f = v;
 }
-static float api_return_float(ac5_ctx *ctx) { return api_reg_float(ctx, 0); }
-static void api_set_return_float(ac5_ctx *ctx, float v) {
+static float api_return_float(ac4_ctx *ctx) { return api_reg_float(ctx, 0); }
+static void api_set_return_float(ac4_ctx *ctx, float v) {
     api_set_reg_float(ctx, 0, v);
 }
 
 typedef struct {
-    ac5_hook_fn fn;
+    ac4_hook_fn fn;
     void *user;
     mod_api *owner;
 } native_hook;
@@ -177,12 +177,12 @@ static int native_hook_call(ps2_ctx *ctx, void *u) {
     mod_api *prev = current;
     int handled;
     current = h->owner;
-    handled = h->fn((ac5_ctx *)ctx, h->user);
+    handled = h->fn((ac4_ctx *)ctx, h->user);
     current = prev;
     return handled;
 }
 
-static native_hook *wrap(ac5_hook_fn fn, void *user) {
+static native_hook *wrap(ac4_hook_fn fn, void *user) {
     native_hook *h = (native_hook *)malloc(sizeof *h);
     if (!h) ps2_fatal("mod: out of memory attaching a hook");
     h->fn = fn;
@@ -191,7 +191,7 @@ static native_hook *wrap(ac5_hook_fn fn, void *user) {
     return h;
 }
 
-static int api_hook_before(uint32_t addr, ac5_hook_fn fn, void *user, int prio) {
+static int api_hook_before(uint32_t addr, ac4_hook_fn fn, void *user, int prio) {
     native_hook *h;
     int handle;
     if (!fn || !on_ee("hook_before")) return -1;
@@ -200,7 +200,7 @@ static int api_hook_before(uint32_t addr, ac5_hook_fn fn, void *user, int prio) 
     if (handle < 0) free(h);
     return handle;
 }
-static int api_hook_after(uint32_t addr, ac5_hook_fn fn, void *user, int prio) {
+static int api_hook_after(uint32_t addr, ac4_hook_fn fn, void *user, int prio) {
     native_hook *h;
     int handle;
     if (!fn || !on_ee("hook_after")) return -1;
@@ -209,7 +209,7 @@ static int api_hook_after(uint32_t addr, ac5_hook_fn fn, void *user, int prio) {
     if (handle < 0) free(h);
     return handle;
 }
-static int api_hook_replace(uint32_t addr, ac5_hook_fn fn, void *user) {
+static int api_hook_replace(uint32_t addr, ac4_hook_fn fn, void *user) {
     native_hook *h;
     int handle;
     if (!fn || !on_ee("hook_replace")) return -1;
@@ -221,7 +221,7 @@ static int api_hook_replace(uint32_t addr, ac5_hook_fn fn, void *user) {
 static int api_unhook(int handle) {
     return on_ee("unhook") ? ps2_hook_remove(handle) : -1;
 }
-static void api_call_original(uint32_t addr, ac5_ctx *ctx) {
+static void api_call_original(uint32_t addr, ac4_ctx *ctx) {
     if (ctx && on_ee("call_original"))
         ps2_hook_call_original(addr, (ps2_ctx *)ctx);
 }
@@ -230,7 +230,7 @@ static int api_redirect(uint32_t from, uint32_t to) {
     return ps2_hook_redirect(from, to, cur_priority(), cur_id());
 }
 
-static uint32_t api_call_guest(ac5_ctx *ctx, uint32_t addr,
+static uint32_t api_call_guest(ac4_ctx *ctx, uint32_t addr,
                                const uint32_t *args, int nargs) {
     ps2_ctx sub;
     if (!ctx || !on_ee("call_guest")) return 0;
@@ -253,8 +253,8 @@ enum { CB_FREE, CB_FIELD, CB_TIMER, CB_INPUT, CB_SHUTDOWN };
 typedef struct {
     int kind, handle;
     union {
-        ac5_field_fn field;
-        ac5_input_fn input;
+        ac4_field_fn field;
+        ac4_input_fn input;
     } fn;
     void *user;
     mod_api *owner;
@@ -285,7 +285,7 @@ static int cb_add(int kind, void *fn, void *user, u32 period, int repeat) {
     memset(&cbs[i], 0, sizeof cbs[i]);
     cbs[i].kind = kind;
     cbs[i].handle = next_cb_handle++;
-    cbs[i].fn.field = (ac5_field_fn)fn;
+    cbs[i].fn.field = (ac4_field_fn)fn;
     cbs[i].user = user;
     cbs[i].owner = current;
     cbs[i].period = period;
@@ -306,23 +306,23 @@ static int api_cancel(int handle) {
     return -1;
 }
 
-static int api_on_field(ac5_field_fn fn, void *user) {
+static int api_on_field(ac4_field_fn fn, void *user) {
     if (!fn || !on_ee("on_field")) return -1;
     return cb_add(CB_FIELD, (void *)fn, user, 0, 0);
 }
 
-static int api_timer(uint32_t fields, int repeat, ac5_field_fn fn, void *user) {
+static int api_timer(uint32_t fields, int repeat, ac4_field_fn fn, void *user) {
     if (!fn || !on_ee("timer")) return -1;
     if (!fields) fields = 1;
     return cb_add(CB_TIMER, (void *)fn, user, fields, repeat);
 }
 
-static int api_on_shutdown(ac5_field_fn fn, void *user) {
+static int api_on_shutdown(ac4_field_fn fn, void *user) {
     if (!fn || !on_ee("on_shutdown")) return -1;
     return cb_add(CB_SHUTDOWN, (void *)fn, user, 0, 0);
 }
 
-/* on_frame, on_scene and param_set hooked AC5's scene machine and named-value
+/* on_frame, on_scene and param_set hooked AC4's scene machine and named-value
    parser; AC4 has neither at those addresses, so they are refused. */
 static int unsupported(const char *what) {
     if (current)
@@ -331,39 +331,39 @@ static int unsupported(const char *what) {
     return -1;
 }
 
-static int api_on_frame(ac5_frame_fn fn, void *user) {
+static int api_on_frame(ac4_frame_fn fn, void *user) {
     (void)fn; (void)user;
     return unsupported("on_frame");
 }
 
-static int api_on_scene(ac5_scene_fn fn, void *user) {
+static int api_on_scene(ac4_scene_fn fn, void *user) {
     (void)fn; (void)user;
     return unsupported("on_scene");
 }
 
-static void pad_from_host(const ps2_pad_state *h, ac5_pad *p) {
+static void pad_from_host(const ps2_pad_state *h, ac4_pad *p) {
     p->connected = (uint8_t)(h->connected != 0);
     p->buttons = h->buttons;
     p->lx = h->lx; p->ly = h->ly; p->rx = h->rx; p->ry = h->ry;
     p->l2 = h->l2; p->r2 = h->r2;
 }
 
-static int api_pad(int port, ac5_pad *out) {
+static int api_pad(int port, ac4_pad *out) {
     if (port < 0 || port >= PS2_PAD_PORTS || !out || !on_ee("pad")) return -1;
     pad_from_host(&ps2_pad_host[port], out);
     return 0;
 }
 
-static int api_on_input(ac5_input_fn fn, void *user) {
+static int api_on_input(ac4_input_fn fn, void *user) {
     if (!fn || !on_ee("on_input")) return -1;
     return cb_add(CB_INPUT, (void *)fn, user, 0, 0);
 }
 
 void ps2_modapi_input(ps2_pad_state *host, int ports) {
-    ac5_pad pads[AC5_PAD_PORTS];
+    ac4_pad pads[AC4_PAD_PORTS];
     mod_api *save = current;
     if (!counts[CB_INPUT]) return;
-    if (ports > AC5_PAD_PORTS) ports = AC5_PAD_PORTS;
+    if (ports > AC4_PAD_PORTS) ports = AC4_PAD_PORTS;
     for (int i = 0; i < ports; i++) pad_from_host(&host[i], &pads[i]);
     for (unsigned i = 0; i < ncbs; i++) {
         mod_cb cb = cbs[i];
@@ -618,7 +618,7 @@ static int64_t api_file_to_guest(const char *path, uint64_t pos,
     return got;
 }
 
-const ac5_api *ps2_modapi_for(const char *mod_id, int priority,
+const ac4_api *ps2_modapi_for(const char *mod_id, int priority,
                               const char *(*config_get)(const char *mod_id,
                                                         const char *key)) {
     mod_api *m;
@@ -635,7 +635,7 @@ const ac5_api *ps2_modapi_for(const char *mod_id, int priority,
     snprintf(m->id, sizeof m->id, "%s", mod_id ? mod_id : "?");
     m->config_get = config_get;
 
-    m->api.abi_version = AC5_ABI_VERSION;
+    m->api.abi_version = AC4_ABI_VERSION;
     m->api.game_id = PS2_GAME_SERIAL;
     m->api.mod_id = m->id;
     m->api.priority = priority;
