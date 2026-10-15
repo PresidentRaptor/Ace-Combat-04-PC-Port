@@ -23,7 +23,7 @@ You must supply the supported game executable and disc data. The recompiled
 game source and extracted game assets are not distributed; `generated/` is
 created locally from your copy of the game.
 
-Repository: [PresidentRaptor/Ace-Combat-04-Static-Recompilation](https://github.com/PresidentRaptor/Ace-Combat-04-Static-Recompilation).
+Repository: [PresidentRaptor/Ace-Combat-04-PC-Port](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port).
 
 ## Current status
 

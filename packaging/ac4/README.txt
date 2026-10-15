@@ -152,6 +152,6 @@ Rebuilding
 The local source checkout is in src. Start with src\README.md for build
 and setup instructions; src\README_AC4.md contains technical notes.
 
-Source: https://github.com/PresidentRaptor/Ace-Combat-04-Static-Recompilation
+Source: https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port
 The shared recompiler/runtime originated in sal063's Ace Combat 5 project.
 Original attribution and licenses are retained in the source repository.
