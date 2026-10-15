@@ -92,6 +92,9 @@ def analyze(words: dict[int, int], entries) -> Analysis:
             continue
         after = (pc + 4) & MASK
         if not ins.has_delay_slot:
+            if ins.flow == 'exception-return':
+                edge(pc, None, 'exception-return')
+                continue
             if ins.flow in ('trap', 'exception'):
                 edge(pc, None, 'exception', 'trap' if ins.flow == 'trap' else 'always')
             if ins.flow != 'exception':
@@ -100,7 +103,8 @@ def analyze(words: dict[int, int], entries) -> Analysis:
 
         slot = fetch(after)
         valid = slot is not None
-        if slot is not None and (slot.has_delay_slot or slot.mnemonic == 'sync'):
+        if slot is not None and (slot.has_delay_slot or slot.mnemonic == 'sync'
+                                 or slot.flow == 'exception-return'):
             diagnostic(after, 'unsupported/undefined control transfer or SYNC in delay slot')
             valid = False
         elif slot is not None and slot.flow in ('trap', 'exception'):

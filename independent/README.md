@@ -160,5 +160,25 @@ An extracted executable can be supplied with `--elf` instead. The command
 requires the original supported identity, checks five reviewed branch/call/return
 and delay-slot cases, and reports metadata/inventory/entry-analysis results only.
 It does not execute game code or produce extracted files. See MILESTONES.md for
-the measured local result and remaining M2 gates. The suite now contains 48 tests;
-FPU and quadword/SA decoding have been added since the M2a cloud baseline.
+the measured local result and remaining M2 gates. M2b brought the suite to 48
+tests with FPU and quadword/SA decoding; see M2c below for the current count.
+
+## M2c packed, system and VU decoding
+
+The decoder now recognizes packed MMI groups, secondary HI/LO forms, baseline
+COP0 transfers, interrupt/TLB operations and ERET, PREF, COP2 transfers/memory
+operations/branches, and common VU arithmetic/integer/microcall forms. See
+PROVENANCE.md for sources and limits. Interlock bits, destination masks, integer
+and vector register namespaces, scalar-register restrictions and signed VIADDI
+immediates are preserved. These are decoding results, not implementations of
+the numerical operations or VU synchronization/timing.
+
+ERET produces an unresolved exception-return edge without CPU fallthrough or a
+delay slot. VCALLMS/VCALLMSR start VU0 microcode and keep normal EE fallthrough;
+their micro targets are not inserted into the EE control-flow graph. Extended
+VU operations and specialized COP0 debug/performance encodings remain unsupported,
+as do CACHE and unlisted/reserved encodings.
+
+The local verification command also checks eight reviewed MMI/system/VU
+instruction candidates. All 13 checks are static; they do not prove those
+instructions execute during gameplay. Current suite: 65 passing test methods.

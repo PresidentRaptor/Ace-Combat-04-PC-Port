@@ -22,6 +22,26 @@ CASES = (
     (0x1027e0, 'bc1tl', 0x1027f4, 'lwc1'),
 )
 
+# Static instruction candidates reviewed from raw fields; not proof these sites
+# execute in a particular mission. Stored data is metadata, never game bytes.
+OPERATION_CASES = (
+    (0x102ba8, 'lqc2', {'vft': 4, 'base': 5, 'offset': 0}),
+    (0x105040, 'qmfc2', {'rt': 14, 'vfd': 4, 'interlock': 0}),
+    (0x108738, 'vadd', {'vfd': 7, 'vfs': 0, 'vft': 4, 'dest_mask': 14}),
+    (0x136974, 'vcallms', {'immediate': 0, 'micro_address': 0}),
+    (0x26470c, 'mfc0', {'rt': 17, 'cop0': 12}),
+    (0x264720, 'di', {}),
+    (0x272ffc, 'qfsrv', {'rd': 10, 'rs': 9, 'rt': 8}),
+    (0x2917b4, 'pand', {'rd': 2, 'rs': 2, 'rt': 3}),
+)
+
+
+def check_operation(words, pc, mnemonic, operands):
+    ins = decode(words[pc], pc)
+    if (ins.mnemonic, ins.operands, ins.flow) != (mnemonic, operands, 'normal'):
+        raise ValueError(f'{pc:#010x}: operation/operands/flow mismatch')
+    return {'address': f'0x{pc:08x}', 'mnemonic': mnemonic, 'passed': True}
+
 
 def check_case(words, pc, mnemonic, target, slot_name):
     def require(condition, description):
@@ -57,12 +77,14 @@ def check_case(words, pc, mnemonic, target, slot_name):
 def validate(data):
     words, entry, metadata = executable_words(data)
     checks = [check_case(words, *case) for case in CASES]
+    operations = [check_operation(words, *case) for case in OPERATION_CASES]
     counts = inventory(words)
     graph = analyze(words, [entry])
     return {
         'scope': 'local-static-inspection; not execution or gameplay validation',
         'image': metadata,
         'cases': checks,
+        'operation_cases': operations,
         'inventory': {'candidate_words': counts['candidate_words'],
                       'accepted_words': sum(counts['decoded'].values()),
                       'rejected_words': sum(counts['rejected'].values()),

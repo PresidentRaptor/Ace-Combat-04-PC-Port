@@ -161,3 +161,39 @@ register propagation and jump tables, full indirect-target acceptance, and an
 independent execution oracle. Local static checks do not validate floating-point
 arithmetic, memory access, timing, syscall execution, graphics or gameplay.
 M2 remains **In progress**; M3 and later stages remain pending.
+
+## M2c continuation (2026-10-15)
+
+Implemented packed MMI groups and secondary HI/LO forms, basic COP0
+transfers/branches, interrupt/TLB/exception-return decoding and PREF. Added
+COP2 transfers, interlock fields, LQC2/SQC2, CPU branches, common vector
+arithmetic/broadcast/scalar forms, VI arithmetic and VU0 microprogram calls.
+
+ERET terminates the EE normal-flow graph with an unresolved exception-return
+edge and no delay slot. ERET in a branch delay slot blocks the executed path;
+an untaken likely branch can still annul it. VCALLMS starts separate VU0
+microcode without inventing an EE branch or delay slot.
+
+Validation: independent suite **65 tests pass** on local Python 3.11.0;
+the supported ISO passes the original five flow cases plus eight new
+MMI/system/VU candidate checks. Sources and implementation limits are recorded
+in PROVENANCE.md. No game words or generated guest source are committed.
+
+Commands from repository root:
+
+```
+python -B -m unittest discover -s independent/tests -v
+python -B independent/validate_ac4.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso"
+git diff --check
+```
+
+Local section inventory: 422,413 candidate words; 418,587 accepted encodings,
+3,826 rejections (previous 10,345). Remaining rejection categories:
+817 fixed-field violations, 206 unsupported/reserved SPECIAL, 14 COP0,
+2,756 COP2 and 33 CACHE. Counts include possible embedded data and are not
+execution coverage. Entry analysis still stops at SYSCALL 0x00100064;
+23 visited addresses/24 decoded including slots/24 edges, no diagnostics.
+
+**Next:** extended VU macro forms and CACHE/system selectors, then conservative
+register/indirect-target recovery. Full execution semantics/oracle evidence and
+boot services are still absent. M2 remains In progress; later milestones pending.

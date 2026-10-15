@@ -143,3 +143,35 @@ Synthetic tests add malformed section mapping cases and nonallocated vendor
 section handling, quadword prologue/return-slot behavior, distinct FPU/GPR
 namespaces, restricted FCR writes, unary/accumulator field restrictions and FP
 likely annulment across an unsupported slot.
+
+## M2c packed/system/VU decoding (2026-10-15)
+
+Sources actually consulted for new independent decoding and tests:
+
+- Sony **EE Core Instruction Set Manual**, v6.0, chapter 3 encoding pictures
+  and appendix 7.2 (MMI groups 0-3); chapter 4 and appendix 7.3 (COP0), and
+  PREF p. 96. Same public text mirror recorded above. PMFHL formats and
+  PMTHL fixed fields were checked in their individual encoding descriptions.
+  Packed halfword shifts use only the low four shift bits. Specialized COP0
+  debug/performance selectors remain unsupported. A baseline MFC0/MTC0 decode
+  does not certify that every possible COP0 register number is implemented.
+- Sony **VU User's Manual**, v6.0, April 2002, chapter 6: transfers/branches
+  pp. 230-239, common vector arithmetic, VI integer operations and microcalls
+  pp. 241-317. Primary authored document at public PDF mirror:
+  https://manuals.plus/m/a858ef55cd2638accdfca612d5359eb6e48a48c7fd6792b18080d866e610fde5.pdf
+  Encoding fields distinguish GPR, VF and VI registers, interlocks, component
+  masks and I/Q scalar broadcasts. VOPMSUB requires the xyz mask; VCALLMS
+  addresses are in eight-byte microinstruction units and are not EE branches.
+  Macro integer register numbers above 15 are conservatively rejected.
+- Fresh metadata-only inspection of the supported AC4 disc supplied eight
+  operation candidates in validate_ac4.py. Raw fields were inspected directly
+  and checked against the documented selectors. No inherited implementation,
+  symbol tables, generated guest code or AC5 data was used.
+
+New coverage includes MMI0/1/2/3, secondary scalar multiply/divide/HI/LO,
+PMFHL/PMTHL, packed shifts, basic COP0/TLB/interrupt/ERET, PREF, COP2 data/control
+transfers, LQC2/SQC2, BC2 branches, vector arithmetic/broadcast/scalar forms,
+VIADD/VISUB/VIAND/VIOR/VIADDI and VCALLMS/VCALLMSR. This is a partial decoder:
+extended VU macro forms, VU micro decoding/execution, CACHE, specialized COP0
+selectors and unlisted instructions remain unsupported. None of the new
+arithmetic, memory, privilege, interlock or pipeline behavior is executed.

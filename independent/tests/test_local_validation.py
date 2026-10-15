@@ -4,10 +4,18 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from validate_ac4 import check_case
+from validate_ac4 import check_case, check_operation
 
 
 class LocalCheckTests(unittest.TestCase):
+    def test_operation_check_rejects_wrong_register_and_flow(self):
+        words = {0: 0x40026000, 4: 0}
+        self.assertTrue(check_operation(words, 0, 'mfc0', {'rt': 2, 'cop0': 12})['passed'])
+        with self.assertRaises(ValueError):
+            check_operation(words, 0, 'mfc0', {'rt': 3, 'cop0': 12})
+        with self.assertRaises(ValueError):
+            check_operation({0: 0x42000018}, 0, 'eret', {})
+
     def test_backward_branch_and_slot_checked(self):
         words = {0x2000: 0x1480ffff, 0x2004: 0x24420001}
         result = check_case(words, 0x2000, 'bne', 0x2000, 'addiu')

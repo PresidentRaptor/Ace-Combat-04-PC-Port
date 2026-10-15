@@ -71,8 +71,9 @@ quadword/SA/FPU decoding, 48 passing tests and five passing local static checks.
 Read the latest milestone evidence before starting another task; do not repeat
 M2a or use its historical unsupported-group list as the current implementation.
 
-Next bounded scope: complete remaining EE/MMI and COP0 decoding from primary
-hardware references, then add COP2/VU coverage. Preserve explicit unsupported
+M2c now adds MMI, baseline COP0 and common COP2/VU forms, with 65 tests and
+13 static local checks. Next bounded scope: extended VU macro forms, CACHE and
+specialized COP0 selectors from primary hardware references. Preserve explicit unsupported
 boundaries and do not treat system calls as successful fallthrough. Register
 propagation, jump-table recovery and execution-oracle evidence remain separate
 acceptance work. M2 must remain in progress until its full gate is met.
