@@ -9,6 +9,8 @@ root = Path(__file__).resolve().parents[1]
 _, env = compiler_environment()
 (root / 'out').mkdir(exist_ok=True)
 checks = [
+    'test_visual_regression.py',
+    'test_frame_timings.py',
     'test_ac4_audio.py', 'test_ac4_widescreen.py', 'test_ac4_texture_pool.py',
     'test_patch.py', 'check_gs_sampling.py', 'check_upload_streams.py',
     'check_indexed_blocks.py', 'check_cloud_graphics.py', 'check_readback_protocol.py',

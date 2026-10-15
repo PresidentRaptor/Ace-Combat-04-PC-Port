@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "aircraft",
+      "capture": "captures/aircraft.gscap",
+      "sha256": "599cf08a125e656837ade35a2cd6eb56a9db45a49de0c4642d324c3659372793",
+      "baseline": "baselines/aircraft.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "demo",
+      "capture": "captures/demo.gscap",
+      "sha256": "e3b8b7369ea1791f7d2d57564a5e3f5f2d98467eab42bd5d1e9a6489e1e577f6",
+      "baseline": "baselines/demo.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "demo2",
+      "capture": "captures/demo2.gscap",
+      "sha256": "28480961b14bf495c36c268dba5c7b18180f2be893ae63d91fb46a15c7f4f5aa",
+      "baseline": "baselines/demo2.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "dive",
+      "capture": "captures/dive.gscap",
+      "sha256": "2488a02fd7cb66c6405bb9f5c1f841f0ce51deca5451448455fae5b009522bb1",
+      "baseline": "baselines/dive.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "ext",
+      "capture": "captures/ext.gscap",
+      "sha256": "85136ae58ee9cccab0afaf79c8820a40e0d6ad29a4234c600253ee6faa89cf09",
+      "baseline": "baselines/ext.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "fly8",
+      "capture": "captures/fly8.gscap",
+      "sha256": "5d1e46fa41af069fa0a43097c85fed114f31e7f8f0698cdd03389927095494f8",
+      "baseline": "baselines/fly8.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "hangar",
+      "capture": "captures/hangar.gscap",
+      "sha256": "673b69c6c268e5c334d2ddc0ce51b87deed72622dd78a4fbdda456fc9807a0c2",
+      "baseline": "baselines/hangar.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "land",
+      "capture": "captures/land.gscap",
+      "sha256": "309fe69ce41cf6da5ffdd9c2c085c9b44cd32b1cafe9f330cc44a58d09ef9bac",
+      "baseline": "baselines/land.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "long",
+      "capture": "captures/long.gscap",
+      "sha256": "d3fbbb7e23c19cb6722e329ab71b9c36938626e3ded42c949c9b0623df9c05c0",
+      "baseline": "baselines/long.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "menu",
+      "capture": "captures/menu.gscap",
+      "sha256": "aacaf9e902890a17f7d88c973655e19b404d44e2c4998ca13d3abccc6e41e80d",
+      "baseline": "baselines/menu.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "snow",
+      "capture": "captures/snow.gscap",
+      "sha256": "37852a6e388b14c82292db4613a7f37de442c6d1cd99aec4afd2c10fdbed03b7",
+      "baseline": "baselines/snow.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    },
+    {
+      "name": "sunring",
+      "capture": "captures/sunring.gscap",
+      "sha256": "447ad4c44fe8fbb34a6390e8abc8715f9265df2a5964013c4c8b336e4c9ba30a",
+      "baseline": "baselines/sunring.png",
+      "resolution": 1,
+      "preset": 0,
+      "fields": 0,
+      "widescreen": false,
+      "threshold": 16,
+      "allowed_pixels": 0
+    }
+  ]
+}

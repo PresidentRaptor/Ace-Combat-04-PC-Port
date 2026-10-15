@@ -186,11 +186,45 @@ static int renderer_speed_enabled(void) {
     static int enabled = -1;
     if (enabled < 0) {
         const char *e = getenv("PS2_SPEED_LOG");
-        enabled = e && atoi(e) != 0;
+        const char *csv = getenv("PS2_FRAME_TIMINGS");
+        enabled = (e && atoi(e) != 0) || (csv && *csv);
     }
     return enabled;
 }
 enum { VS_FENCE, VS_ACQUIRE, VS_RECORD, VS_SUBMIT, VS_PRESENT, VS_TOTAL, VS_N };
+/* Written only by the renderer thread. GPU rows carry the submitted host row's
+   ID, not the later frame in which its fence happens to be collected. */
+static FILE *speed_csv;
+static int speed_csv_opened;
+static u64 speed_frame_id, speed_last_begin;
+static void speed_csv_row(const char *kind, u64 id, const u64 *ns,
+                          u64 interval, int submitted, int shown,
+                          double gpu_ms, double scene_ms, double present_ms,
+                          u64 pipe_ns, u64 pipes) {
+    if (!speed_csv_opened) {
+        const char *path = getenv("PS2_FRAME_TIMINGS");
+        speed_csv_opened = 1;
+        if (path && *path) {
+            speed_csv = fopen(path, "w");
+            if (speed_csv) {
+                setvbuf(speed_csv, NULL, _IOFBF, 262144);
+                fputs("kind,frame,interval_ms,fence_ms,acquire_ms,record_ms,submit_ms,present_ms,host_ms,submitted,shown,gpu_ms,scene_ms,upscale_ms,compile_ms,new_pipelines\n", speed_csv);
+            } else ps2_log("vk-speed: cannot open frame timings '%s'", path);
+        }
+    }
+    if (!speed_csv) return;
+    u64 zero[VS_N] = {0};
+    if (!ns) ns = zero;
+    if (fprintf(speed_csv, "%s,%llu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d,%d,%.6f,%.6f,%.6f,%.6f,%llu\n",
+        kind, (unsigned long long)id, interval/1e6,
+        ns[VS_FENCE]/1e6, ns[VS_ACQUIRE]/1e6, ns[VS_RECORD]/1e6,
+        ns[VS_SUBMIT]/1e6, ns[VS_PRESENT]/1e6, ns[VS_TOTAL]/1e6,
+        submitted, shown, gpu_ms, scene_ms, present_ms, pipe_ns/1e6,
+        (unsigned long long)pipes) < 0) {
+        ps2_log("vk-speed: frame timings write failed");
+        fclose(speed_csv); speed_csv = NULL;
+    }
+}
 static struct {
     u64 start, n, ns[VS_N], peak[VS_N], slow, failed;
     u64 draws, uploads, selfreads, pipe_ns, pipes;
@@ -263,6 +297,7 @@ typedef struct {
     VkFence fence;
     VkQueryPool timing_queries;
     int timing_pending;
+    u64 timing_id;
     VkBuffer vbuf;
     VkDeviceMemory vmem;
     void *vptr;
@@ -3273,6 +3308,9 @@ static void gpu_speed_collect(vk_frame *fr) {
     }
     u64 mask = gpu_timestamp_bits >= 64 ? ~(u64)0 : ((u64)1 << gpu_timestamp_bits) - 1;
     double ms = ((stamps[2] - stamps[0]) & mask) * gpu_timestamp_period / 1e6;
+    speed_csv_row("gpu", fr->timing_id, NULL, 0, 1, 0, ms,
+        ((stamps[1] - stamps[0]) & mask) * gpu_timestamp_period / 1e6,
+        ((stamps[2] - stamps[1]) & mask) * gpu_timestamp_period / 1e6, 0, 0);
     total += ms;
     if (ms > peak) peak = ms;
     scene += ((stamps[1] - stamps[0]) & mask) * gpu_timestamp_period / 1e6;
@@ -3301,6 +3339,10 @@ static void draw_and_present(void) {
     VkPresentInfoKHR pi;
     int timing = renderer_speed_enabled(), submitted = 0;
     u64 times[VS_N] = {0}, begin = timing ? vk_mono_ns() : 0, mark = begin;
+    u64 timing_id = timing ? ++speed_frame_id : 0;
+    u64 interval = timing && speed_last_begin ? begin - speed_last_begin : 0;
+    u64 pipe_ns_before = speed_pipe_ns, pipes_before = speed_pipe_n;
+    if (timing) speed_last_begin = begin;
 
     r = vkWaitForFences(dev, 1, &fr->fence, VK_TRUE, VK_WAIT_NS);
     if (timing) { u64 now=vk_mono_ns(); times[VS_FENCE]=now-mark; mark=now; }
@@ -3359,10 +3401,11 @@ static void draw_and_present(void) {
     si.pSignalSemaphores = &swap_rendered[image_index & 7u];
     VkResult submit_result = vkQueueSubmit(queue, 1, &si, fr->fence);
     fr->timing_pending = fr->timing_queries && submit_result == VK_SUCCESS;
+    fr->timing_id = timing_id;
     if (timing) { u64 now=vk_mono_ns(); times[VS_SUBMIT]=now-mark; mark=now; }
 
     frame_index = (frame_index + 1) % FRAMES_IN_FLIGHT;
-    submitted = 1;
+    submitted = submit_result == VK_SUCCESS;
     if (!show) goto finished;
     memset(&pi, 0, sizeof(pi));
     pi.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -3378,6 +3421,8 @@ static void draw_and_present(void) {
 finished:
     if (timing) {
         times[VS_TOTAL] = vk_mono_ns() - begin;
+        speed_csv_row("host", timing_id, times, interval, submitted, show,
+                      0, 0, 0, speed_pipe_ns-pipe_ns_before, speed_pipe_n-pipes_before);
         renderer_speed_sample(times, submitted);
     }
 }
@@ -3995,6 +4040,11 @@ static void *renderer_main(void *arg) {
     if (ps2_settings_save_pending()) ps2_settings_save();
     pthread_mutex_lock(&gpu_lock);
     if (dev) vkDeviceWaitIdle(dev);
+    if (dev) for (int i = 0; i < FRAMES_IN_FLIGHT; i++) gpu_speed_collect(&frames[i]);
+    if (speed_csv) {
+        if (fclose(speed_csv)) ps2_log("vk-speed: frame timings close failed");
+        speed_csv = NULL;
+    }
     pipe_cache_save(1);
     ps2_ui_shutdown();
     pthread_mutex_unlock(&gpu_lock);

@@ -113,6 +113,37 @@ set_source_files_properties(${GENERATED_SOURCES} PROPERTIES
 set(HOT_SOURCES runtime/src/ps2_vu.c runtime/src/ps2_gs.c runtime/src/ps2_hw.c)
 set_source_files_properties(${HOT_SOURCES} PROPERTIES COMPILE_OPTIONS "-O3")
 
+# Opt-in PGO for the shared runtime only. Generated guest code keeps its
+# musttail/patchable-entry contract and the third-party sources are untouched.
+set(PS2_PGO_MODE "off" CACHE STRING "Runtime PGO: off, generate, or use")
+set_property(CACHE PS2_PGO_MODE PROPERTY STRINGS off generate use)
+set(PS2_PGO_DIR "${CMAKE_BINARY_DIR}/pgo" CACHE PATH "Runtime profile directory")
+if(NOT PS2_PGO_MODE MATCHES "^(off|generate|use)$")
+  message(FATAL_ERROR "PS2_PGO_MODE must be off, generate, or use")
+endif()
+if(NOT PS2_PGO_MODE STREQUAL "off")
+  if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    message(FATAL_ERROR "This PGO configuration requires GCC")
+  endif()
+  if(PS2_PGO_MODE STREQUAL "generate")
+    file(MAKE_DIRECTORY "${PS2_PGO_DIR}")
+    set(PGO_FLAGS "-fprofile-generate=${PS2_PGO_DIR}" -fprofile-update=atomic)
+    # Both executables use shared runtime objects, but each has its own profile.
+    target_link_options(${PS2_EXE} PRIVATE "-fprofile-generate=${PS2_PGO_DIR}")
+  else()
+    file(GLOB_RECURSE PGO_DATA "${PS2_PGO_DIR}/*.gcda")
+    if(NOT PGO_DATA)
+      message(FATAL_ERROR "No PGO data found; build generate mode and train first")
+    endif()
+    set(PGO_FLAGS "-fprofile-use=${PS2_PGO_DIR}" -Werror=missing-profile -Werror=coverage-mismatch)
+  endif()
+  foreach(SOURCE IN LISTS RUNTIME_SOURCES)
+    if(SOURCE MATCHES "^runtime/")
+      set_property(SOURCE "${SOURCE}" APPEND PROPERTY COMPILE_OPTIONS ${PGO_FLAGS})
+    endif()
+  endforeach()
+endif()
+
 if(PS2_DIAG)
   target_compile_definitions(${PS2_EXE} PRIVATE PS2_DIAG=1)
 endif()
@@ -139,6 +170,9 @@ list(REMOVE_ITEM REPLAY_SOURCES runtime/src/ps2_main.c
 list(APPEND REPLAY_SOURCES runtime/src/ps2_replay.c)
 
 add_executable(gsreplay ${REPLAY_SOURCES})
+if(PS2_PGO_MODE STREQUAL "generate")
+  target_link_options(gsreplay PRIVATE "-fprofile-generate=${PS2_PGO_DIR}")
+endif()
 target_include_directories(gsreplay PRIVATE runtime/include "${GEN_DIR}"
                                             "${LUA_DIR}"
                                             ${IMGUI_DIR} ${IMGUI_DIR}/backends
