@@ -1,13 +1,13 @@
 # Completion milestones
 
-Status: M0 and M1 complete; M2 next. No independent playable build yet.
+Status: M0 and M1 complete; M2 in progress. No independent playable build yet.
 Progress is measured by passed gates, not lines written or guessed percentages.
 
 | ID | Status | Deliverable | Completion gate |
 | --- | --- | --- | --- |
 | M0 | Complete | Isolated development area, provenance rules, audit and plan | New branch from main; existing port preserved; replacement scope recorded |
 | M1 | Complete | Independent AC4 executable and disc inspection | ELF reader tested; supported disc executable validated locally; ISO reader extracts/verifies executable; reference manifest recorded |
-| M2 | Pending | R5900 decoding and static analysis | Instruction classes, branch/delay-slot behavior and indirect targets verified with synthetic and AC4-derived cases |
+| M2 | In progress | R5900 decoding and static analysis | Instruction classes, branch/delay-slot behavior and indirect targets verified with synthetic and AC4-derived cases |
 | M3 | Pending | CPU translation and minimal execution harness | Deterministic C generation; arithmetic, memory, exceptions and call dispatch verified against an independent oracle; repeatable AC4 translation |
 | M4 | Pending | Boot services | Memory, kernel, interrupts, disc services, SIF and input reach stable interactive menus with a basic graphics path |
 | M5 | Pending | Graphics fallback and vector units | VIF/VU/GS behavior renders menus, hangar and flight correctly; captures match documented reference scenes |
@@ -57,3 +57,50 @@ runtime disc filesystem, a full integrity scan, or support for compressed images
 3. Test scalar control flow and delay slots before adding MMI, FPU and COP2.
 4. Inventory instruction encodings directly from verified AC4 executable ranges.
 5. Recover branches and indirect control flow without the old symbol maps.
+
+## M2a cloud validation (2026-10-15)
+
+Base: `independent-ac4` at `617943e`; changes confined to `independent/`.
+Implemented the bounded scalar decoder, contextual delay-slot/likely edges,
+explicit link metadata, unresolved indirect/return edges, speculative call
+continuations, partial reachability, candidate-word inventory and CLI adapters
+to the existing verified ELF/ISO readers. Primary Sony hardware references,
+exact supported groups and unsupported encodings are in PROVENANCE.md.
+
+Commands run from the repository root:
+
+```
+python -B -m unittest discover -s independent/tests -v
+python -B independent/r5900_analysis.py --base 0x1000 --words 50850002 24020007 0000000d 03e00008 00000000 --summary
+git diff --check
+```
+
+Observed: 34 test methods pass (10 existing and 24 new); synthetic CLI succeeds;
+whitespace check passes. New scenarios cover signed/backward branches, PC+4
+jump-region boundaries, 32-bit PC/link wrap, fixed-zero fields and undefined
+aliases, explicit exceptions, direct/indirect calls, unresolved returns and
+other paths after returns, contextual slots, taken/untaken likely effects,
+missing/unsupported/forbidden slots, loops and independent slot entries.
+A synthetic-identity ELF adapter test checks file-backed executable selection
+and exclusion of non-executable data/zero-fill without changing production
+identity requirements. No inherited implementation or AC5 code was used.
+
+Gaps and remaining M2 acceptance evidence:
+
+- No cloud game files exist; **no AC4-derived decoding or analysis validation
+  was performed**. M1's earlier local identity result does not validate M2a.
+- MMI, FPU, COP2/VU, COP0 and remaining EE-specific encodings are unsupported.
+  Unknown/reserved words stop traversal with diagnostics rather than NOPs.
+- No register propagation, jump-table recovery, complete function boundaries,
+  exception-vector resolution or full exception/control-flow model exists.
+  Indirect targets remain unresolved; continuations do not prove returns.
+- Candidate inventory is not executable/data classification or coverage.
+  Synthetic graph behavior is not independent CPU execution-oracle evidence.
+- Run the exact PowerShell ISO/ELF commands in README.md on the PC, review
+  diagnostic boundaries and AC4-derived cases, then record metadata/counts and
+  findings here. No fabricated local results, Windows/Vulkan or campaign claims.
+
+M2 stays **In progress**. M2a's bounded cloud implementation and synthetic tests
+are ready for review; remaining instruction groups and local AC4 acceptance
+must pass before M2 can be completed. No PR was opened; any future PR must target
+`independent-ac4`, never `main`.

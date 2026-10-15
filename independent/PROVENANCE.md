@@ -40,3 +40,67 @@ New hardware components need specific primary references before implementation.
 | ac4_disc.py | ECMA-119 second edition, volume descriptors and directory records: https://ecma-international.org/wp-content/uploads/ECMA-119_2nd_edition_december_1987.pdf | New limited ISO reader; no inherited filesystem or installer imports |
 | tests/test_ac4_disc.py | Synthetic volume/directory records and zero-filled payload | No game bytes; tests extents, identity rejection and malformed metadata |
 | reference-image.json | Read-only inspection of user's AC4 ISO on 2026-10-15 | Metadata only; no extracted code or assets |
+
+## M2a scalar foundation (2026-10-15)
+
+New `r5900.py`, `r5900_analysis.py` and `tests/test_r5900.py` were written
+from hardware descriptions and synthetic words. No inherited decoder, runtime,
+tools, generated code, symbol maps or AC5 implementation was inspected or used
+for this task. This statement describes this task's inputs, not a formally
+isolated clean-room process or a claim about earlier work.
+
+Primary hardware documents actually consulted (public document mirrors; no PDF
+or manual text is redistributed in this change):
+
+- Sony Computer Entertainment, **EE Core Instruction Set Manual**, version 6.0,
+  April 2002. [Document mirror](https://github.com/ninjadynamics/PS2Docs/blob/3a6e97416b0e23c4e94288515adef521cf077682/EE_Core_Instruction_Set_Manual.pdf).
+  Chapter 2, pp. 24–134: scalar encoding pictures, operands and restrictions;
+  especially BEQ/BEQL pp. 30–31, link branches pp. 33–34 and 41–42,
+  J/JAL/JALR/JR pp. 65–68, SYNC p. 121 and explicit exceptions pp. 122–134.
+  Chapter 3, MULT/MULTU pp. 154/156: EE's optional destination GPR extension.
+  Consulted encoding pictures for sign extension, shift widths, fixed-zero
+  fields and trap code fields as well as the descriptive text. Where the
+  BLTZALL prose describes fallthrough including the slot, its operation block
+  explicitly nullifies it; the implementation follows that block and section
+  2.5.1 of the Core User's Manual.
+  Retrieved PDF SHA-256:
+  `104205afc6f5a5071168d8bf693a6c8b4db9a02e1aa66eb51a828e8951f5c069`.
+- Sony Computer Entertainment, **EE Core User's Manual**, version 6.0,
+  April 2002. [Document mirror](https://github.com/ninjadynamics/PS2Docs/blob/3a6e97416b0e23c4e94288515adef521cf077682/EE_Core_Users_Manual.pdf).
+  Section 2.5.1, branch delay slots and likely nullification; section 1.3.6,
+  instruction issue restrictions, including branches/ERET in delay slots.
+  The decoder follows the instruction-set manual's stricter SYNC restriction
+  and does not traverse a slot containing any SYNC variant.
+  Retrieved PDF SHA-256:
+  `0ad766eb827157fad19aa579fd9df54f2ca312211e7f0dbdb4b723992b566ce3`.
+
+Implemented groups (decoding only; no arithmetic, memory or exception execution):
+
+- Integer register ALU: ADD/ADDU/SUB/SUBU, DADD/DADDU/DSUB/DSUBU,
+  AND/OR/XOR/NOR, SLT/SLTU, MOVZ/MOVN.
+- Immediate ALU: ADDI/ADDIU/DADDI/DADDIU, SLTI/SLTIU, ANDI/ORI/XORI, LUI.
+- Shifts: SLL/SRL/SRA, SLLV/SRLV/SRAV, DSLL/DSRL/DSRA,
+  DSLL32/DSRL32/DSRA32, DSLLV/DSRLV/DSRAV.
+- HI/LO: MULT/MULTU (including EE destination GPR), DIV/DIVU,
+  MFHI/MFLO/MTHI/MTLO.
+- Scalar memory: LB/LBU/LH/LHU/LW/LWU/LD, LWL/LWR/LDL/LDR,
+  SB/SH/SW/SD, SWL/SWR/SDL/SDR. Offsets are signed; effective addresses
+  are not evaluated.
+- Control: J/JAL/JR/JALR; BEQ/BNE/BLEZ/BGTZ and likely forms;
+  BLTZ/BGEZ, likely forms, link forms and likely-link forms.
+- Explicit exceptions: SYSCALL/BREAK; TEQ/TNE/TGE/TGEU/TLT/TLTU
+  and immediate equivalents. SYNC stype is decoded.
+
+All other groups remain unsupported, including COP0, FPU/COP1, COP2/VU,
+MMI and remaining EE-specific operations (including LQ/SQ and SA operations),
+CACHE/PREF and any unlisted encoding. Unsupported words and invalid fixed
+fields raise `DecodeError`; zero is decoded as SLL $zero,$zero,0, never used
+as an error fallback. Undefined JALR source/link alias and link branches with
+rs=31 are rejected. Register contents and value-dependent restrictions are not
+validated by this static decoder.
+
+Tests use literal hand-encoded scalar scenarios, synthetic ELF headers and
+synthetic ISO fixtures only. The ELF adapter test temporarily substitutes the
+identity of its synthetic ELF within the test; production identity constants
+and the default verified-image requirement are unchanged. No game bytes,
+external emulator implementation or inherited test oracle are inputs.
