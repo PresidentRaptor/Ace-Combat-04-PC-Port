@@ -197,3 +197,50 @@ execution coverage. Entry analysis still stops at SYSCALL 0x00100064;
 **Next:** extended VU macro forms and CACHE/system selectors, then conservative
 register/indirect-target recovery. Full execution semantics/oracle evidence and
 boot services are still absent. M2 remains In progress; later milestones pending.
+
+## M2d extended decoding and first target analysis (2026-10-15)
+
+Added extended VU macro decoding from individual primary encoding pictures:
+accumulator forms, conversions/moves, component-selected Q operations, VU
+loads/stores, random forms, VNOP/VWAITQ and integer/vector transfers. Added
+the documented CACHE operations and COP0 debug/performance selectors.
+Unknown encodings still fail; numerical/privilege/timing execution is absent.
+
+The local section-name inspection identified the second executable section as
+`.vutext`: 19,712 bytes of separate VU microcode. It is now classified and
+reported separately, rather than inventoried as EE instructions. EE `.text`
+contains **417,485** candidate words: **417,481** accepted encodings and **four**
+fixed-field rejections at 0x00273d80/84/88/8c. These repeated candidates remain
+rejected. They are not silently treated as instructions or used to claim
+complete executable/data separation. Earlier whole-executable inventory counts
+are historical and included VU words. No execution coverage percentage is inferred.
+
+Added conservative GPR constant propagation on the partial graph. Tests cover
+word sign extension, zero-register writes, source changes in delay slots, JALR,
+branch joins, likely annulment, loop convergence, load/transfer invalidation,
+call clobbering and independently seeded entries. Target values are sampled
+before links/slots; unresolved values remain unresolved. Reports do not extend
+the graph and make no assumptions about ABI preservation or loaded pointers.
+
+Validation: **86 tests pass** on local Python 3.11.0, **19 static local checks
+pass** against the verified USA ISO, and whitespace checks pass. Commands:
+
+```
+python -B -m unittest discover -s independent/tests -v
+python -B independent/validate_ac4.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso"
+python -B independent/r5900_analysis.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --summary --seed-direct-calls --resolve-indirects
+git diff --check
+```
+
+The additional seeded analysis uses **2,955 candidate entries** and visits
+287,299 addresses (325,367 decoded including slots), producing 322,367 edges,
+662 blocked edges and one distinct diagnostic at 0x00273d80. Its 3,193 register
+transfer sites yield **zero proved constant destinations**. The 662 blocked
+edges are retained boundaries, not successful paths. Calls/returns and syscall
+semantics are not established merely by graph traversal. Default startup-only
+analysis remains bounded by the explicit SYSCALL at 0x00100064.
+
+**Next:** recover bounded jump tables/function-pointer targets from independently
+verified AC4 patterns, account for analysis boundaries, and add an independent
+execution oracle before progressing to translation/runtime acceptance. M2
+remains **In progress**; no independent playable build exists.

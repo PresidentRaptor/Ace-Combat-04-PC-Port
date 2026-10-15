@@ -77,3 +77,10 @@ specialized COP0 selectors from primary hardware references. Preserve explicit u
 boundaries and do not treat system calls as successful fallthrough. Register
 propagation, jump-table recovery and execution-oracle evidence remain separate
 acceptance work. M2 must remain in progress until its full gate is met.
+
+M2d now adds extended VU/CACHE/system decoding, separates `.vutext`, and adds a
+conservative indirect-register constant report. Current suite: 86 tests; 19
+local static checks pass. Read the latest tracker evidence: the seeded AC4 run
+proves zero constant register destinations. Next bounded task is independently
+verified jump-table/function-pointer analysis; do not claim the constant pass
+resolved the remaining targets, and do not repeat completed decoder work.

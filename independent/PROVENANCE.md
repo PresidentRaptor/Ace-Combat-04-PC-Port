@@ -175,3 +175,39 @@ VIADD/VISUB/VIAND/VIOR/VIADDI and VCALLMS/VCALLMSR. This is a partial decoder:
 extended VU macro forms, VU micro decoding/execution, CACHE, specialized COP0
 selectors and unlisted instructions remain unsupported. None of the new
 arithmetic, memory, privilege, interlock or pipeline behavior is executed.
+
+## M2d extended VU/system and register constants (2026-10-15)
+
+The earlier VU web mirror became unavailable. Archived authored hardware PDFs
+were read locally using the bundled pypdf package. References stay in dev/
+outside the source repository; no PDF or extracted manual text is committed.
+
+- Sony **VU User's Manual**, v6.0, chapter 6, pp. 240-323: individual extended
+  MacroOP encoding pictures. Archived source:
+  https://github.com/ninjadynamics/PS2Docs/blob/main/VU_Users_Manual.pdf
+  SHA-256 `a858ef55cd2638accdfca612d5359eb6e48a48c7fd6792b18080d866e610fde5`.
+  The new vu_macro.py covers accumulator broadcasts, conversions, vector moves,
+  clipping/outer products, VU loads/stores, division-component selectors,
+  transfers, random-register forms, VNOP and VWAITQ. Integer register numbers
+  above 15 and non-single-component VILWR masks remain conservative rejections.
+- Sony **EE Core Instruction Set Manual**, v6.0, chapter 4, pp. 294-342:
+  documented cache operations and debug/performance selectors. Archived source:
+  https://github.com/ninjadynamics/PS2Docs/blob/main/EE_Core_Instruction_Set_Manual.pdf
+  SHA-256 matches the previously recorded `104205af...f5c069` full hash.
+  Undefined cache operations and unlisted selector encodings remain rejected.
+- TIS ELF section-name string tables (previous reference) and fresh local AC4
+  section headers identify `.text` and `.vutext` as different instruction sets.
+  The latter is not decoded as EE code. A section name is classification
+  metadata, not evidence that every word in `.text` is executed code.
+- New r5900_constants.py uses the small scalar-operation descriptions in
+  chapter 2 of the EE instruction manual and an independently implemented
+  meet-over-supplied-paths constant analysis. It does not copy an emulator,
+  upstream recompiler or inherited runtime implementation. Synthetic branch,
+  call, loop, alias and delay-slot fixtures test the conservative assumptions.
+
+Six further local instruction candidates were checked from raw fields and
+added as metadata to validate_ac4.py. Constants are tracked only in the lower
+64 GPR bits; inferred control targets are reported in the decoder's 32-bit
+guest-PC model. No memory-load constants, runtime exception semantics, dynamic
+entry coverage or CPU execution oracle is claimed. Call-return continuations
+discard all GPR facts. Reporting a constant never expands the partial graph.

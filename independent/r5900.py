@@ -4,6 +4,7 @@ No execution semantics or inherited implementation inputs. See PROVENANCE.md.
 Unsupported, reserved and architecturally undefined encodings raise DecodeError.
 """
 from dataclasses import dataclass
+from vu_macro import decode_extended
 
 MASK = 0xffffffff
 
@@ -117,6 +118,15 @@ def decode(word: int, pc: int) -> Instruction:
     if op == 51:
         # Reserved PREF hints have the same effect as hint zero on the EE.
         return emit('pref', {'base': rs, 'hint': rt, 'offset': signed})
+    if op == 47:
+        cache_operations = {0: 'ixltg', 1: 'ixldt', 2: 'bxlbt', 4: 'ixstg',
+                            5: 'ixsdt', 6: 'bxsbt', 7: 'ixin', 10: 'bhinbt',
+                            11: 'ihin', 12: 'bfh', 14: 'ifl', 16: 'dxltg',
+                            17: 'dxldt', 18: 'dxstg', 19: 'dxsdt', 20: 'dxwbin',
+                            22: 'dxin', 24: 'dhwbin', 26: 'dhin', 28: 'dhwoin'}
+        if rt not in cache_operations:
+            raise DecodeError('unsupported or reserved CACHE operation')
+        return emit('cache.' + cache_operations[rt], {'base': rs, 'offset': signed})
     if op == 18:
         if rs == 8 and rt <= 3:
             return emit(('bc2f', 'bc2t', 'bc2fl', 'bc2tl')[rt],
@@ -162,14 +172,32 @@ def decode(word: int, pc: int) -> Instruction:
             if fn == 57:
                 zero(mask, rt, rd, sa)
                 return emit('vcallmsr', {})
+            if fn >= 60:
+                try:
+                    name, operands = decode_extended(mask, rt, rd, sa, fn & 3)
+                except ValueError as error:
+                    raise DecodeError(str(error)) from None
+                return emit(name, operands)
     if op == 16:
         if rs == 8 and rt <= 3:
             return emit(('bc0f', 'bc0t', 'bc0fl', 'bc0tl')[rt],
                         {'immediate': signed}, 'branch',
                         (pc + 4 + signed * 4) & MASK, bool(rt & 2))
         if rs in (0, 4):
-            # Specialized debug/performance selector encodings are not yet
-            # accepted. Baseline transfers require all eleven low bits zero.
+            selector = word & 0x7ff
+            prefix = 'mf' if rs == 0 else 'mt'
+            if rd == 24:
+                debug = {0: 'bpc', 2: 'iab', 3: 'iabm', 4: 'dab',
+                         5: 'dabm', 6: 'dvb', 7: 'dvbm'}
+                if selector not in debug:
+                    raise DecodeError('unsupported COP0 debug selector')
+                return emit(prefix + debug[selector], {'rt': rt})
+            if rd == 25:
+                if selector == 0:
+                    return emit(prefix + 'ps', {'rt': rt})
+                if selector in (1, 3):
+                    return emit(prefix + 'pc', {'rt': rt, 'counter': selector >> 1})
+                raise DecodeError('unsupported COP0 performance selector')
             zero(word & 0x7ff)
             return emit('mfc0' if rs == 0 else 'mtc0', {'rt': rt, 'cop0': rd})
         system = {1: 'tlbr', 2: 'tlbwi', 6: 'tlbwr', 8: 'tlbp',

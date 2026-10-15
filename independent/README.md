@@ -182,3 +182,36 @@ as do CACHE and unlisted/reserved encodings.
 The local verification command also checks eight reviewed MMI/system/VU
 instruction candidates. All 13 checks are static; they do not prove those
 instructions execute during gameplay. Current suite: 65 passing test methods.
+
+## M2d extended decoding and indirect-register analysis
+
+Extended VU macros, the documented EE CACHE operations and specialized COP0
+debug/performance transfers are now decoded. Encoding checks still reject
+reserved/fixed-field violations. VU microcode in AC4's named `.vutext` section
+is separately reported in image metadata and excluded from EE instruction
+inventory. Stripped images without section names still use the documented
+conservative whole-load fallback; they cannot identify `.vutext` this way.
+
+For a bounded register-constant analysis, use:
+
+```
+python -B independent/r5900_analysis.py --iso "path/to/Ace Combat 04.iso" --summary --seed-direct-calls --resolve-indirects
+```
+
+`--seed-direct-calls` adds in-range direct-call targets found in the candidate
+EE words to the entry set. These are possible entries, not verified functions.
+Each seed begins with unknown GPRs except zero. `--resolve-indirects` runs a
+normal-flow constant analysis on the supplied partial graph. It samples a
+register target before link/slot writes, joins conflicting values to unknown,
+and discards all ABI assumptions across speculative call returns. Unknown
+effects lose facts rather than retain guessed targets. Only a small scalar
+subset has constant semantics; this is not a CPU interpreter.
+
+Resolved targets are reports, not new traversed edges. Loads are not evaluated,
+tables are not recovered, and arbitrary runtime entry paths/interrupts are not
+modelled. Do not use the reports as a complete dispatch table or boot evidence.
+The local AC4 seeded run currently proves **zero** constant register destinations;
+the measured unresolved cases require further function-pointer/table analysis.
+
+Current validation: 86 synthetic tests and 19 local static disc checks pass.
+See MILESTONES.md for exact inventory/graph counts and remaining acceptance work.

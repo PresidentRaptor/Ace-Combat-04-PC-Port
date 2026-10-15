@@ -89,7 +89,7 @@ class DecoderTests(unittest.TestCase):
     def test_unsupported_groups_never_become_nops(self):
         # Undefined COP0/MMI, unsupported FPU format, COP2, CACHE, reserved op.
         for word in [0x42000000, 0x46200000, 0x48000000, 0x70000002,
-                     0xbc000000, 0xc0000001]:
+                     0xbc1f0000, 0xc0000001]:
             with self.subTest(word=hex(word)), self.assertRaises(DecodeError):
                 decode(word, 0)
         self.assertEqual(decode(0, 0).mnemonic, 'sll')

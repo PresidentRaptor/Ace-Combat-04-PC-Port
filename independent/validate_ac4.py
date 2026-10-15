@@ -33,6 +33,12 @@ OPERATION_CASES = (
     (0x264720, 'di', {}),
     (0x272ffc, 'qfsrv', {'rd': 10, 'rs': 9, 'rt': 8}),
     (0x2917b4, 'pand', {'rd': 2, 'rs': 2, 'rt': 3}),
+    (0x102bb4, 'vsqrt', {'vft': 5, 'ft_component': 0}),
+    (0x102bc4, 'vwaitq', {}),
+    (0x108534, 'mfpc', {'rt': 3, 'counter': 0}),
+    (0x108aa0, 'vmr32', {'vft': 14, 'vfs': 0, 'dest_mask': 15}),
+    (0x109568, 'vftoi4', {'vft': 6, 'vfs': 6, 'dest_mask': 15}),
+    (0x26bf08, 'cache.dhwbin', {'base': 8, 'offset': 0}),
 )
 
 

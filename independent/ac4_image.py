@@ -91,13 +91,15 @@ def inspect(data: bytes, *, require_ac4: bool = True) -> dict:
     }
 
 
-def code_ranges(data: bytes, segments: list[Segment]) -> tuple[str, list[dict]]:
+def code_ranges(data: bytes, segments: list[Segment], *, architecture='ee') -> tuple[str, list[dict]]:
     """Select allocated executable PROGBITS sections, or flagged loads if stripped.
 
     Section flags narrow candidate inventory; they do not prove that every word
     is code. Every selected section must map to the same bytes in an executable
     load segment. No names, symbols or external maps are inputs.
     """
+    if architecture not in ('ee', 'vu'):
+        raise ValueError('unknown executable architecture')
     if len(data) < HEADER.size:
         raise ImageError('truncated ELF header')
     header = HEADER.unpack_from(data)
@@ -107,15 +109,24 @@ def code_ranges(data: bytes, segments: list[Segment]) -> tuple[str, list[dict]]:
             raise ImageError('section count without section table')
         return 'executable-load-segments', [
             {'address': s.address, 'offset': s.offset, 'size': s.file_size}
-            for s in segments if s.flags & 1 and s.file_size
+            for s in segments if architecture == 'ee' and s.flags & 1 and s.file_size
         ]
     if not shcount or shsize != SECTION.size or shoff < HEADER.size:
         raise ImageError('unsupported section table format')
     if shoff + shsize * shcount > len(data):
         raise ImageError('section table outside file')
+    strings = None
+    string_index = header[13]
+    if string_index:
+        if string_index >= shcount:
+            raise ImageError('invalid section name table index')
+        name_header = SECTION.unpack_from(data, shoff + string_index * shsize)
+        if name_header[1] != 3 or name_header[4] + name_header[5] > len(data):
+            raise ImageError('invalid section name string table')
+        strings = data[name_header[4]:name_header[4] + name_header[5]]
     selected = []
     for index in range(shcount):
-        (_name, kind, flags, address, offset, size, _link, _info,
+        (name_offset, kind, flags, address, offset, size, _link, _info,
          alignment, _entrysize) = SECTION.unpack_from(data, shoff + index * shsize)
         if flags & 6 != 6 or not size:
             continue
@@ -135,6 +146,16 @@ def code_ranges(data: bytes, segments: list[Segment]) -> tuple[str, list[dict]]:
         )
         if not mapped:
             raise ImageError('executable section disagrees with load mapping')
+        name = b''
+        if strings is not None:
+            end = strings.find(b'\0', name_offset)
+            if name_offset >= len(strings) or end < 0:
+                raise ImageError('invalid executable section name')
+            name = strings[name_offset:end]
+        # AC4 explicitly labels its separate vector-unit microprogram section.
+        # Those 64-bit VU instruction pairs must not be inventoried as EE words.
+        if (name == b'.vutext') != (architecture == 'vu'):
+            continue
         selected.append({'address': address, 'offset': offset, 'size': size})
     selected.sort(key=lambda item: item['address'])
     for left, right in zip(selected, selected[1:]):

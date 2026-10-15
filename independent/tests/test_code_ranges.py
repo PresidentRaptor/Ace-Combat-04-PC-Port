@@ -69,6 +69,27 @@ class SectionTests(unittest.TestCase):
         _, ranges = image.code_ranges(data, segments)
         self.assertEqual(ranges, [{'address': 0x1000, 'offset': 0x100, 'size': 8}])
 
+    def test_vu_microcode_is_separate_from_ee_even_with_same_flags(self):
+        data = fixture()
+        # Extend the header table with a synthetic section-name string table.
+        data.extend(bytes(0x100))
+        header = list(image.HEADER.unpack_from(data))
+        header[12], header[13] = 4, 3
+        image.HEADER.pack_into(data, 0, *header)
+        names = b'\0.text\0.vutext\0.shstrtab\0'
+        data[0x300:0x300 + len(names)] = names
+        image.SECTION.pack_into(data, 0x228, 1, 1, 6, 0x1000, 0x100, 8, 0, 0, 4, 0)
+        image.SECTION.pack_into(data, 0x250, 7, 1, 6, 0x1040, 0x140, 16, 0, 0, 8, 0)
+        image.SECTION.pack_into(data, 0x278, 15, 3, 0, 0, 0x300, len(names), 0, 0, 1, 0)
+        _, segments = image.read_layout(data)
+        self.assertEqual(image.code_ranges(data, segments)[1],
+                         [{'address': 0x1000, 'offset': 0x100, 'size': 8}])
+        self.assertEqual(image.code_ranges(data, segments, architecture='vu')[1],
+                         [{'address': 0x1040, 'offset': 0x140, 'size': 16}])
+        data[0x228:0x22c] = (999).to_bytes(4, 'little')
+        with self.assertRaisesRegex(image.ImageError, 'section name'):
+            image.code_ranges(data, segments)
+
 
 if __name__ == '__main__':
     unittest.main()

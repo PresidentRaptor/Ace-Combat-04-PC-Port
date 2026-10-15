@@ -147,6 +147,8 @@ def executable_words(data: bytes):
         raise ImageError('ELF entry outside selected executable ranges')
     metadata['code_selection'] = selection
     metadata['code_ranges'] = [dict(region, address=f"0x{region['address']:08x}") for region in ranges]
+    _, vu_ranges = code_ranges(data, segments, architecture='vu')
+    metadata['vu_microcode_ranges'] = [dict(region, address=f"0x{region['address']:08x}") for region in vu_ranges]
     return words, entry, metadata
 
 
@@ -171,6 +173,10 @@ def main():
     parser.add_argument('--base', type=lambda s: int(s, 0), default=0x1000)
     parser.add_argument('--entry', action='append', type=lambda s: int(s, 0), help='repeat for additional known entries')
     parser.add_argument('--summary', action='store_true', help='metadata/counts only; no instruction words or graph')
+    parser.add_argument('--resolve-indirects', action='store_true',
+                        help='report conservative register constants on the supplied partial graph')
+    parser.add_argument('--seed-direct-calls', action='store_true',
+                        help='also explore candidate in-range direct call targets, not verified functions')
     args = parser.parse_args()
     try:
         metadata = None
@@ -189,7 +195,16 @@ def main():
             words, entry, metadata = executable_words(data)
             if args.iso:
                 metadata['iso_executable'] = location
-        result = analyze(words, args.entry if args.entry is not None else [entry])
+        entries = set(args.entry if args.entry is not None else [entry])
+        if args.seed_direct_calls:
+            for pc, word in words.items():
+                try:
+                    ins = decode(word, pc)
+                    if ins.link_register is not None and ins.target in words:
+                        entries.add(ins.target)
+                except DecodeError:
+                    pass
+        result = analyze(words, sorted(entries))
         output = {'image': metadata, 'inventory': inventory(words),
                   'reachability': {'visited_addresses': len(result.visited),
                                    'decoded_addresses_including_slots': len(result.instructions),
@@ -202,6 +217,10 @@ def main():
                                    'diagnostics': result.diagnostics}}
         if not args.summary:
             output['analysis'] = result.to_dict()
+        output['entry_seeds'] = len(entries)
+        if args.resolve_indirects:
+            from r5900_constants import resolve_indirects, target_summary
+            output['indirect_resolution'] = target_summary(resolve_indirects(words, sorted(entries), result))
     except (OSError, ImageError, ValueError) as error:
         parser.exit(1, f'{error}\n')
     print(json.dumps(output, indent=2))
