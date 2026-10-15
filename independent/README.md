@@ -260,3 +260,35 @@ hardware oracle or evidence of boot. C stop codes describe bounded-harness
 faults; there is no guest CP0 exception-vector delivery, MMU, devices, kernel,
 floating-point/vector execution or timing model. See MILESTONES.md for actual
 local results and the remaining M3 gates.
+
+
+## Local Windows bootstrap diagnostic (M3b/M4a)
+
+The native startup runner now has bounded code selection, explicit unsupported
+stops, guarded instruction bytes, EE RAM aliases/scratchpad and limited startup
+services. It can run AC4's own early kernel patch from an explicitly observed
+runtime copy. It still stops at CreateThread and is **not playable**.
+
+Build into a fresh directory outside this Git repository:
+
+```
+python -B independent/build_bootstrap.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --output ../dev/my-ac4-bootstrap --cc C:/msys64/ucrt64/bin/gcc.exe --limit 2048 --entry 0x264a88 --copied-code 0x3fabd8:0x80076000:1856
+```
+
+The explicit entry and copy metadata were verified against this supported AC4
+image. They are not inputs from the old maps. The copy destination is not
+preloaded: the guest copies it and runtime instruction-byte checks enforce the
+translated contents. Unknown devices, active timers, missing guest instructions
+and unimplemented services stop explicitly. This is not a runtime interpreter.
+
+Output contains a native executable, ram.bin, manifest.json with hashes and
+measured stop data, and README.txt. Run the executable with ram.bin as its sole
+argument. Exit code 2 means incomplete execution. Private game-derived files
+must stay outside Git; no package is uploaded by this builder. The native runner
+requires Windows/UCRT, not Python or the compiler. Python and a GCC-compatible
+C compiler are needed to produce a local package.
+
+Startup stack/heap policy and the guest syscall bridge are experimental and
+have not passed a hardware/emulator oracle comparison. The bridge supplies
+ordinary-function returns rather than full CP0 exception delivery. MILESTONES.md
+and reference-bootstrap.json record exactly how far the local build gets.

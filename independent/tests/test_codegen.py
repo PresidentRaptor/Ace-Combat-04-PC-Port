@@ -18,7 +18,8 @@ def compiler():
     return shutil.which(found) or (found if Path(found).is_file() else None)
 
 
-def native(words, *, registers=None, upper=None, memory=None, limit=100, entry=0, resume=None):
+def native(words, *, registers=None, upper=None, memory=None, limit=100, entry=0, resume=None, memory_size=256,
+           extra_source='', run_function='ac4_run'):
     cc = compiler()
     if cc is None:
         if os.environ.get('AC4_REQUIRE_NATIVE_TESTS') == '1':
@@ -32,10 +33,10 @@ def native(words, *, registers=None, upper=None, memory=None, limit=100, entry=0
 #include <inttypes.h>
 int main(void) {
     unsigned char memory[256]={0}; Ac4Cpu c={0};
-    c.memory=memory; c.memory_base=0x1000; c.memory_size=sizeof(memory);
+    c.memory=memory; c.memory_base=0x1000; c.memory_size=MEMORY_SIZE;
     INITIAL
     c.pc=ENTRY;
-    int result=ac4_run(&c,LIMIT);
+    int result=RUN_FUNCTION(&c,LIMIT);
     RESUME
     printf("{\"status\":%d,\"pc\":%u,\"steps\":%" PRIu64 ",\"fault_pc\":%u,\"delay\":%u,\"r\":[",result,c.pc,c.steps,c.fault_pc,c.fault_delay);
     for (int i=0;i<32;i++) printf("%s%" PRIu64,i ? "," : "",c.gpr[i][0]);
@@ -45,13 +46,13 @@ int main(void) {
     for (int i=0;i<256;i++) printf("%s%u",i ? "," : "",(unsigned)memory[i]);
     printf("]}"); return 0;
 }
-'''.replace('INITIAL', initial).replace('ENTRY', str(entry)).replace('LIMIT', str(limit)).replace(
+'''.replace('INITIAL', initial).replace('ENTRY', str(entry)).replace('LIMIT', str(limit)).replace('MEMORY_SIZE', str(memory_size)).replace('RUN_FUNCTION', run_function).replace(
         'RESUME', '' if resume is None else f'if (result!=AC4_BUDGET) {{ return 2; }} result=ac4_run(&c,{resume});')
     environment = dict(os.environ)
     environment['PATH'] = str(Path(cc).parent) + os.pathsep + environment.get('PATH', '')
     with tempfile.TemporaryDirectory(prefix='ac4-independent-') as folder:
         source, exe = Path(folder) / 'program.c', Path(folder) / ('program.exe' if os.name == 'nt' else 'program')
-        source.write_text(emit_program(words, entry) + driver, encoding='utf-8')
+        source.write_text(emit_program(words, entry) + extra_source + driver, encoding='utf-8')
         build = subprocess.run([cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', str(source), '-o', str(exe)],
                                capture_output=True, text=True, env=environment)
         if build.returncode:
@@ -62,6 +63,73 @@ int main(void) {
 
 
 class CodegenTests(unittest.TestCase):
+    def test_changed_instruction_bytes_stop_instead_of_running_stale_translation(self):
+        words={0x1000:0xac820000,0x1004:13}
+        raw=b''.join(word.to_bytes(4,'little') for word in words.values())
+        wrapper='''
+int checked_run(Ac4Cpu *c,uint64_t budget) {
+    c->verify_instruction_bytes=1;
+    return ac4_run(c,budget);
+}
+'''
+        result=native(words,registers={4:0x1004,2:0},entry=0x1000,memory=dict(enumerate(raw)),
+                      extra_source=wrapper,run_function='checked_run')
+        self.assertEqual((result['status'],result['pc']),(12,0x1004))
+
+    def test_unaligned_word_loads_each_lane_preserve_merge_bits(self):
+        for op, expected in ((0x22, (0x11bbccdd, 0x2211ccdd, 0x332211dd, 0x44332211)),
+                              (0x26, (0x44332211, 0xaa443322, 0xaabb4433, 0xaabbcc44))):
+            words = {lane*4: (op<<26)|(4<<21)|((8+lane)<<16)|lane for lane in range(4)}
+            words[16] = 13
+            result = native(words, registers={4: 0x1000, **{r: 0xaabbccdd for r in range(8,12)}},
+                            memory=dict(enumerate((0x11, 0x22, 0x33, 0x44))))
+            self.assertEqual(result['r'][8:12], [v if v<0x80000000 else v|0xffffffff00000000 for v in expected])
+
+    def test_unaligned_load_pairs_all_offsets_both_orders(self):
+        for width, left, right in ((4, 0x22, 0x26), (8, 0x1a, 0x1b)):
+            for reverse in (False, True):
+                words = {}
+                for lane in range(width):
+                    pair = [(left, lane+width-1), (right, lane)]
+                    if reverse:
+                        pair.reverse()
+                    for op, offset in pair:
+                        words[len(words)*4] = (op<<26)|(4<<21)|((8+lane)<<16)|offset
+                words[len(words)*4] = 13
+                data = bytes(range(0x81, 0x91))
+                result = native(words, registers={4: 0x1000}, upper={r: 99 for r in range(8,16)},
+                                memory=dict(enumerate(data)))
+                for lane in range(width):
+                    expected = int.from_bytes(data[lane:lane+width], 'little', signed=width==4) & ((1<<64)-1)
+                    self.assertEqual((result['r'][8+lane], result['upper'][8+lane]), (expected, 99))
+
+    def test_unaligned_store_pairs_all_offsets_preserve_neighbors(self):
+        value = 0x8877665544332211
+        for width, left, right in ((4, 0x2a, 0x2e), (8, 0x2c, 0x2d)):
+            words, expected = {}, bytearray([0xa5]*256)
+            for lane in range(width):
+                offset = 16+lane*16+lane
+                for op, immediate in ((left, offset+width-1), (right, offset)):
+                    words[len(words)*4] = (op<<26)|(4<<21)|(2<<16)|immediate
+                expected[offset:offset+width] = value.to_bytes(8,'little')[:width]
+            words[len(words)*4] = 13
+            result = native(words, registers={4: 0x1000, 2: value}, memory={i: 0xa5 for i in range(256)})
+            self.assertEqual(result['memory'], list(expected))
+
+    def test_merge_access_checks_only_selected_bytes_and_zero_destination(self):
+        # LWL at lane zero needs only byte zero, not an entire word.
+        result = native({0: 0x88820000, 4: 13}, registers={4: 0x1000, 2: 0x12345678},
+                        memory={0: 0xfe}, memory_size=1)
+        self.assertEqual((result['status'], result['r'][2]), (1, 0xfffffffffe345678))
+        result = native({0: 0x98800000, 4: 13}, registers={4: 0x1000}, memory_size=1)
+        self.assertEqual((result['status'], result['r'][0]), (5, 0))
+
+    def test_merge_store_fault_does_not_partially_write(self):
+        result = native({0: 0xb4820000, 4: 13}, registers={4: 0x1000, 2: -1},
+                        memory={i: 0xa5 for i in range(8)}, memory_size=3)
+        self.assertEqual(result['status'], 5)
+        self.assertEqual(result['memory'][:8], [0xa5]*8)
+
     def test_word_wrap_sign_extension_and_upper_preservation(self):
         result = native({0: 0x24420001, 4: 13}, registers={2: 0x7fffffff}, upper={2: 99})
         self.assertEqual(result['r'][2], 0xffffffff80000000)

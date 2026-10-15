@@ -54,9 +54,9 @@ or manual text is redistributed in this change):
 
 - Sony Computer Entertainment, **EE Core Instruction Set Manual**, version 6.0,
   April 2002. [Document mirror](https://github.com/ninjadynamics/PS2Docs/blob/3a6e97416b0e23c4e94288515adef521cf077682/EE_Core_Instruction_Set_Manual.pdf).
-  Chapter 2, pp. 24â€“134: scalar encoding pictures, operands and restrictions;
-  especially BEQ/BEQL pp. 30â€“31, link branches pp. 33â€“34 and 41â€“42,
-  J/JAL/JALR/JR pp. 65â€“68, SYNC p. 121 and explicit exceptions pp. 122â€“134.
+  Chapter 2, pp. 24Ã¢â‚¬â€œ134: scalar encoding pictures, operands and restrictions;
+  especially BEQ/BEQL pp. 30Ã¢â‚¬â€œ31, link branches pp. 33Ã¢â‚¬â€œ34 and 41Ã¢â‚¬â€œ42,
+  J/JAL/JALR/JR pp. 65Ã¢â‚¬â€œ68, SYNC p. 121 and explicit exceptions pp. 122Ã¢â‚¬â€œ134.
   Chapter 3, MULT/MULTU pp. 154/156: EE's optional destination GPR extension.
   Consulted encoding pictures for sign extension, shift widths, fixed-zero
   fields and trap code fields as well as the descriptive text. Where the
@@ -239,3 +239,41 @@ discard all GPR facts. Reporting a constant never expands the partial graph.
 All game-derived payloads and generated guest source remain local and untracked.
 No attribution is removed from the existing derived implementation. These
 components are partial replacements, not completion of the port/provenance gate.
+
+
+## M3b / M4a inputs and experimental policy (2026-10-15)
+
+- Scalar merge loads/stores: Sony EE Core Instruction Set Manual v6.0,
+  pp. 72-83, 99-102 and 117-120. Newly written byte-range merge logic and
+  synthetic native tests; no inherited/emulator implementation was adapted.
+- Memory windows, scratchpad, disabled timer registers, kernel API/parameter
+  layouts and alarm patch behavior: original author's PS2tek reverse-engineering
+  documentation, Memory Map / EE Timers / BIOS EE Syscalls / BIOS EE Patches:
+  https://psi-rockin.github.io/ps2tek/index.html . Consulted directly on
+  2026-10-15. This is an independent author's documentation, not an official Sony
+  ABI guarantee or hardware trace. No PS2tek emulator implementation was used.
+- SetupThread/SetupHeap API names and argument order were cross-checked against
+  the PS2SDK project's published declarations:
+  https://ps2dev.github.io/ps2sdk/kernel_8h.html . No PS2SDK source/header/library
+  is imported or shipped. The new code is not adapted from its kernel wrappers.
+- Stack/heap special-value behavior in the documentation is incomplete/ambiguous.
+  The chosen automatic-stack profile returns RAM-size minus stack-size; a
+  heap-size sentinel uses the reserved stack boundary as its end. These are
+  explicitly provisional policies informed by observed AC4 arguments. Passing
+  synthetic tests does not establish accuracy or permit M3/M4 completion.
+- bootstrap_services.h, ee_devices.h, bootstrap_main.c and build_bootstrap.py
+  are new limited models/runner/build orchestration. Semaphore handles and
+  bounded shadow guest-call return frames are new implementation choices.
+  They do not claim the BIOS's internal layout, full scheduler, privilege model
+  or timing. Timer enable remains an explicit failure until clock/IRQ support.
+- Fresh local syscall observations identify the CPU copy handler 0x00264a88 and
+  copied alarm patch from 0x003fabd8 to 0x80076000, size 1,856 bytes. These are
+  metadata from the user's verified disc and observed guest call arguments,
+  not inherited maps or AC5 behavior. New copied-code selection validates
+  file backing, alignment, bounds and overlaps; actual guest writes and
+  instruction-byte checks are required before relocated code can execute.
+
+The diagnostic executable and initial RAM contain private game-derived material
+and stay outside Git. reference-bootstrap.json contains hashes/addresses/counts
+only. Its observations are results from this experimental implementation, not a
+separate execution oracle. Existing derived source/notices remain untouched.

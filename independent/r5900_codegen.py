@@ -19,7 +19,7 @@ RUNTIME = r'''
 #include <stddef.h>
 enum { AC4_BREAK=1, AC4_SYSCALL=2, AC4_FETCH=3, AC4_ALIGNMENT=4,
        AC4_BOUNDS=5, AC4_UNDEFINED_SLOT=6, AC4_OVERFLOW=7, AC4_BUDGET=8,
-       AC4_UNDEFINED_INPUT=9 };
+       AC4_UNDEFINED_INPUT=9, AC4_UNSUPPORTED=10, AC4_DEVICE=11, AC4_MODIFIED=12 };
 typedef struct {
     uint64_t gpr[32][2], hi[2], lo[2], steps;
     uint32_t pc, pending_target, branch_pc, fault_pc, fault_address, code;
@@ -27,6 +27,12 @@ typedef struct {
     unsigned char *memory;
     uint32_t memory_base, memory_size;
     int memory_error;
+    unsigned ee_memory_map;
+    unsigned verify_instruction_bytes;
+    unsigned char scratchpad[16384];
+    void *device_state;
+    int (*device_read)(void *,uint32_t,unsigned,uint64_t *,uint64_t *);
+    int (*device_write)(void *,uint32_t,unsigned,uint64_t,uint64_t);
 } Ac4Cpu;
 static inline uint64_t ac4_sext(uint64_t value, unsigned bits) {
     uint64_t mask=(UINT64_C(1)<<bits)-1;
@@ -45,34 +51,84 @@ static inline int64_t ac4_signed_word(uint64_t value) {
     return (int64_t)(value & UINT64_C(0xffffffff)) -
            ((value & UINT64_C(0x80000000)) ? INT64_C(0x100000000) : 0);
 }
-static inline int ac4_memory(Ac4Cpu *c, uint32_t address, unsigned bytes, size_t *offset) {
+static inline uint32_t ac4_physical(uint32_t address) {
+    if (address>=UINT32_C(0x80000000) && address<UINT32_C(0xc0000000))
+        return address&UINT32_C(0x1fffffff);
+    if (address>=UINT32_C(0x20000000) && address<UINT32_C(0x22000000))
+        return address-UINT32_C(0x20000000);
+    if (address>=UINT32_C(0x30100000) && address<UINT32_C(0x32000000))
+        return address-UINT32_C(0x30000000);
+    return address;
+}
+static inline int ac4_device_address(uint32_t address) {
+    return (address>=UINT32_C(0x10000000) && address<UINT32_C(0x10010000)) ||
+           (address>=UINT32_C(0x12000000) && address<UINT32_C(0x12002000));
+}
+static inline int ac4_span(Ac4Cpu *c, uint32_t address, unsigned bytes, unsigned char **storage) {
     c->fault_address=address;
-    if (address & (bytes-1)) { c->memory_error=AC4_ALIGNMENT; return 0; }
+    if (c->ee_memory_map) {
+        if (address>=UINT32_C(0x70000000) && address<UINT32_C(0x70004000)) {
+            unsigned offset=address-UINT32_C(0x70000000);
+            if (bytes>16384-offset) { c->memory_error=AC4_BOUNDS; return 0; }
+            *storage=c->scratchpad+offset; return 1;
+        }
+        address=ac4_physical(address);
+        if (ac4_device_address(address)) { c->memory_error=AC4_DEVICE; return 0; }
+    }
     if (!c->memory || address<c->memory_base || bytes>c->memory_size ||
         (uint64_t)address-c->memory_base>(uint64_t)c->memory_size-bytes ||
         (uint64_t)address+bytes>UINT64_C(0x100000000)) {
         c->memory_error=AC4_BOUNDS; return 0;
     }
-    *offset=(size_t)((uint64_t)address-c->memory_base);
+    *storage=c->memory+(size_t)((uint64_t)address-c->memory_base);
     return 1;
 }
 static inline int ac4_load(Ac4Cpu *c, uint32_t address, unsigned bytes,
                            uint64_t *low, uint64_t *high) {
-    size_t offset;
-    if (!ac4_memory(c,address,bytes,&offset)) return 0;
+    c->fault_address=address;
+    if (address&(bytes-1)) { c->memory_error=AC4_ALIGNMENT; return 0; }
+    if (c->ee_memory_map && ac4_device_address(ac4_physical(address))) {
+        *low=0; *high=0;
+        c->memory_error=c->device_read ? c->device_read(c->device_state,ac4_physical(address),bytes,low,high) : AC4_DEVICE;
+        return c->memory_error==0;
+    }
+    unsigned char *storage;
+    if (!ac4_span(c,address,bytes,&storage)) return 0;
     *low=0; *high=0;
     for (unsigned i=0;i<bytes;i++) {
-        if (i<8) *low|=(uint64_t)c->memory[offset+i]<<(8*i);
-        else *high|=(uint64_t)c->memory[offset+i]<<(8*(i-8));
+        if (i<8) *low|=(uint64_t)storage[i]<<(8*i);
+        else *high|=(uint64_t)storage[i]<<(8*(i-8));
     }
     return 1;
 }
 static inline int ac4_store(Ac4Cpu *c, uint32_t address, unsigned bytes,
                             uint64_t low, uint64_t high) {
-    size_t offset;
-    if (!ac4_memory(c,address,bytes,&offset)) return 0;
+    c->fault_address=address;
+    if (address&(bytes-1)) { c->memory_error=AC4_ALIGNMENT; return 0; }
+    if (c->ee_memory_map && ac4_device_address(ac4_physical(address))) {
+        c->memory_error=c->device_write ? c->device_write(c->device_state,ac4_physical(address),bytes,low,high) : AC4_DEVICE;
+        return c->memory_error==0;
+    }
+    unsigned char *storage;
+    if (!ac4_span(c,address,bytes,&storage)) return 0;
     for (unsigned i=0;i<bytes;i++)
-        c->memory[offset+i]=(unsigned char)((i<8 ? low>>(8*i) : high>>(8*(i-8)))&255);
+        storage[i]=(unsigned char)((i<8 ? low>>(8*i) : high>>(8*(i-8)))&255);
+    return 1;
+}
+static inline int ac4_merge(Ac4Cpu *c, uint32_t address, unsigned width,
+                            int left, int store, uint64_t *value) {
+    unsigned lane=address&(width-1), count=left ? lane+1 : width-lane;
+    uint32_t start=left ? address-lane : address;
+    unsigned first=left ? width-count : 0;
+    /* Only the selected bytes are accessed; precheck before any store. */
+    unsigned char *storage;
+    if (!ac4_span(c,start,count,&storage)) { c->fault_address=address; return 0; }
+    for (unsigned i=0;i<count;i++) {
+        unsigned shift=(first+i)*8;
+        if (store) storage[i]=(unsigned char)(*value>>shift);
+        else *value=(*value&~(UINT64_C(255)<<shift)) |
+                    ((uint64_t)storage[i]<<shift);
+    }
     return 1;
 }
 int ac4_run(Ac4Cpu *c, uint64_t budget) {
@@ -84,6 +140,7 @@ int ac4_run(Ac4Cpu *c, uint64_t budget) {
         c->pending=0;
         c->fault_pc=delay ? c->branch_pc : pc;
         c->fault_delay=delay;
+        c->fault_address=0;
         if (pc&3) { c->fault_address=pc; return AC4_ALIGNMENT; }
         c->steps++;
         switch (pc) {
@@ -216,6 +273,14 @@ def translate(ins):
         else:
             expression = f'({rt}<<{shift})'
         lines.append(write(o['rd'], expression if wide else f'ac4_sext({expression},32)'))
+    elif name in ('lwl', 'lwr', 'ldl', 'ldr', 'swl', 'swr', 'sdl', 'sdr'):
+        width = 4 if name[1] == 'w' else 8
+        store = name.startswith('s')
+        lines.extend([f'uint32_t address=(uint32_t)({register(o["base"])}+{u64(o["offset"])});',
+                      f'uint64_t value={rt};',
+                      f'if (!ac4_merge(c,address,{width},{int(name.endswith("l"))},{int(store)},&value)) return c->memory_error;'])
+        if not store:
+            lines.append(write(o['rt'], 'ac4_sext(value,32)' if width == 4 else 'value'))
     elif name in ('lb', 'lbu', 'lh', 'lhu', 'lw', 'lwu', 'ld', 'lq',
                    'sb', 'sh', 'sw', 'sd', 'sq'):
         width = {'b': 1, 'h': 2, 'w': 4, 'd': 8, 'q': 16}[name[1]]
@@ -240,18 +305,73 @@ def translate(ins):
     return '\n'.join(lines)
 
 
-def emit_program(words, entry):
+def emit_program(words, entry, *, stop_unsupported=False):
     if entry not in words:
         raise TranslationError('entry outside supplied instruction map')
     parts = [RUNTIME]
     try:
         for pc in sorted(words):
             ins = decode(words[pc], pc)
-            parts.append(f'case UINT32_C(0x{pc:08x}): {{\n{translate(ins)}\n}}\n')
+            try:
+                body = translate(ins)
+            except TranslationError:
+                if not stop_unsupported:
+                    raise
+                body = 'return AC4_UNSUPPORTED;'
+            body = (f'if (c->verify_instruction_bytes) {{ uint64_t low,high; '
+                    f'if (!ac4_load(c,pc,4,&low,&high)) return c->memory_error; '
+                    f'if (low!=UINT32_C(0x{words[pc]:08x})) return AC4_MODIFIED; }}\n') + body
+            parts.append(f'case UINT32_C(0x{pc:08x}): {{\n{body}\n}}\n')
     except DecodeError as error:
         raise TranslationError(str(error)) from None
     parts.append('default: c->fault_address=pc; return AC4_FETCH;\n}\n}\nreturn AC4_BUDGET;\n}\n')
     return ''.join(parts)
+
+
+def bounded_plan(words, entries, *, limit=1024, resume_syscalls=False):
+    """Select a bounded static map; every missing/unsupported execution still stops.
+
+    Optional syscall continuations are only code selection, never service success.
+    Indirect destinations are not guessed. A queue limit bounds generation work.
+    """
+    from collections import deque
+    if not isinstance(limit, int) or limit < 1:
+        raise TranslationError('positive instruction selection limit required')
+    queue, selected, rejected = deque(entries), {}, {}
+    seen = set()
+    while queue and len(selected) < limit:
+        pc = queue.popleft()
+        if pc in seen:
+            continue
+        seen.add(pc)
+        if pc not in words:
+            rejected[pc] = 'outside selected image words'
+            continue
+        try:
+            ins = decode(words[pc], pc)
+        except DecodeError as error:
+            rejected[pc] = str(error)
+            continue
+        selected[pc] = words[pc]
+        try:
+            translate(ins)
+        except TranslationError as error:
+            rejected[pc] = str(error)
+            continue
+        if ins.has_delay_slot:
+            # The slot is selected independently as well as in branch context.
+            queue.append((pc+4)&0xffffffff)
+            if ins.target is not None:
+                queue.append(ins.target)
+            if ins.flow == 'branch' or ins.link_register is not None:
+                queue.append((pc+8)&0xffffffff)
+        elif ins.flow == 'normal' or (resume_syscalls and ins.mnemonic == 'syscall'):
+            queue.append((pc+4)&0xffffffff)
+    return selected, dict(selected_addresses=len(selected), selection_limit=limit,
+                          pending_addresses=len(set(queue)-seen),
+                          boundaries=[dict(address=f'0x{pc:08x}', reason=reason)
+                                      for pc, reason in sorted(rejected.items())],
+                          syscall_continuations_selected=resume_syscalls)
 
 
 def entry_program(data):

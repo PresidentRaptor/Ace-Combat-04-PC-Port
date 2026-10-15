@@ -94,3 +94,15 @@ Next work: independent execution-oracle comparisons, full exception/system
 semantics and broader translated execution; retain unsupported-operation failures.
 Do not silently turn candidate table targets into proven dispatch edges or treat
 hand-calculated entry results as a hardware trace. Game files stay local.
+
+
+M3b/M4a add the local bootstrap package, scalar merge operations, EE memory bus,
+limited disabled-timer/startup/semaphore-creation services and an experimental
+guest syscall bridge. 152 tests and 2/2 CTest pass locally. With the explicitly
+observed entry/copy metadata in README, AC4 reaches CreateThread after 339,303
+instructions and 23 modeled service calls. This is not a playable build.
+Next bounded task is thread creation/context/scheduling and wait behavior;
+review sources and provisional stack/heap/bridge policy before extending it.
+Do not declare scheduling/interrupt correctness without independent evidence.
+Keep missing services/timers/system instructions explicit and preserve byte
+checks for copied or modified code. See reference-bootstrap.json for exact data.

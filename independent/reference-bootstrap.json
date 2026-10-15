@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "scope": "experimental bootstrap diagnostic; NOT PLAYABLE",
+  "image_sha256": "38ecebd6965c2f74ec8973f538781506bf3a2cfad86f908deb6c5d585d528301",
+  "compiler": "gcc.exe (Rev5, Built by MSYS2 project) 16.2.0",
+  "generated_source_sha256": "b73551bb4f18911c3a7b6dc6801a61de8cdc6fa292fb5bb814ebda6967d49c68",
+  "ram_sha256": "1490680da7975cc25f4e1a366ca6812397d729f5e7c3fbb034993721a65c006c",
+  "executable_sha256": "690b550675d44c6e5e4944bc9afd9de5e99940934001d8b5882a2d9b2db1e1a3",
+  "selection": {
+    "selected_addresses": 2048,
+    "selection_limit": 2048,
+    "pending_addresses": 12,
+    "boundaries": [
+      {
+        "address": "0x00100094",
+        "reason": "0x100094: unsupported operation ei"
+      },
+      {
+        "address": "0x0026b228",
+        "reason": "0x26b228: unsupported operation mfc0"
+      },
+      {
+        "address": "0x0026b270",
+        "reason": "0x26b270: unsupported operation mfc0"
+      },
+      {
+        "address": "0x80076638",
+        "reason": "0x80076638: unsupported operation ei"
+      }
+    ],
+    "syscall_continuations_selected": true,
+    "entry_seeds": [
+      "0x00100008",
+      "0x00264a88",
+      "0x80076000"
+    ],
+    "observed_code_copies": [
+      {
+        "source": "0x003fabd8",
+        "destination": "0x80076000",
+        "size": 1856
+      }
+    ]
+  },
+  "observation": {
+    "scope": "experimental-bootstrap-diagnostic",
+    "status": 32,
+    "pc": 2506404,
+    "fault_pc": 2506404,
+    "fault_address": 2506404,
+    "delay": 0,
+    "steps": 339303,
+    "services_completed": 23,
+    "last_syscall": 32,
+    "stack_pointer": 32505856,
+    "heap_start": 5031756,
+    "heap_end": 32505856,
+    "override_target": 0,
+    "a0": 32505728,
+    "a1": 4282864,
+    "a2": 1024
+  },
+  "limitations": [
+    "provisional single-thread stack/heap policy",
+    "ordinary-function guest syscall bridge; no CP0 privilege transition",
+    "no hardware execution oracle or complete exception delivery",
+    "unknown services/instructions and missing dispatch targets stop",
+    "no graphics, input, audio, disc runtime or gameplay"
+  ],
+  "validation_note": "Two local builds have identical executable and RAM SHA-256; no hardware oracle or playable-build acceptance."
+}

@@ -1,6 +1,6 @@
 # Completion milestones
 
-Status: M0 and M1 complete; M2 and M3 in progress. No independent playable build yet.
+Status: M0 and M1 complete; M2, M3 and M4 in progress. No independent playable build yet.
 Progress is measured by passed gates, not lines written or guessed percentages.
 
 | ID | Status | Deliverable | Completion gate |
@@ -9,7 +9,7 @@ Progress is measured by passed gates, not lines written or guessed percentages.
 | M1 | Complete | Independent AC4 executable and disc inspection | ELF reader tested; supported disc executable validated locally; ISO reader extracts/verifies executable; reference manifest recorded |
 | M2 | In progress | R5900 decoding and static analysis | Instruction classes, branch/delay-slot behavior and indirect targets verified with synthetic and AC4-derived cases |
 | M3 | In progress | CPU translation and minimal execution harness | Deterministic C generation; arithmetic, memory, exceptions and call dispatch verified against an independent oracle; repeatable AC4 translation |
-| M4 | Pending | Boot services | Memory, kernel, interrupts, disc services, SIF and input reach stable interactive menus with a basic graphics path |
+| M4 | In progress | Boot services | Memory, kernel, interrupts, disc services, SIF and input reach stable interactive menus with a basic graphics path |
 | M5 | Pending | Graphics fallback and vector units | VIF/VU/GS behavior renders menus, hangar and flight correctly; captures match documented reference scenes |
 | M6 | Pending | Sound, movies and persistent saves | AC4 sound protocols, streaming and movie sync work; saves reload across process restarts and mission transitions |
 | M7 | Pending | First complete playable mission | Mission 01 starts and completes with correct input, visuals, sound and save/load; repeatable regression checks |
@@ -302,3 +302,88 @@ an independent CPU oracle, full exceptions/privilege/device memory semantics,
 remaining instruction execution (FPU/MMI/VU/system), complete dispatch recovery
 and larger repeatable translation. M4-M10 remain pending. Existing derived code
 and its notices are preserved until the replacement passes its acceptance gates.
+
+
+## M3b / M4a local bootstrap diagnostic (2026-10-15)
+
+A native Windows startup diagnostic can now be built directly from the supported
+user's disc. It remains **NOT PLAYABLE**. Neither a passing compiler nor a
+successful diagnostic package is the M4/menu or M10/campaign acceptance gate.
+
+New independent work:
+
+- All eight scalar unaligned load/store merge operations, checking only touched
+  bytes and preserving untouched register/memory bytes. Paired loads/stores,
+  every offset, both load orders, bounds and zero destinations are tested.
+- Opt-in EE data-memory mapping for RAM cached/uncached/accelerated aliases and
+  16 KiB scratchpad, plus explicit device read/write callbacks. No MMU,
+  privilege checks or cache timing is inferred from these address mappings.
+- Disabled EE timer register behavior, including 16-bit counters and mode flag
+  write-one-to-clear. Active timer enable and unsupported device accesses stop;
+  no fake advancing clock, IRQ or DMA completion is supplied.
+- Provisional single-thread SetupThread/SetupHeap, CreateSema, cache-coherent
+  FlushCache and guest syscall-patch registration. The documented timer-3 patch
+  index 0x12c is stored explicitly, without out-of-bounds host table writes.
+- Optional bounded ordinary-function bridge for registered guest handlers,
+  including nested shadow return frames, caller ra restoration and budget
+  boundaries. This does not model a BIOS exception frame/CP0 privilege switch.
+- Bounded static selection with explicit unsupported-operation stops. Selected
+  syscall continuations are not claims that services succeed. Compiled game
+  instructions are checked against current RAM before execution; changed code
+  stops instead of running stale generated C.
+- Explicit observed code-copy mappings. Only specified file-backed source
+  ranges are translated at the supplied runtime destination. The destination
+  starts unloaded and the guest must actually copy matching bytes before its
+  instruction guards pass. This is not arbitrary data/code classification.
+
+Sources and important uncertainty are recorded in PROVENANCE.md. In particular,
+PS2tek's stack/heap descriptions and the observed sentinel arguments do not
+provide a complete authoritative ABI; the automatic stack and heap policy
+remains experimental pending an independent hardware/emulator trace. These
+service-policy tests validate the declared model, not BIOS equivalence.
+
+Validation commands (repository root; fresh output directory required):
+
+```
+python -B -m unittest discover -s independent/tests -v
+python -B independent/validate_ac4.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso"
+python -B independent/validate_native_ac4.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --cc C:/msys64/ucrt64/bin/gcc.exe
+cmake --build ../dev/build-independent
+ctest --test-dir ../dev/build-independent --output-on-failure
+python -B independent/build_bootstrap.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --output ../dev/ac4-bootstrap-verified-a --cc C:/msys64/ucrt64/bin/gcc.exe --limit 2048 --entry 0x264a88 --copied-code 0x3fabd8:0x80076000:1856
+git diff --check
+```
+
+Observed: **152 independent tests pass**, with native compiler required;
+**19 static disc checks pass**; original first-syscall native acceptance still
+passes; **2/2 CTest pass**. GNU C 16.2.0 builds both standalone targets with
+warnings as errors. CI's existing default build now covers both synthetic
+runners, including invalid-input rejection by the native RAM loader.
+
+The AC4 package selects 2,048 addresses with 12 pending selection addresses and
+four explicit unsupported instruction boundaries. The additional entry
+0x00264a88 and copy 0x003fabd8 -> 0x80076000 (1,856 bytes) were derived from
+fresh observed syscall arguments and decoded against the user's verified image.
+No legacy symbol maps were used. The guest's copy handler and copied alarm
+patch execute with instruction-byte checks enabled.
+
+The measured run reaches **339,303 attempted instructions and 23 completed
+modeled service calls**, stopping with status 32 (unknown service) at
+**0x00263ea4: CreateThread (32 decimal)**. It has no thread scheduler, menus,
+graphics, input, audio or mission execution. Enlarging the selection limit
+would not fix this missing service. No later behavior is claimed.
+
+Two fresh local builds have identical native executable SHA-256
+`690b550675d44c6e5e4944bc9afd9de5e99940934001d8b5882a2d9b2db1e1a3`,
+RAM SHA-256 and observations. GNU PE timestamps are disabled in this builder.
+This measures reproducibility on the same local toolchain, not across hosts or
+compiler versions. Metadata only is committed in reference-bootstrap.json;
+private executable/RAM outputs stay outside Git. Import inspection shows only
+Windows system/UCRT DLLs, and the artifact runs without the compiler on PATH.
+Native exit 2 is an incomplete execution boundary, never a successful game exit.
+
+**Next:** thread creation/context/scheduling and semaphore waits, fuller kernel
+exception/interrupt semantics, active timers and COP0/remaining CPU execution,
+then SIF/disc/device services. Validate the provisional bootstrap policy against
+an independent oracle before closing M3/M4. M2/M3/M4 stay In progress; M5-M10
+remain pending. No independent playable build is ready.
