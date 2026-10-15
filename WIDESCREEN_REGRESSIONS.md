@@ -27,17 +27,24 @@ is retained locally in `review/widescreen-regressions/installed-backup`.
 Scripted wide-camera flight and pause captures are local review artifacts;
 they contain game data and are excluded from the repository.
 
-## Target diamond: further evidence required
+## Target diamond: corrected from the user's capture
 
-The existing code assumes small red flight cues already use the widened
-projection. The user's screenshot shows that the seeker diamond can disagree
-with its target box. The automated flight recorded friendly boxes and a pause
-menu but did not reproduce a selected enemy's diamond. No speculative marker
-projection correction has been applied.
+The supplied F6 recording contains 14 completed fields plus a final partial
+draw batch. The seeker and selected target box have identical raw centers in
+all 15 batches. The diamond is a red textured sprite from the 256x256 HUD
+symbol page, with source V 176..192. The caption-row exclusion was treating it
+as text and pulling it toward the center; the box retained its world projection.
+The warning-row exclusion could do the same elsewhere on screen.
 
-A diagnostic F6 capture taken while the offset is visible is requested. Replay
-it with `gsreplay CAPTURE --widescreen --hidden --shot FILE.ppm`. The capture must
-already contain a widened camera: the replay option applies HUD layout only.
-`PS2_TRACE_WS_CUES=1` reports small marker/cue bounds, depth state and colors
-every 30 fields, including draws exempted from HUD scaling. Compare the raw
-diamond and target-box coordinates before choosing a projection correction.
+`ws_seeker_sprite` identifies that source cell and preserves its projected
+position independently of caption/warning rows and corner blocks. Z-zero menu
+highlights retain the centered menu transform. The synthetic regression tests
+cover nine screen positions, Z-zero artwork, and a different caption page.
+The full user recording replays successfully. Its final image changes only in
+the diamond region (x340..406, y29..64 at 1024x896); the diamond now overlays
+the selected target box. The correction is installed in the main executable.
+
+Replay with `gsreplay CAPTURE --widescreen --hidden --shot FILE.ppm`. The capture
+must already contain a widened camera: the option applies HUD layout only.
+`PS2_TRACE_WS_CUES=1` reports small marker/cue bounds, depth, color and UV source
+every 30 fields. Use `PS2_TRACE_WS_CUES=all` for every field of a short recording.

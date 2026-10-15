@@ -3649,6 +3649,23 @@ static float ws_map(float x, int edge, float s, float cx, float w) {
     return cx + (x - cx) * s;
 }
 
+static int ws_seeker_sprite(const ps2_vk_state *st, const ps2_vk_vertex *v, int n) {
+    /* AC4's seeker is a sprite from the HUD symbol page, not caption text.
+       Identify its source cell, not its screen row: it can cross captions,
+       warning text and corner HUD blocks while following a projected target.
+       The cell bounds also allow a sprite clipped at the screen edge. */
+    if (n != 6 || !st->tme || !st->fst || st->tex_w != 256.0f || st->tex_h != 256.0f
+        || v[0].z < 0.99999f || st->scissor[0] != 0
+        || v[0].r <= 1.5f * v[0].g + 8.0f) return 0;
+    float u0 = 1e9f, u1 = -1e9f, t0 = 1e9f, t1 = -1e9f;
+    for (int k = 0; k < n; k++) {
+        u0 = fminf(u0, v[k].s); u1 = fmaxf(u1, v[k].s);
+        t0 = fminf(t0, v[k].t); t1 = fmaxf(t1, v[k].t);
+    }
+    return u0 >= 208.0f && u1 <= 232.0f && u1 > u0
+        && t0 >= 175.5f && t1 <= 192.5f && t1 > t0;
+}
+
 static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
     float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, s, cx, gx, l, r, aspect;
     int k, edge;
@@ -3664,15 +3681,20 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
             if (v[k].y < y0) y0 = v[k].y;
             if (v[k].y > y1) y1 = v[k].y;
         }
-        {   static int cues = -1;
-            if (cues < 0) cues = getenv("PS2_TRACE_WS_CUES") != NULL;
-            if (cues && ps2_gs_frame_count % 30u == 0u
+        {   static int cues = -1, cue_step = 30;
+            if (cues < 0) {
+                const char *e = getenv("PS2_TRACE_WS_CUES");
+                cues = e != NULL;
+                if (e && !strcmp(e, "all")) cue_step = 1;
+            }
+            if (cues && ps2_gs_frame_count % (u32)cue_step == 0u
                 && (!realz || (n == 2 && !st->tme))
                 && ((st->zte && st->ztst != 1u) || v[0].r > 1.5f*v[0].g+8.0f)
                 && x1-x0 <= 128.0f && y1-y0 <= 128.0f)
-                ps2_log("ws-cue: f%u n%d tex%d ztest%u/%u z%g x%g..%g y%g..%g rgb%g,%g,%g",
+                ps2_log("ws-cue: f%u n%d tex%d ztest%u/%u z%g x%g..%g y%g..%g rgb%g,%g,%g uv%g,%g..%g,%g tex0=%016llX",
                     ps2_gs_frame_count,n,st->tme,st->zte,st->ztst,v[0].z,
-                    x0,x1,y0,y1,v[0].r,v[0].g,v[0].b);
+                    x0,x1,y0,y1,v[0].r,v[0].g,v[0].b,
+                    v[0].s,v[0].t,v[n-1].s,v[n-1].t,(unsigned long long)tex0_reg());
         }
         if (ws_marker_frame != ps2_gs_frame_count) {
             ws_marker_frame = ps2_gs_frame_count;
@@ -3705,9 +3727,10 @@ static void ws_hud(ps2_vk_state *st, ps2_vk_vertex *v, int n) {
        text (captions, speaker names, the WARNING sign) is drawn with sprites. */
     {   float sx = 512.0f / (float)st->fb_w, cyn = (y0 + y1) * 0.5f, cxn = (x0 + x1) * 0.5f * sx;
         int warning = n == 6 && cxn > 192.0f && cxn < 320.0f && cyn > 136.0f && cyn < 180.0f;
-        if (v[0].z != 0.0f && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
+        if (ws_seeker_sprite(st, v, n)
+            || (v[0].z != 0.0f && !(n == 2 && (x1 - x0 < 0.5f || y1 - y0 < 0.5f))
             && st->scissor[0] == 0 && v[0].r > 1.5f * v[0].g + 8.0f
-            && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && !(n == 6 && cyn < 104.0f) && !warning) {
+            && x1 - x0 <= 96.0f && y1 - y0 <= 96.0f && !(n == 6 && cyn < 104.0f) && !warning)) {
             gs_stat_ws_cue++;
             return;
         }

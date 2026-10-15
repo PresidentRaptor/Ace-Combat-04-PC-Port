@@ -57,11 +57,38 @@ int main(void) {
     ps2_gs_frame_count=103; draw(0,0,400,400,0,0,1);
     assert(ps2_gs_ws_pillar());
     ps2_gs_frame_count=116; assert(!ps2_gs_ws_pillar());
+    /* Recorded seeker cell from the user capture. The diamond must share
+       the target box's projection even over captions, warnings and corners. */
+    for(int row=0;row<3;row++) for(int side=0;side<3;side++) {
+        ps2_vk_state cue={0}; cue.fb_w=512; cue.fb_h=448;
+        cue.tme=cue.fst=1; cue.tex_w=cue.tex_h=256;
+        cue.scissor[1]=511; cue.scissor[3]=447;
+        ps2_vk_vertex diamond[6]={{0}};
+        float x=20+side*200, y=32+row*160;
+        for(int k=0;k<6;k++) {
+            diamond[k].x=x; diamond[k].y=y; diamond[k].z=1;
+            diamond[k].r=255; diamond[k].s=212; diamond[k].t=176;
+        }
+        diamond[2].x=x+16; diamond[2].s=228;
+        diamond[2].y=y+18; diamond[2].t=192;
+        assert(ws_seeker_sprite(&cue,diamond,6));
+        ws_hud(&cue,diamond,6);
+        assert(diamond[0].x==x && diamond[2].x==x+16);
+        /* Same artwork in a Z-zero menu must still scale with that menu. */
+        for(int k=0;k<6;k++) diamond[k].z=0;
+        assert(!ws_seeker_sprite(&cue,diamond,6));
+        ws_hud(&cue,diamond,6);
+        assert(fabsf(diamond[0].x-(256.5f+(x-256.5f)*0.75f))<0.001f);
+        /* A red caption from another page is not a seeker. */
+        cue.tex_w=64; cue.tex_h=16;
+        for(int k=0;k<6;k++) diamond[k].z=1;
+        assert(!ws_seeker_sprite(&cue,diamond,6));
+    }
     ps2_cfg.widescreen=0;
     ps2_vk_state st={0}; st.fb_w=512; st.fb_h=448;
     ps2_vk_vertex v[2]={{0}}; v[0].x=120; v[1].x=140;
     ws_hud(&st,v,2); assert(v[0].x==120 && v[1].x==140);
-    puts("PASS: menu highlights and cells agree; flight/pause suppress menu crop; menu/fade expiry; widescreen-off unchanged");
+    puts("PASS: menu highlights and cells agree; flight/pause suppress menu crop; menu/fade expiry; seeker follows target across caption/warning/corner rows; captions stay distinct; widescreen-off unchanged");
 }
 '''
 env=dict(os.environ, PATH='C:/msys64/ucrt64/bin;'+os.environ['PATH'])

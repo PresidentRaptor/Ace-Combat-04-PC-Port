@@ -101,6 +101,9 @@ AC4-specific (formerly `#ifdef PS2_GAME_AC4`, or AC4-only files):
   the layout to a capture taken with a widened camera; it does not widen an
   already recorded camera. `PS2_TRACE_WS_CUES=1` logs small target/cue draw
   coordinates every 30 fields for diagnosing marker projection.
+  The textured seeker diamond is recognised by its HUD source cell, so it
+  stays with its target when crossing captions, warnings or corner blocks;
+  a screen-position exclusion must not squeeze that sprite like text.
 - High and Ultra use bilinear sampling for enlarged screen-space UI art, which smooths map and HUD icons; original PS2 texture data remains native resolution until a compatible replacement-texture pack exists. For internal resolution that follows the window, pick Ultra and set Internal resolution to Auto (the smallest factor that covers the window, up to 8x).
 - `sceSifSetDma` writes to IOP RAM; the first `sceMcGetInfo` reports a newly inserted card;
   the graphics machine stays on the EE thread by default (`PS2_ASYNC_GFX=1` brings the
