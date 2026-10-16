@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.2.1 Beta
+
+[Release and installer](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.1-beta)
+
+- Updated the Windows installer from current `main`; player packages use the EXE launcher.
+- Added visual regression checks, frame-timing analysis and opt-in runtime profiling tools.
+- Retains the 2.2.0 rendering/audio fixes, ISO import, clean settings and license notices.
+- Full campaign validation remains incomplete; this is a public beta.
+
+
 - Organized developer documentation under `docs/` and removed retired experiments.
 - Added contribution, conduct, security and support guidance, issue/PR templates,
   a compatibility checklist and game-data-free source checks for CI.

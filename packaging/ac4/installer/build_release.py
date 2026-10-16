@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
-VERSION = '2.2.0-beta'
+VERSION = '2.2.1-beta'
 BUILD = ROOT / 'build/gcc'
 OUT = ROOT / 'build/release' / VERSION
 STAGE = OUT / 'payload'

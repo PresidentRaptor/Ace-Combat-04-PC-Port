@@ -24,7 +24,7 @@ python packaging/ac4/installer/build_release.py
 Requires .NET Framework's `Framework64/v4.0.30319/csc.exe`, the normal
 `build/gcc/ac4.exe` and compiled shaders, and UCRT64 DLLs/licenses from
 `C:/msys64/ucrt64` (override with `AC4_UCRT_DIR`). No third-party installer
-compiler is required. `build/release/2.2.0-beta/` receives the installer,
+compiler is required. `build/release/2.2.1-beta/` receives the installer,
 SHA256SUMS.txt, local payload ZIP and file manifest. Only the installer and
 checksum file are GitHub release assets. The source archive is provided by GitHub.
 

@@ -1,7 +1,8 @@
-# Ace Combat 04 PC Port 2.2.0 Beta
+# Ace Combat 04 PC Port 2.2.1 Beta
 
-This release adds a Windows installer for the current AC4 port. Download
-**Ace-Combat-04-PC-Port-2.2.0-beta-Setup.exe** and select your unmodified USA ISO
+This public beta refreshes the Windows installer from `main`, with the EXE
+launcher used throughout player packages and updated documentation. Download
+**Ace-Combat-04-PC-Port-2.2.1-beta-Setup.exe** and select your unmodified USA ISO
 (SLUS-20152). Setup verifies the executable inside the disc, creates the game
 folder, imports the ISO and local memory image, and offers a desktop shortcut.
 No ISO or extracted game assets are included in the download.
@@ -18,6 +19,13 @@ No ISO or extracted game assets are included in the download.
 
 The installer is unsigned. SHA256SUMS.txt identifies the exact uploaded build;
 it does not provide a publisher signature.
+
+## Changes since 2.2.0 Beta
+
+- Player packages use `Ace Combat 04.exe` as the launcher.
+- Added source visual regression checks, frame-timing analysis and opt-in runtime
+  profiling tools for development; no performance gain is claimed by this release.
+- Updated contribution/support guidance, compatibility coverage and source-only CI.
 
 ## Included fixes and defaults
 

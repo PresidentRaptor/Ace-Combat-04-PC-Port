@@ -9,8 +9,8 @@ using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Ace Combat 04 PC Port Setup")]
 [assembly: AssemblyProduct("Ace Combat 04 PC Port")]
-[assembly: AssemblyVersion("2.2.0.0")]
-[assembly: AssemblyFileVersion("2.2.0.0")]
+[assembly: AssemblyVersion("2.2.1.0")]
+[assembly: AssemblyFileVersion("2.2.1.0")]
 
 internal sealed class Setup : Form
 {
@@ -31,7 +31,7 @@ internal sealed class Setup : Form
     internal Setup()
     {
         SuspendLayout();
-        Text = "Ace Combat 04 PC Port - Setup 2.2.0 Beta";
+        Text = "Ace Combat 04 PC Port - Setup 2.2.1 Beta";
         ClientSize = new Size(660, 456);
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -40,7 +40,7 @@ internal sealed class Setup : Form
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Label title = LabelAt("ACE COMBAT 04: SHATTERED SKIES", 24, 22, 612, 32);
         title.Font = new Font("Segoe UI", 16, FontStyle.Bold);
-        LabelAt("PC Port 2.2.0 Beta  |  Windows 10/11 x64  |  Vulkan 1.3 GPU required", 24, 62, 612, 26);
+        LabelAt("PC Port 2.2.1 Beta  |  Windows 10/11 x64  |  Vulkan 1.3 GPU required", 24, 62, 612, 26);
         LabelAt("Choose your unmodified USA ISO (SLUS-20152). Setup checks the game\nexecutable, copies the disc, and prepares the local game data.", 24, 98, 612, 48);
         LabelAt("Game ISO", 24, 160, 612, 24);
         iso.SetBounds(24, 188, 500, 28); Controls.Add(iso);

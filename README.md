@@ -56,7 +56,7 @@ For implementation details and test coverage, see the
 
 ### Windows installer
 
-The [2.2.0 Beta release](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.0-beta)
+The [2.2.1 Beta release](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.1-beta)
 includes a Windows setup executable. Select your unmodified USA ISO (SLUS-20152),
 choose an empty game folder, and leave the desktop-shortcut option enabled if
 wanted. Setup verifies the game executable, copies the ISO and creates the local
