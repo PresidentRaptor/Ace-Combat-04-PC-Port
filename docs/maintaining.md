@@ -17,18 +17,18 @@
 
 ## Branch protection and security
 
-GitHub currently reports that branch protection requires upgrading the account
-or making this private repository public. Visibility remains private. No branch
-protection rule is claimed to be active. If the plan changes, protect `main`
-against force pushes/deletion and require the CI check before merging; review
-requirements should fit the actual number of available maintainers.
+The repository is public so players can download releases without a GitHub
+account. No branch protection rule is claimed to be active. Protect `main`
+against force pushes/deletion and require the CI check before merging when
+configuring repository rules; review requirements should fit the actual number
+of available maintainers.
 
 Actions use read-only repository permissions and pinned action revisions.
 Dependabot proposes updates to those action references. Do not execute untrusted
 PR code with write tokens or secrets, and do not use `pull_request_target` to
 run contributed code. This project has no automated game-data upload workflow.
-Use the [security reporting process](../SECURITY.md); reassess private vulnerability
-reporting if the repository becomes public. Never change visibility just to pass a checklist.
+Use the [security reporting process](../SECURITY.md). Never change visibility just
+to pass a checklist.
 
 ## Releases
 

@@ -3,7 +3,7 @@
 ## Supported versions
 
 Security fixes target current `main` and the latest AC4 prerelease (currently
-2.2.0 Beta). Older builds and inherited AC5 versions are not maintained here.
+2.2.1 Beta). Older builds and inherited AC5 versions are not maintained here.
 The project has no formal security audit or guaranteed response time.
 
 ## Report privately
@@ -13,8 +13,7 @@ security concerns, do not post exploit details, credentials or private files in
 a normal issue. Crashes without a suspected security impact can use the bug form.
 
 Use **Report a vulnerability** on the Security tab if GitHub offers that option.
-The repository is currently private and does not have that public-repository
-reporting feature. Otherwise, contact the maintainer through an existing private
+If that option is unavailable, contact the maintainer through an existing private
 channel. If you do not have one, open **Private contact request** from the issue
 chooser and ask [PresidentRaptor](https://github.com/PresidentRaptor) for a private
 security-reporting route. Include no technical or personal details in that request.
