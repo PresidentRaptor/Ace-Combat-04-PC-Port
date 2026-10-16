@@ -338,3 +338,20 @@ The CPU runner's initial Status=0x20000000 is an explicit functional startup
 profile with COP1 usable, not a measured BIOS state. Raw FPU transfers/branches
 and context are supported; numerical FPU/VU operations and full exception/IRQ
 semantics remain incomplete. Existing derived code and its notices are preserved.
+
+## SIF transport foundation (M4d)
+
+`sif_transport.h` now moves real synthetic DMA data through bounded SIF0/SIF1
+queues. It supports a main-RAM chain subset, partial-input/output backpressure,
+channel address/count progress, completion status and both sides' mailbox write
+directions. The startup runner polls it between at most 256 guest instructions
+and syscall boundaries, with at most 16 actions per channel per poll. These are
+host scheduling limits, not hardware timing or FIFO capacity measurements.
+
+An asserted DMA interrupt stops with DEVICE until interrupt delivery exists.
+Unsupported chain modes, scratchpad DMA, stall/MFIFO operation and nonzero-QWC
+restart remain explicit gaps. No IOP executable, command server or RPC service
+is connected. The local AC4 result remains the same IOP command-ready wait;
+both queues and transferred-quadword counts are zero. Synthetic peer loopback
+tests demonstrate transport only. The next task is a live command endpoint and
+SifSetDma submission, followed by guest interrupt handling and RPC replies.

@@ -341,3 +341,38 @@ reference-bootstrap.json contains hashes/counts/addresses/build metadata only.
 Its current page-source hash aggregates module digests; runtime-input hashes
 record snapshotted own source used for the build. No generated game source,
 object, executable, RAM, ISO or assets are committed or uploaded.
+
+## M4d transport inputs (2026-10-15)
+
+New `sif_transport.h` and tests were written from PS2tek's original hardware
+documentation: https://psi-rockin.github.io/ps2tek/index.html , sections DMAC
+I/O, Chain Mode, Interrupts, and SIF Registers/DMA. These describe the incoming
+64-bit destination tag, outgoing optional upper-tag pair, payload quadwords,
+channel status, and opposite EE/IOP mailbox ownership. No emulator or legacy
+port implementation was read or adapted for this work.
+
+Implemented source tags are REFE/CNT/NEXT/REF/END; destination tags are
+CNT/CNTS/END with stall controls disabled. Only physical main RAM is supported.
+Priority-control tags, CALL/RET/REFS, scratchpad selection, MFIFO/stalls and
+nonzero-QWC restart stop rather than approximating unverified behavior.
+Completion latches the real channel status after data moves; pending IRQs stop
+instead of pretending to invoke a handler. IOP DMA registers, DICR, command/RPC
+servers and cycle timing are not implemented.
+
+The 64-word queue size, 16-action poll bound and 256-instruction host quantum
+are explicit functional-model policies. Synthetic tests independently construct
+tags and byte patterns, including a manual peer loopback; they do not establish
+hardware compatibility. No IOP readiness flags or reply packets are generated
+by the runner. The supported local image reproduces the previous polling stop
+with zero transferred quadwords, not new game execution coverage.
+
+Cross-checked Sony EE User's Manual v6.0, sections 5.2.3-5.2.4, 5.6-5.9,
+pp.45-48, 58-62 and 73-79, in the published manual transcription:
+https://studylib.net/doc/25813272/emotion-engine-user-s-manual . It confirms
+source tag IDs, chain addresses, register fields and restart restrictions.
+Its destination-tag table names ID 0 CNTS and ID 1 CNT, opposite to PS2tek's
+labels. The present subset accepts both only with stall controls disabled, so
+their supported behavior is identical; use the Sony encoding when implementing
+stall-address updates. The transport computes the next TADR on tag acceptance;
+intermediate register timing still requires hardware-oracle validation. No
+manual, source code or game bytes are redistributed.

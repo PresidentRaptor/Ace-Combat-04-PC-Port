@@ -1,6 +1,6 @@
 /* Bounded EE register models from PS2tek's hardware descriptions.
- * Active timers, DMA payload movement and IRQ delivery remain unsupported.
- * SIF0 can be armed to wait for incoming data; it never fabricates completion.
+ * Active timers and IRQ delivery remain unsupported. The separate bounded SIF
+ * transport advances only when explicitly polled and supplied with real data.
  */
 #ifndef AC4_EE_DEVICES_H
 #define AC4_EE_DEVICES_H
@@ -15,6 +15,7 @@ typedef struct {
     uint32_t sif_mscom,sif_smcom,sif_msflag,sif_smflag;
     uint32_t last_read_address;
     uint64_t last_read_value,read_count;
+    uint64_t sif_generation[2];
 } Ac4Devices;
 
 static inline uint32_t *ac4_dma_register(Ac4Devices *d,uint32_t address,uint32_t *mask,int *control) {
@@ -116,9 +117,12 @@ static inline int ac4_device_write(void *state,uint32_t address,unsigned bytes,u
         if (!value) value=ac4_dma_register(devices,address,&mask,&control);
         if (value) {
             if (control && (word&0x100)) {
-                if (address!=0x1000c000 || word!=0x184) return AC4_DEVICE;
-                devices->sif0_waiting=1;
+                if ((address!=0x1000c000 && address!=0x1000c400) ||
+                    (word&0x3e)!=4) return AC4_DEVICE;
+                if (address==0x1000c000) devices->sif0_waiting=1;
             } else if (control && address==0x1000c000) devices->sif0_waiting=0;
+            if (control && (address==0x1000c000 || address==0x1000c400))
+                devices->sif_generation[address==0x1000c400]++;
             *value=word&mask; return 0;
         }
     }

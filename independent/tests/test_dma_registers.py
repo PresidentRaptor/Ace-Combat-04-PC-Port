@@ -55,8 +55,8 @@ class DmaRegisterTests(unittest.TestCase):
         self.assertEqual((result['r'][24],result['r'][26]),(1,0))
         self.assertEqual(result['memory'],[0]*256)
 
-    def test_outgoing_dma_and_pending_irq_remain_explicit_boundaries(self):
-        result=device({0:0xac820000,4:13},{4:0x1000c400,2:0x185})
+    def test_interleaved_dma_and_pending_irq_remain_explicit_boundaries(self):
+        result=device({0:0xac820000,4:13},{4:0x1000c400,2:0x189})
         self.assertEqual((result['status'],result['pc']),(11,0))
         result=device({0:0xac820000,4:13},{4:0x1000f010,2:4},'d.intc_stat=4;')
         self.assertEqual((result['status'],result['r'][25]),(11,0))

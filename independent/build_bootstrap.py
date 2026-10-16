@@ -104,7 +104,7 @@ def build(data, output, cc, *, limit=1024, extra_entries=(), copied_regions=(),
     with tempfile.TemporaryDirectory(prefix='ac4-bootstrap-build-') as folder:
         root = Path(folder)
         runtime_inputs={name:(HERE/name).read_bytes() for name in
-                        ('bootstrap_main.c','bootstrap_services.h','ee_devices.h')}
+                        ('bootstrap_main.c','bootstrap_services.h','ee_devices.h','sif_transport.h')}
         for name,raw in runtime_inputs.items():
             (root/name).write_bytes(raw)
         ram_file = root/'ram.bin'

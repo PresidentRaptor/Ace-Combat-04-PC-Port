@@ -18,7 +18,7 @@ set(bootstrap_generated "${CMAKE_CURRENT_BINARY_DIR}/generated_program.inc")
 add_custom_command(OUTPUT "${bootstrap_generated}"
     COMMAND "${CMAKE_COMMAND}" -E copy "${generated}" "${bootstrap_generated}"
     DEPENDS "${generated}" VERBATIM)
-add_executable(ac4-bootstrap-diagnostic bootstrap_main.c bootstrap_services.h ee_devices.h "${bootstrap_generated}")
+add_executable(ac4-bootstrap-diagnostic bootstrap_main.c bootstrap_services.h ee_devices.h sif_transport.h "${bootstrap_generated}")
 target_compile_definitions(ac4-bootstrap-diagnostic PRIVATE AC4_PROGRAM_ENTRY=0)
 foreach(harness ac4-scalar-smoke ac4-bootstrap-diagnostic)
     target_include_directories(${harness} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")

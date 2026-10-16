@@ -43,6 +43,8 @@ typedef struct {
     Ac4BootstrapInterrupt interrupt_handlers[2][64];
     uint32_t interrupt_heads[2][16];
     uint32_t sif_system[3];
+    void *event_state;
+    int (*poll_events)(void *,Ac4Cpu *);
 } Ac4Bootstrap;
 
 static inline int ac4_interrupt_service(Ac4Cpu *c,Ac4Bootstrap *b,uint32_t number) {
@@ -347,7 +349,13 @@ static inline int ac4_bootstrap_run(Ac4Cpu *c, Ac4Bootstrap *b, uint64_t budget)
     }
     uint64_t start=c->steps;
     while (c->steps-start<budget) {
-        int status=ac4_run(c,budget-(c->steps-start));
+        if (b->poll_events) {
+            int event=b->poll_events(b->event_state,c);
+            if (event) return event;
+        }
+        uint64_t remaining=budget-(c->steps-start);
+        uint64_t quantum=b->poll_events && remaining>256 ? 256 : remaining;
+        int status=ac4_run(c,quantum);
         if (b->call_depth && c->pc==UINT32_C(0xfff00000) && !c->pending &&
             (status==AC4_FETCH || status==AC4_BUDGET)) {
             if (status==AC4_FETCH) c->steps--; /* Private dispatch lookup, not a guest instruction. */
@@ -355,6 +363,7 @@ static inline int ac4_bootstrap_run(Ac4Cpu *c, Ac4Bootstrap *b, uint64_t budget)
             c->pc=frame->resume; c->gpr[31][0]=frame->ra; b->calls++;
             if (status==AC4_FETCH) continue;
         }
+        if (status==AC4_BUDGET && c->steps-start<budget) continue;
         if (status!=AC4_SYSCALL) return status;
         status=ac4_bootstrap_service(c,b);
         if (status) return status;

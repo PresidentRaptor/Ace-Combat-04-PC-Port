@@ -536,3 +536,51 @@ transfer and RPC services, with truthful event/interrupt delivery; then add the
 remaining CPU/VU/graphics/disc paths. Do not force SMFLAG or fake a completed
 transfer to call boot successful. Independent execution-oracle and scheduler/
 startup-profile acceptance remain open. M2/M3/M4 stay In progress, M5-M10 pending.
+
+### M4d: bounded SIF transport foundation (2026-10-15)
+
+Completed the transport portion of the next IOP/SIF task. New independent code
+moves real bytes between physical EE RAM and bounded directional queues, with
+source REFE/CNT/NEXT/REF/END and destination CNT/CNTS/END tags, optional source
+tag-data pairs, TIE termination, address/count updates and completion status.
+Empty or partial input and full output retain pending work; zero-size/cyclic
+chains remain bounded. EE and IOP mailbox writes obey opposite flag directions.
+
+The runner polls up to 16 actions per channel between 256-instruction quanta
+and syscall boundaries. The global instruction budget and delayed branches are
+preserved. Queue capacity (64 words), action bound and quantum are functional
+host policies, not a cycle-accurate model. Every source/header input is included
+in the existing private-build snapshot/hash mechanism.
+
+Pending DMA IRQs latch real completion state and stop with DEVICE; no guest
+handler is called yet. Physical addresses cannot use CPU aliases or invoke
+MMIO as RAM. Scratchpad DMA, priority-control tags, CALL/RET/REFS, MFIFO/stalls,
+interleaving and nonzero-QWC restart remain explicit unsupported boundaries.
+IOP DMA/DICR and SifSetDma kernel submission are separate unfinished work.
+
+Validation: **216 tests**, including **17 new transport/event methods**, pass
+with the native compiler required; **2/2 CTest**, **19 static local checks** and
+the original **335,107-instruction first-syscall check** pass. Tests use actual
+synthetic bytes, partial delivery, backpressure/wraparound, invalid tags and
+addresses, IRQ completion/acknowledgement, cancellation, bounded cyclic chains,
+and manual peer loopback between separate RAM buffers. This is model evidence,
+not an independent hardware/emulator oracle.
+
+Exact local build (fresh destination required):
+
+```
+python -B independent/build_bootstrap.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --output ../dev/ac4-bootstrap-sif-transport-final --cc C:/msys64/ucrt64/bin/gcc.exe --limit 16384 --entry 0x264a88 --entry 0x1001a4 --entry 0x27c680 --copied-code 0x3fabd8:0x80076000:1856 --discover-fetches 32 --discovery-limit 512 --jobs 4
+```
+
+The result retains 18,520 addresses after ten discovery extensions and matches
+the previous native observation: BUDGET at **0x002644bc**, **5,000,000** attempted
+instructions, **517,726** mostly polling service calls, two context switches,
+SIF0 armed, last SMFLAG read **0x1000f230 = 0**. Both FIFO counts and both
+transferred-quadword counts are **zero**. This run validates integration without
+claiming additional boot coverage: there is still no IOP producer/server.
+reference-bootstrap.json records the current metadata; game data stays local.
+
+Remaining M4d/IOP work: live command endpoint and mailbox initialization based
+on its lifecycle, SifSetDma submission, actual packet/reply generation, guest
+IRQ delivery and RPC services. Do not force readiness or claim the overall IOP
+boundary is resolved. M4 remains In progress; no menu or gameplay exists.

@@ -131,3 +131,14 @@ Next bounded task is independent IOP/SIF command startup, packet/DMA transfer,
 RPC and IRQ delivery. Do not force readiness or fabricate transfers. The initial
 Status=0x20000000 and remaining kernel ABI policies still need independent
 oracle evidence. Read the latest exact command and manifest schema notes.
+
+M4d transport now supplies bounded real SIF queues and main-RAM chain transfer,
+IOP-side mailbox access, DMA progress/completion and explicit pending-IRQ stops.
+The runner polls devices during guest loops without resetting its global budget.
+216 tests and 2/2 CTest pass; local static/first-syscall checks also pass. AC4
+still reaches exactly the previous IOP command wait with zero queued/transferred
+data. No boot or compatibility gate has been completed by the loopback tests.
+Next scope: implement a live, independently sourced IOP command endpoint and
+SifSetDma submission, then IRQ dispatch and RPC responses. Do not repeat the
+queue work, inject readiness to bypass the missing peer, or treat manual test
+loopback as actual IOP execution. Read MILESTONES.md for supported tag limits.

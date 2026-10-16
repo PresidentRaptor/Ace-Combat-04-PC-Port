@@ -8,90 +8,91 @@
       "translation_units": 60,
       "compiled": 60,
       "reused": 0,
-      "compile_seconds": 3.345,
-      "link_seconds": 0.171
+      "compile_seconds": 3.473,
+      "link_seconds": 0.156
     },
     {
       "translation_units": 62,
       "compiled": 4,
       "reused": 58,
-      "compile_seconds": 0.207,
-      "link_seconds": 0.173
+      "compile_seconds": 0.196,
+      "link_seconds": 0.242
     },
     {
       "translation_units": 63,
       "compiled": 7,
       "reused": 56,
-      "compile_seconds": 0.418,
-      "link_seconds": 0.201
+      "compile_seconds": 0.42,
+      "link_seconds": 0.16
     },
     {
       "translation_units": 63,
       "compiled": 1,
       "reused": 62,
-      "compile_seconds": 0.131,
-      "link_seconds": 0.194
+      "compile_seconds": 0.12,
+      "link_seconds": 0.154
     },
     {
       "translation_units": 63,
       "compiled": 4,
       "reused": 59,
-      "compile_seconds": 0.391,
-      "link_seconds": 0.164
+      "compile_seconds": 0.376,
+      "link_seconds": 0.152
     },
     {
       "translation_units": 63,
       "compiled": 4,
       "reused": 59,
-      "compile_seconds": 0.424,
-      "link_seconds": 0.158
+      "compile_seconds": 0.388,
+      "link_seconds": 0.156
     },
     {
       "translation_units": 79,
       "compiled": 18,
       "reused": 61,
-      "compile_seconds": 0.582,
-      "link_seconds": 0.17
+      "compile_seconds": 0.624,
+      "link_seconds": 0.178
     },
     {
       "translation_units": 80,
       "compiled": 3,
       "reused": 77,
-      "compile_seconds": 0.133,
-      "link_seconds": 0.168
+      "compile_seconds": 0.151,
+      "link_seconds": 0.161
     },
     {
       "translation_units": 84,
       "compiled": 6,
       "reused": 78,
-      "compile_seconds": 0.234,
-      "link_seconds": 0.163
+      "compile_seconds": 0.245,
+      "link_seconds": 0.172
     },
     {
       "translation_units": 84,
       "compiled": 12,
       "reused": 72,
-      "compile_seconds": 0.393,
-      "link_seconds": 0.164
+      "compile_seconds": 0.437,
+      "link_seconds": 0.18
     },
     {
       "translation_units": 84,
       "compiled": 2,
       "reused": 82,
-      "compile_seconds": 0.431,
-      "link_seconds": 0.166
+      "compile_seconds": 0.45,
+      "link_seconds": 0.169
     }
   ],
   "image_sha256": "38ecebd6965c2f74ec8973f538781506bf3a2cfad86f908deb6c5d585d528301",
   "compiler": "gcc.exe (Rev5, Built by MSYS2 project) 16.2.0",
   "generated_source_sha256": "a8d52654702bcd90b5b90a0c0744e29d6cf620e98da33147a9d4b0ec82477bc8",
   "runtime_inputs_sha256": {
-    "bootstrap_main.c": "9593b9bf0f853b86dcd89528e91ddec9d4649e71a081ba3fa5d7093761569b95",
-    "bootstrap_services.h": "b3fd0ba99f16f1ad663bc577a1f9dda8f823716615f5fe0f2bc8b29dc5359f68",
-    "ee_devices.h": "998cff8105fd9d21a36a5abeba2bd043b739bc70b3b4d675e8fa6924de24deae"
+    "bootstrap_main.c": "c74694accb523be6906415b282fdc839bdfee75e776d44e9487689f4680c83c3",
+    "bootstrap_services.h": "b8283235e8284224b0eeb067098bea4d2ec307141cf121eb2bdb311cbf846bca",
+    "ee_devices.h": "929f4dae9839acbdbe2087014dabe74671038e3a1b730b58835c0a2628d8904f",
+    "sif_transport.h": "3895c3d8a5ff543107d97571cb0680e42d3fd1d3a15d71626fd1f86c46b425b0"
   },
   "ram_sha256": "1490680da7975cc25f4e1a366ca6812397d729f5e7c3fbb034993721a65c006c",
-  "executable_sha256": "c2f47e4842117a8e40b2f96600eda2dfd5767cd68bcaec561ba90795587e241b",
+  "executable_sha256": "c8df2510a73472430b5ba6ddb210c34ad8d165cd991f48bd9ac55450de73aae9",
   "selection": {
     "selected_addresses": 18520,
     "boundaries": [
@@ -531,6 +532,10 @@
     "last_device_read_address": 268497456,
     "last_device_read_value": 0,
     "initial_cp0_status": 536870912,
+    "sif0_quadwords": 0,
+    "sif1_quadwords": 0,
+    "sif0_fifo_words": 0,
+    "sif1_fifo_words": 0,
     "a0": 4,
     "a1": 2538920,
     "a2": 0
@@ -542,5 +547,5 @@
     "unknown services/instructions and missing dispatch targets stop",
     "no graphics, input, audio, disc runtime or gameplay"
   ],
-  "validation_note": "Experimental local CPU/device model reaches IOP command-initialization polling; budget exhaustion is not gameplay or boot acceptance. No independent hardware oracle."
+  "validation_note": "Transport integration preserves the prior IOP command-ready polling stop with zero queued/transferred data. Synthetic peer loopback is not an IOP execution or hardware oracle. NOT PLAYABLE."
 }

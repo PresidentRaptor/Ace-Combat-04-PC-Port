@@ -2,9 +2,16 @@
 #include "generated_program.inc"
 #include "bootstrap_services.h"
 #include "ee_devices.h"
+#include "sif_transport.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
+
+typedef struct { Ac4Devices *devices; Ac4SifTransport transport; } Ac4SifEvents;
+static int ac4_poll_sif(void *state,Ac4Cpu *cpu) {
+    Ac4SifEvents *events=(Ac4SifEvents *)state;
+    return ac4_sif_poll(cpu,events->devices,&events->transport,16);
+}
 
 int main(int argc, char **argv) {
     if (argc!=2) {
@@ -26,6 +33,8 @@ int main(int argc, char **argv) {
     Ac4Cpu cpu={0}; Ac4Bootstrap boot={0};
     boot.enable_guest_overrides=1;
     Ac4Devices devices={0};
+    Ac4SifEvents events={0}; events.devices=&devices;
+    boot.event_state=&events; boot.poll_events=ac4_poll_sif;
     cpu.memory=ram; cpu.memory_size=32*1024*1024; cpu.pc=AC4_PROGRAM_ENTRY;
     cpu.ee_memory_map=1;
     cpu.verify_instruction_bytes=1;
@@ -41,6 +50,8 @@ int main(int argc, char **argv) {
            "\"override_target\":%u,\"current_thread\":%u,\"context_switches\":%u,"
            "\"sif0_waiting\":%u,\"last_device_read_address\":%u,\"last_device_read_value\":%" PRIu64 ","
            "\"initial_cp0_status\":%u,"
+           "\"sif0_quadwords\":%" PRIu64 ",\"sif1_quadwords\":%" PRIu64 ","
+           "\"sif0_fifo_words\":%u,\"sif1_fifo_words\":%u,"
            "\"a0\":%" PRIu64 ",\"a1\":%" PRIu64 ",\"a2\":%" PRIu64 "}\n",
            status,cpu.pc,cpu.fault_pc,cpu.fault_address,cpu.fault_delay,cpu.steps,
            boot.calls,boot.last_number,boot.stack_pointer,boot.heap_start,boot.heap_end,
@@ -48,6 +59,8 @@ int main(int argc, char **argv) {
            boot.current_thread,boot.context_switches,
            devices.sif0_waiting,devices.last_read_address,devices.last_read_value,
            initial_status,
+           events.transport.quadwords[0],events.transport.quadwords[1],
+           events.transport.to_ee.count,events.transport.to_iop.count,
            cpu.gpr[4][0],cpu.gpr[5][0],cpu.gpr[6][0]);
     free(ram);
     /* Diagnostic stops are explicitly unsuccessful execution, not a game exit. */
