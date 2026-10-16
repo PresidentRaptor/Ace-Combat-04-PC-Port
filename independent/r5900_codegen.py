@@ -30,6 +30,7 @@ typedef struct {
     int memory_error;
     unsigned ee_memory_map;
     unsigned verify_instruction_bytes;
+    unsigned coherent_cache_profile;
     uint32_t cp0_status;
     uint32_t fpr[32],fcr31;
     unsigned char scratchpad[16384];
@@ -362,6 +363,15 @@ def translate(ins):
                 high=f'{invert}({rs_high}{operator}{rt_high})'
             lines.extend([f'uint64_t low={low},high={high};',
                           write(o['rd'],'low'),f'c->gpr[{o["rd"]}][1]=high;'])
+    elif name in ('cache.dhwbin','cache.dhwoin'):
+        lines.append('if (!c->coherent_cache_profile) return AC4_UNSUPPORTED;')
+        lines.append('if (!(c->cp0_status&UINT32_C(0x10000006)) && (c->cp0_status&UINT32_C(0x18))) return AC4_PRIVILEGE;')
+        lines.append(f'uint32_t address=(uint32_t)(c->gpr[{o["base"]}][0]+UINT64_C({o["offset"] & ((1<<64)-1)}));')
+        lines.append('if (!(address<UINT32_C(0x02000000) || (address>=UINT32_C(0x80000000) && address<UINT32_C(0x82000000)))) return AC4_UNDEFINED_INPUT;')
+        lines.append('unsigned char *line; if (!ac4_span(c,ac4_physical(address)&~UINT32_C(63),64,&line)) return c->memory_error;')
+        lines.append('(void)line; c->fault_address=address;')
+        # In this opt-in profile stores already reach coherent main RAM. There
+        # is no dirty data cache to write back. Fetch-byte guards remain active.
     elif name in ('mfc0','mtc0') and o['cop0']==12:
         lines.append('if (!(c->cp0_status&UINT32_C(0x10000006)) && (c->cp0_status&UINT32_C(0x18))) return AC4_PRIVILEGE;')
         if name=='mfc0':

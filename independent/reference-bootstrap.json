@@ -8,93 +8,117 @@
       "translation_units": 60,
       "compiled": 60,
       "reused": 0,
-      "compile_seconds": 3.473,
-      "link_seconds": 0.156
+      "compile_seconds": 4.791,
+      "link_seconds": 0.201
     },
     {
       "translation_units": 62,
       "compiled": 4,
       "reused": 58,
-      "compile_seconds": 0.196,
-      "link_seconds": 0.242
+      "compile_seconds": 0.238,
+      "link_seconds": 0.198
     },
     {
       "translation_units": 63,
       "compiled": 7,
       "reused": 56,
-      "compile_seconds": 0.42,
-      "link_seconds": 0.16
+      "compile_seconds": 0.582,
+      "link_seconds": 0.196
     },
     {
       "translation_units": 63,
       "compiled": 1,
       "reused": 62,
-      "compile_seconds": 0.12,
-      "link_seconds": 0.154
+      "compile_seconds": 0.154,
+      "link_seconds": 0.234
     },
     {
       "translation_units": 63,
       "compiled": 4,
       "reused": 59,
-      "compile_seconds": 0.376,
-      "link_seconds": 0.152
+      "compile_seconds": 0.468,
+      "link_seconds": 0.178
     },
     {
       "translation_units": 63,
       "compiled": 4,
       "reused": 59,
-      "compile_seconds": 0.388,
-      "link_seconds": 0.156
+      "compile_seconds": 0.472,
+      "link_seconds": 0.187
     },
     {
       "translation_units": 79,
       "compiled": 18,
       "reused": 61,
-      "compile_seconds": 0.624,
-      "link_seconds": 0.178
+      "compile_seconds": 0.806,
+      "link_seconds": 0.212
     },
     {
       "translation_units": 80,
       "compiled": 3,
       "reused": 77,
-      "compile_seconds": 0.151,
-      "link_seconds": 0.161
+      "compile_seconds": 0.15,
+      "link_seconds": 0.202
     },
     {
       "translation_units": 84,
       "compiled": 6,
       "reused": 78,
-      "compile_seconds": 0.245,
-      "link_seconds": 0.172
+      "compile_seconds": 0.32,
+      "link_seconds": 0.214
     },
     {
       "translation_units": 84,
       "compiled": 12,
       "reused": 72,
-      "compile_seconds": 0.437,
-      "link_seconds": 0.18
+      "compile_seconds": 0.446,
+      "link_seconds": 0.207
     },
     {
       "translation_units": 84,
       "compiled": 2,
       "reused": 82,
-      "compile_seconds": 0.45,
-      "link_seconds": 0.169
+      "compile_seconds": 0.543,
+      "link_seconds": 0.209
+    },
+    {
+      "translation_units": 84,
+      "compiled": 2,
+      "reused": 82,
+      "compile_seconds": 0.455,
+      "link_seconds": 0.194
+    },
+    {
+      "translation_units": 84,
+      "compiled": 3,
+      "reused": 81,
+      "compile_seconds": 0.521,
+      "link_seconds": 0.235
+    },
+    {
+      "translation_units": 84,
+      "compiled": 1,
+      "reused": 83,
+      "compile_seconds": 0.506,
+      "link_seconds": 0.182
     }
   ],
+  "iop_command_profile": true,
+  "coherent_cache_profile": "DHWBIN/DHWOIN over coherent main RAM; no hardware cache",
   "image_sha256": "38ecebd6965c2f74ec8973f538781506bf3a2cfad86f908deb6c5d585d528301",
   "compiler": "gcc.exe (Rev5, Built by MSYS2 project) 16.2.0",
-  "generated_source_sha256": "a8d52654702bcd90b5b90a0c0744e29d6cf620e98da33147a9d4b0ec82477bc8",
+  "generated_source_sha256": "5380ee1b69fea27add0416686b9e6f489bcd7c24daa428cc4c85b0133e639e90",
   "runtime_inputs_sha256": {
-    "bootstrap_main.c": "c74694accb523be6906415b282fdc839bdfee75e776d44e9487689f4680c83c3",
-    "bootstrap_services.h": "b8283235e8284224b0eeb067098bea4d2ec307141cf121eb2bdb311cbf846bca",
+    "bootstrap_main.c": "9b67ed166488c0843026078d267bb77844de8293a873433fd424aceb6b75b0bb",
+    "bootstrap_services.h": "95d5932050cfa2b1eca758f7955753b7f0f58a5622be333cce96e42a8447c5b0",
     "ee_devices.h": "929f4dae9839acbdbe2087014dabe74671038e3a1b730b58835c0a2628d8904f",
-    "sif_transport.h": "3895c3d8a5ff543107d97571cb0680e42d3fd1d3a15d71626fd1f86c46b425b0"
+    "sif_transport.h": "3895c3d8a5ff543107d97571cb0680e42d3fd1d3a15d71626fd1f86c46b425b0",
+    "iop_command_peer.h": "4a80b1223e6c5d420a592f034c4eaea7436ff0df4fe9562acfc0e8cb9e3a554b"
   },
   "ram_sha256": "1490680da7975cc25f4e1a366ca6812397d729f5e7c3fbb034993721a65c006c",
-  "executable_sha256": "c8df2510a73472430b5ba6ddb210c34ad8d165cd991f48bd9ac55450de73aae9",
+  "executable_sha256": "b287dc669bfc9b584f37832b4975577f586f2b8de31bf355289365047423dd40",
   "selection": {
-    "selected_addresses": 18520,
+    "selected_addresses": 18659,
     "boundaries": [
       {
         "address": "0x00100d84",
@@ -167,19 +191,11 @@
       {
         "address": "0x00263c18",
         "reason": "0x263c18: unsupported operation cfc2"
-      },
-      {
-        "address": "0x0026bf08",
-        "reason": "0x26bf08: unsupported operation cache.dhwbin"
-      },
-      {
-        "address": "0x0026bf2c",
-        "reason": "0x26bf2c: unsupported operation cache.dhwbin"
       }
     ],
     "syscall_continuations_selected": true,
     "initial_selected_addresses": 16384,
-    "initial_pending_addresses": 287,
+    "initial_pending_addresses": 285,
     "initial_selection_limit": 16384,
     "boundaries_scope": "initial plan; additional boundaries are in observed_fetch_discovery plans",
     "entry_seeds": [
@@ -236,7 +252,7 @@
       {
         "fetch_pc": "0x00214030",
         "attempted_instructions": 339909,
-        "added_addresses": 161,
+        "added_addresses": 163,
         "plan": {
           "selected_addresses": 512,
           "selection_limit": 512,
@@ -509,43 +525,105 @@
           "boundaries": [],
           "syscall_continuations_selected": true
         }
+      },
+      {
+        "fetch_pc": "0x0026bb2c",
+        "attempted_instructions": 340826,
+        "added_addresses": 36,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 17,
+          "boundaries": [],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x0026bcb4",
+        "attempted_instructions": 340870,
+        "added_addresses": 85,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 16,
+          "boundaries": [
+            {
+              "address": "0x002978c4",
+              "reason": "0x2978c4: unsupported operation cache.dxltg"
+            }
+          ],
+          "syscall_continuations_selected": true
+        }
+      },
+      {
+        "fetch_pc": "0x0026b870",
+        "attempted_instructions": 341154,
+        "added_addresses": 16,
+        "plan": {
+          "selected_addresses": 512,
+          "selection_limit": 512,
+          "pending_addresses": 23,
+          "boundaries": [],
+          "syscall_continuations_selected": true
+        }
       }
     ]
   },
   "observation": {
     "scope": "experimental-bootstrap-diagnostic",
-    "status": 8,
-    "pc": 2507964,
-    "fault_pc": 2507960,
-    "fault_address": 2507960,
-    "delay": 0,
-    "steps": 5000000,
-    "services_completed": 517726,
-    "last_syscall": 122,
+    "status": 11,
+    "pc": 2537576,
+    "fault_pc": 2513816,
+    "fault_address": 5018640,
+    "delay": 1,
+    "steps": 341391,
+    "services_completed": 41,
+    "last_syscall": 119,
     "stack_pointer": 32505856,
     "heap_start": 5031756,
     "heap_end": 32505856,
     "override_target": 0,
     "current_thread": 1,
     "context_switches": 2,
-    "sif0_waiting": 1,
-    "last_device_read_address": 268497456,
-    "last_device_read_value": 0,
+    "sif0_waiting": 0,
+    "last_device_read_address": 268497424,
+    "last_device_read_value": 4096,
     "initial_cp0_status": 536870912,
-    "sif0_quadwords": 0,
+    "coherent_cache_profile": 1,
+    "sif0_quadwords": 2,
     "sif1_quadwords": 0,
     "sif0_fifo_words": 0,
     "sif1_fifo_words": 0,
-    "a0": 4,
-    "a1": 2538920,
-    "a2": 0
+    "iop_command_profile": 1,
+    "iop_commands": 2,
+    "iop_received_transfers": 2,
+    "iop_submitted_quadwords": 3,
+    "iop_last_command": 2147483650,
+    "iop_last_option": 1,
+    "iop_ee_receive_buffer": 5018624,
+    "iop_pending_jobs": 0,
+    "iop_dma_source": 5004224,
+    "iop_dma_destination": 4096,
+    "iop_dma_size": 16,
+    "iop_dma_attribute": 68,
+    "iop_reply_packets": 1,
+    "iop_rpc_init_ack_generated": 1,
+    "dma_status": 2097184,
+    "stop_origin": "pending-dma-irq",
+    "cpu_fault_context_applies": 0,
+    "dma_irq_pending": 1,
+    "a0": 0,
+    "a1": 1,
+    "a2": 5004224
   },
   "limitations": [
     "provisional startup stack/heap policy and cooperative scheduler ABI",
     "ordinary-function guest syscall bridge; no CP0 privilege transition",
     "no hardware execution oracle or complete exception delivery",
+    "optional functional IOP command peer; no IOP CPU/BIOS/IRX or RPC servers",
+    "DMA attribute mapping, queue/status policy and command startup profile remain provisional",
     "unknown services/instructions and missing dispatch targets stop",
     "no graphics, input, audio, disc runtime or gameplay"
   ],
-  "validation_note": "Transport integration preserves the prior IOP command-ready polling stop with zero queued/transferred data. Synthetic peer loopback is not an IOP execution or hardware oracle. NOT PLAYABLE."
+  "validation_note": "Optional functional host IOP command profile, not IOP CPU/BIOS/IRX execution. Two commands and one real reply reach pending EE DMA IRQ delivery; guest has not consumed SET_SREG. No hardware oracle, boot or gameplay claim."
 }

@@ -45,6 +45,8 @@ typedef struct {
     uint32_t sif_system[3];
     void *event_state;
     int (*poll_events)(void *,Ac4Cpu *);
+    void *sif_service_state;
+    int (*sif_service)(void *,Ac4Cpu *,uint32_t);
 } Ac4Bootstrap;
 
 static inline int ac4_interrupt_service(Ac4Cpu *c,Ac4Bootstrap *b,uint32_t number) {
@@ -303,6 +305,10 @@ static inline int ac4_bootstrap_service(Ac4Cpu *c, Ac4Bootstrap *b) {
             }
         }
         c->gpr[2][0]=result;
+    } else if (number==118 || number==119 || number==UINT32_C(0xffffff8a) || number==UINT32_C(0xffffff89)) {
+        if (!b->sif_service) return AC4_SERVICE_UNKNOWN;
+        int result=b->sif_service(b->sif_service_state,c,number);
+        if (result) return result;
     } else if (number==121 || number==122) {
         uint32_t old;
         if (a0>=UINT32_C(0x80000000) && a0<=UINT32_C(0x80000002)) {

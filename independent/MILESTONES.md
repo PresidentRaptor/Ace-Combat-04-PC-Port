@@ -584,3 +584,68 @@ Remaining M4d/IOP work: live command endpoint and mailbox initialization based
 on its lifecycle, SifSetDma submission, actual packet/reply generation, guest
 IRQ delivery and RPC services. Do not force readiness or claim the overall IOP
 boundary is resolved. M4 remains In progress; no menu or gameplay exists.
+
+### M4e: optional live command endpoint and initialization exchange (2026-10-15)
+
+Added an explicit, opt-in functional host IOP command profile. A live bounded
+receiver with separate 2-MiB memory and receive address 0x1000 exists before
+its mailbox publishes SIF/CMD readiness. No IOP CPU/BIOS/IRX is executed and
+BOOTEND is not asserted. This is a new service implementation, not an empty
+ready-flag bypass. The default runner retains the profile-disabled baseline.
+
+Implemented bounded SifSetDma/SifDmaStat host submission, atomic descriptor-batch
+validation, asynchronous FIFO transfer into IOP memory, initialization/SADDR/SREG
+command subsets and the observed RPC-init acknowledgement. The supported
+header-only opt=1 request generates SET_SREG(0,1) as an actual SIF0 packet.
+The guest's software table is not directly modified; its handler still needs to
+run. Unknown RPC servers, unsupported DMA attributes, invalid spans, queue/chain
+ownership conflicts and malformed commands stop or backpressure explicitly.
+Queue, attribute, startup and kernel return policies remain provisional; see
+PROVENANCE.md. Raw EE channel-6 registers and IOP DMA/DICR are not replaced by
+this high-level kernel adapter. Actual queue transfer metrics are separate.
+
+Added opt-in coherent-memory DHWBIN/DHWOIN execution after observing AC4's
+cache-flush routine at 0x0026bf08. The application runner enables that profile;
+arbitrary tag operations, uncached/SPR maintenance and stale compiled code are
+still rejected. This is not a hardware cache or TLB implementation.
+
+Validation: **237 tests pass**, including **16 command-peer methods** and
+**5 cache-profile methods**; compiler required. **2/2 CTest**, **19 static local
+checks** and the original **335,107-instruction first-syscall check** pass.
+Tests cover actual padded source bytes, incomplete input, atomic validation,
+source/descriptor aliases, queue capacity/status, disabled DMA, command order,
+unknown commands, reply backpressure, pending IRQ status and instruction guards.
+No hardware oracle or remote CI result is claimed.
+
+Exact optional-profile build (fresh destination required):
+
+```
+python -B independent/build_bootstrap.py --iso "../Ace Combat 04 - Shattered Skies (USA).iso" --output ../dev/ac4-bootstrap-iop-command-verified --cc C:/msys64/ucrt64/bin/gcc.exe --limit 16384 --entry 0x264a88 --entry 0x1001a4 --entry 0x27c680 --copied-code 0x3fabd8:0x80076000:1856 --discover-fetches 48 --discovery-limit 512 --jobs 4 --iop-command-profile
+```
+
+AC4 now completes **two accepted initialization commands**, with **two incoming
+IOP transfers**, **three submitted quadwords**, and **one reply packet**. SIF0
+moves **two quadwords** into the EE receive buffer **0x004c9400** and completes
+with D_STAT **0x00200020** (channel-5 status and mask). There are no pending
+kernel jobs and both FIFOs are empty. The run stops with **DEVICE (11)** and
+`stop_origin=pending-dma-irq` at next PC **0x0026b868**, after **341,391** attempted
+instructions, **41** modeled service calls and two context switches. Thirteen
+discovery extensions retain **18,659** addresses. The acknowledgement is
+generated and delivered to packet RAM, **not consumed by the guest handler**.
+
+`cpu_fault_context_applies=0`: legacy fault_pc/fault_address/delay values are the
+last EE instruction's context, not a delivered interrupt/EPC. No interrupt
+handler, completed RPC initialization, menu or mission has been reached.
+
+Comparison build omitting --iop-command-profile, output
+`../dev/ac4-bootstrap-iop-disabled-verified`, reproduces the previous **5,000,000**
+instruction polling stop at **0x002644bc** with zero commands/transport data;
+ten discovery extensions now retain **18,522** addresses because the two cache
+operations are translatable. reference-bootstrap.json records the optional run;
+reference-bootstrap-no-iop.json contains compact comparison metadata. All
+native executables, RAM and generated guest code remain local outside Git.
+
+**Next:** implement independently justified EE DMA interrupt acceptance/delivery,
+context preservation and the registered guest handler path, then verify the
+guest consumes SET_SREG and continues. RPC servers, reboot/module loading and
+remaining CPU/VU/graphics/disc systems remain open. M4 stays In progress.

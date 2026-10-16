@@ -355,3 +355,32 @@ is connected. The local AC4 result remains the same IOP command-ready wait;
 both queues and transferred-quadword counts are zero. Synthetic peer loopback
 tests demonstrate transport only. The next task is a live command endpoint and
 SifSetDma submission, followed by guest interrupt handling and RPC replies.
+
+## Optional functional IOP command endpoint (M4e)
+
+Add `--iop-command-profile` to the latest build command in MILESTONES.md to
+start the new host command endpoint. The default remains disabled. This is
+explicit functional service replacement, not execution of an IOP CPU, BIOS or
+IRX module. It owns separate 2-MiB memory and a bounded receive/command handler
+before publishing its command-ready mailbox flag. It never publishes BOOTEND.
+
+SifSetDma/SifDmaStat use a bounded asynchronous host queue. Actual descriptor
+bytes travel through the outgoing FIFO into that separate memory; a supported
+initialization request produces a SET_SREG reply through SIF0 into EE RAM.
+No host write directly changes the guest's software-register table. Raw EE
+SIF1 channel registers are separate from this kernel service adapter and are
+not a complete hardware model; queue/status/attribute policies need an oracle.
+Unsupported commands and RPC servers stop explicitly.
+
+With this profile AC4 now exchanges two initialization requests and receives one
+reply packet. It stops at pending DMA interrupt 5 before the guest handler can
+consume the reply. This is not a completed RPC initialization or boot. With the
+profile disabled it still reproduces the previous command-ready polling wait.
+The manifest labels the profile, transferred data and stop origin. CPU fault
+fields from the last instruction do not describe an asynchronous device stop
+when `cpu_fault_context_applies` is zero.
+
+The runner also explicitly enables coherent-memory DHWBIN/DHWOIN maintenance.
+There is no dirty cache to write back; cache-tag operations, uncached/SPR uses
+and modified instruction execution remain unsupported. This is a functional
+profile, not hardware cache behavior. See PROVENANCE.md for its primary inputs.

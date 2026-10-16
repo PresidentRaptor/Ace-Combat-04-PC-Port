@@ -376,3 +376,46 @@ their supported behavior is identical; use the Sony encoding when implementing
 stall-address updates. The transport computes the next TADR on tag acceptance;
 intermediate register timing still requires hardware-oracle validation. No
 manual, source code or game bytes are redistributed.
+
+## M4e functional command endpoint and cache inputs (2026-10-15)
+
+New `iop_command_peer.h` implements a bounded host service endpoint from the
+original PS2tek SIF command-header/initialization/SREG descriptions, IOP DMA tag
+format and BIOS SifSetDma/SifDmaStat declarations:
+https://psi-rockin.github.io/ps2tek/index.html . Only the published ABI structures,
+identifiers and constants were consulted from
+https://ps2dev.github.io/ps2sdk/sifdma_8h_source.html and kernel declarations;
+no SDK or emulator implementation is imported or adapted.
+
+New observations from the user's supported AC4 image and local native replay:
+the first descriptor sends 20 bytes with attribute 0x44; the next sends a
+header-only 16-byte command 0x80000002, opt=1. The guest polls SREG index 0 for
+nonzero at 0x00265b98..0x00265ba0, and its SET_SREG handler at
+0x0026b838..0x0026b850 stores the packet's index/value into its software table.
+The endpoint constructs SET_SREG(0,1) as its boolean initialization acknowledgement
+and sends it through SIF0. It does not patch that table or claim that a guest
+handler has processed the reply. This joins documented packet layout to fresh
+image observations; it is not a console/BIOS trace or formal isolated clean room.
+
+Startup memory size (2 MiB), receive address (0x1000), host queue capacity
+(8 batches, 16 descriptors each), monotonic IDs, word/qword rounding, completion
+after receipt and negative unknown-ID status are functional-model policies.
+The public INT_O=4 and ERT=0x40 names are mapped to IOP notification/end tag bits;
+that ABI mapping is provisional, not independently traced. INT_I, other flags,
+unaligned sources and simultaneous raw/kernel SIF1 ownership stop. The adapter
+emits real FIFO bytes directly from validated kernel descriptors; it does not
+implement the BIOS's tag arena, raw EE channel-6 register behavior, IOP DMA/DICR
+registers, IOP CPU/IRX execution, or any file/module/game RPC server. A running
+receiver advertises SIF/CMD readiness; no BIOS boot-complete bit is manufactured.
+
+Sony EE Core Instruction Set Manual v6.0 pp.299-300 (document/hash recorded
+earlier) supplies DHWBIN/DHWOIN definitions and undefined uncached/SPRAM uses.
+The runner's explicit coherent-memory profile has no dirty cache; these two
+operations validate privilege and cached main-RAM line bounds without changing
+data. Tag/data-cache inspection, full TLB exceptions, cache timing and modified
+compiled instruction execution remain unsupported. New tests verify that cache
+maintenance cannot bypass instruction-byte guards.
+
+The new local result is an external pending-DMA-IRQ stop after actual reply
+delivery, not a CPU exception or successful RPC/boot result. Its last-instruction
+fault fields are marked inapplicable. No game data or generated code is committed.

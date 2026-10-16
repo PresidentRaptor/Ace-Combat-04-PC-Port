@@ -142,3 +142,16 @@ Next scope: implement a live, independently sourced IOP command endpoint and
 SifSetDma submission, then IRQ dispatch and RPC responses. Do not repeat the
 queue work, inject readiness to bypass the missing peer, or treat manual test
 loopback as actual IOP execution. Read MILESTONES.md for supported tag limits.
+
+M4e now adds an optional functional host command peer (--iop-command-profile),
+kernel DMA submission/status and real initialization request/reply packets.
+237 tests, 2/2 CTest, 19 static checks and the original native entry check pass.
+Local AC4 sends two requests; the peer returns SET_SREG(0,1) through SIF0 into
+0x004c9400. DEVICE at 0x0026b868 is a pending DMA IRQ (D_STAT=0x00200020), not
+an unsupported packet or successful boot. The guest handler has not consumed
+the reply. Default profile-disabled execution still reproduces the old wait.
+Next task is EE interrupt acceptance/context/registered-handler delivery, then
+guest acknowledgement and RPC/reboot/module services. Read provisional startup,
+attribute and queue policies before extending this functional profile. It is
+not IOP CPU/BIOS/IRX execution; do not advertise RPC servers or BOOTEND. Preserve
+instruction guards and distinguish event stop metadata from CPU fault context.
