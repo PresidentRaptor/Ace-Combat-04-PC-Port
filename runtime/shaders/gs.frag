@@ -190,16 +190,33 @@ vec4 sample_region_repeat_up(vec2 tc) {
                mix(texelFetch(tex, ivec2(a.x, b.y), 0), texelFetch(tex, b, 0), w.x), w.y);
 }
 
+// How far an anisotropic footprint may reach along a clamped axis: up to the
+// edge of the clamp range, so the extra taps never wrap round to the far side
+// of the texture or into the next region.
+float aniso_reach(float t, uint mode, float lo, float hi, float size) {
+    if (mode == 1u) { lo = 0.0; hi = max(size - 1.0, 0.0); }
+    else if (mode != 2u) return 1e30;
+    return 2.0 * (min(t - lo, max(hi, lo) - t) + 0.5);
+}
+
 void main() {
     out_blend = vec4(1.0);
-    vec2 tdx = vec2(0.0), tdy = vec2(0.0);
-    /* GS texels per pixel: upscaled sprites, and the mip level of a
-       replacement texture (flags.y bits 2-9) */
-    if ((pc.scale > 1.0 || ((pc.flags.y >> 2) & 255u) != 0u) && pc.flags.y != 0u) {
+    /* GS texels per pixel, taken here before anything can discard: a
+       discarded neighbour leaves later derivatives undefined, which plain
+       bilinear filtering never reads but anisotropic filtering does */
+    vec2 gdx, gdy;
+    {
         vec2 tcd = ((pc.flags.x >> 2) & 1u) != 0u
                  ? v_stq.xy : (v_stq.xy / max(v_stq.z, 1e-9)) * pc.tex_size;
-        tdx = dFdx(tcd);
-        tdy = dFdy(tcd);
+        gdx = dFdx(tcd);
+        gdy = dFdy(tcd);
+    }
+    vec2 tdx = vec2(0.0), tdy = vec2(0.0);
+    /* upscaled sprites, and the mip level of a replacement texture
+       (flags.y bits 2-9) */
+    if ((pc.scale > 1.0 || ((pc.flags.y >> 2) & 255u) != 0u) && pc.flags.y != 0u) {
+        tdx = gdx;
+        tdy = gdy;
     }
     if (pc.flags.w == 1u) { out_color = vec4(1.0, 0.0, 1.0, 1.0); return; }
     if (pc.flags.w == 2u) { out_color = vec4(v_color.rgb, 1.0); return; }
@@ -320,7 +337,12 @@ void main() {
             if (rt_up) t = sample_region_repeat_up(unwrapped_tc);
             else       t = sample_region_repeat(unwrapped_tc);
         } else {
-            t = texture(tex, (tc + 0.5) / pc.img_size);
+            vec2 r = vec2(aniso_reach(tc.x, pc.flags.z & 3u, float(pc.clamp_uv.x),
+                                      float(pc.clamp_uv.y), pc.tex_size.x),
+                          aniso_reach(tc.y, (pc.flags.z >> 2) & 3u, float(pc.clamp_uv.z),
+                                      float(pc.clamp_uv.w), pc.tex_size.y));
+            t = textureGrad(tex, (tc + 0.5) / pc.img_size,
+                            clamp(gdx, -r, r) / pc.img_size, clamp(gdy, -r, r) / pc.img_size);
         }
         if (mip_w > 0.0) {
             vec2 st = fst ? v_stq.xy / pc.tex_size : v_stq.xy / max(v_stq.z, 1e-9);
