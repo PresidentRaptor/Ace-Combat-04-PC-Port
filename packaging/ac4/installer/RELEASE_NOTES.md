@@ -1,8 +1,8 @@
-# Ace Combat 04 PC Port 2.2.1 Beta
+# Ace Combat 04 PC Port 2.2.2 Beta
 
-This public beta refreshes the Windows installer from `main`, with the EXE
-launcher used throughout player packages and updated documentation. Download
-**Ace-Combat-04-PC-Port-2.2.1-beta-Setup.exe** and select your unmodified USA ISO
+This public beta fixes graphical problems with anisotropic filtering and a likely
+cause of picture and audio stutter, both reported on AMD graphics cards. Download
+**Ace-Combat-04-PC-Port-2.2.2-beta-Setup.exe** and select your unmodified USA ISO
 (SLUS-20152). Setup verifies the executable inside the disc, creates the game
 folder, imports the ISO and local memory image, and offers a desktop shortcut.
 No ISO or extracted game assets are included in the download.
@@ -20,12 +20,18 @@ No ISO or extracted game assets are included in the download.
 The installer is unsigned. SHA256SUMS.txt identifies the exact uploaded build;
 it does not provide a publisher signature.
 
-## Changes since 2.2.0 Beta
+## Changes since 2.2.1 Beta
 
-- Player packages use `Ace Combat 04.exe` as the launcher.
-- Added source visual regression checks, frame-timing analysis and opt-in runtime
-  profiling tools for development; no performance gain is claimed by this release.
-- Updated contribution/support guidance, compatibility coverage and source-only CI.
+- Anisotropic filtering no longer garbles or smears textures on some GPUs
+  ([#4](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/issues/4)). The
+  final picture is no longer anisotropically filtered. With the setting off, the
+  picture is unchanged.
+- The display swapchain is rebuilt only when the window size changes. Drivers that
+  report it as suboptimal on every frame no longer stall the game each frame, a
+  likely cause of picture and audio stutter on AMD
+  ([#5](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/issues/5)).
+  Rebuilds are now recorded in the log.
+- Both fixes were tested on an NVIDIA GPU; confirmation on AMD hardware is pending.
 
 ## Included fixes and defaults
 

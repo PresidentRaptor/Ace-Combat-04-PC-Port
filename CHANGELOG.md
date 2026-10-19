@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.2.2 Beta
+
+[Release and installer](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.2-beta)
+
 - Anisotropic filtering no longer corrupts textures on some GPUs (AMD): texture gradients
   are taken before any pixel is discarded, its reach stays inside clamped texture regions,
   and the final picture and render targets are never anisotropically filtered (#4).
