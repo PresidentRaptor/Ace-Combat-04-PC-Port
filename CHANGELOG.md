@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Anisotropic filtering no longer corrupts textures on some GPUs (AMD): texture gradients
+  are taken before any pixel is discarded, its reach stays inside clamped texture regions,
+  and the final picture and render targets are never anisotropically filtered (#4).
+- The swapchain is rebuilt only when the window size really changes; drivers that report
+  it as suboptimal on every frame no longer force a GPU wait per frame, a likely cause of
+  picture and audio stutter on AMD (#5). Rebuilds are now logged.
+
 ## 2.2.1 Beta
 
 [Release and installer](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.1-beta)

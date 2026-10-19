@@ -380,6 +380,7 @@ static VkPipeline colclip_pipe;
 static int zcopy_ok, colclip_ok;
 static vk_target *cur_zt;
 static VkSampler sampler;
+static VkSampler sampler_flat;    /* render targets: never anisotropic */
 static VkSampler sampler_point;
 static VkSampler sampler_mip;
 static int sampler_aniso;
@@ -1138,6 +1139,32 @@ static VkPresentModeKHR pick_present_mode(void) {
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
+/* VK_SUBOPTIMAL_KHR: rebuild the swapchain only when the window's size has
+   really changed.  Some drivers (AMD on Windows among them) report it on
+   every present while nothing changed; rebuilding each time waits for the GPU
+   to go idle, which stutters the picture and starves the audio. */
+static int swapchain_needs_rebuild(void) {
+    static int said;
+    VkSurfaceCapabilitiesKHR caps;
+    VkExtent2D e;
+    if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys, surface, &caps) != VK_SUCCESS)
+        return 1;
+    e = caps.currentExtent;
+    if (e.width == 0xFFFFFFFFu) {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        e.width = (u32)w;
+        e.height = (u32)h;
+    }
+    if (e.width != swap_extent.width || e.height != swap_extent.height) return 1;
+    if (!said) {
+        said = 1;
+        ps2_log("vk: the driver calls the swapchain suboptimal at an unchanged "
+                "%ux%u; keeping it", swap_extent.width, swap_extent.height);
+    }
+    return 0;
+}
+
 static int create_swapchain(void) {
     VkSurfaceCapabilitiesKHR caps;
     VkSwapchainCreateInfoKHR ci;
@@ -1180,9 +1207,13 @@ static int create_swapchain(void) {
     ci.oldSwapchain = swapchain;
     VKCHK(vkCreateSwapchainKHR(dev, &ci, NULL, &swapchain));
     if (ci.oldSwapchain) {
+        static u32 rebuilds;
         for (u32 i = 0; i < swap_count; i++)
             vkDestroyImageView(dev, swap_views[i], NULL);
         vkDestroySwapchainKHR(dev, ci.oldSwapchain, NULL);
+        if (++rebuilds <= 5u || rebuilds % 100u == 0u)
+            ps2_log("vk: swapchain rebuilt at %ux%u (%u so far)",
+                    swap_extent.width, swap_extent.height, rebuilds);
     }
     swap_count = 8;
     VKCHK(vkGetSwapchainImagesKHR(dev, swapchain, &swap_count, swap_images));
@@ -1217,7 +1248,6 @@ static VkResult make_linear_sampler(VkSampler *out, int aniso) {
         sci.anisotropyEnable = VK_TRUE;
         sci.maxAnisotropy = (float)aniso < max_aniso ? (float)aniso : max_aniso;
     }
-    sampler_aniso = aniso;
     return vkCreateSampler(dev, &sci, NULL, out);
 }
 
@@ -1272,20 +1302,27 @@ static void rebind_set(VkDescriptorSet set, VkImageView view) {
     rebind_set_s(set, view, sampler);
 }
 
+/* Render targets (the frame, its snapshot) are shown or read back as flat
+   2-D images; anisotropic filtering there only smears the picture. */
+static VkDescriptorSet alloc_rt_set(VkImageView view) {
+    return alloc_set_s(view, sampler_flat);
+}
+
+static void rebind_rt_set(VkDescriptorSet set, VkImageView view) {
+    rebind_set_s(set, view, sampler_flat);
+}
+
 static void apply_sampler_settings(void) {
     VkSampler fresh, old = sampler;
     if (ps2_cfg.anisotropy == sampler_aniso) return;
     if (make_linear_sampler(&fresh, ps2_cfg.anisotropy) != VK_SUCCESS) return;
     vkDeviceWaitIdle(dev);
     sampler = fresh;
+    sampler_aniso = ps2_cfg.anisotropy;
     rebind_set(white_set, white_view);
+    /* replacement textures with a mip chain keep sampler_mip */
     for (u32 i = 0; i < ntextures && i < VK_MAX_TEXTURES; i++)
-        rebind_set(textures[i].set, textures[i].view);
-    for (u32 k = 0; k < RT_SLOTS; k++) {
-        if (!rts[k].created) continue;
-        rebind_set(rts[k].set, rts[k].cview);
-        rebind_set(rts[k].sset, rts[k].sview);
-    }
+        if (textures[i].levels <= 1u) rebind_set(textures[i].set, textures[i].view);
     vkDestroySampler(dev, old, NULL);
     ps2_log("vk: anisotropic filtering %dx", sampler_aniso >= 2 ? sampler_aniso : 0);
 }
@@ -1338,8 +1375,8 @@ static int create_target(vk_target *t) {
         destroy_target_images(t);
         return -1;
     }
-    if (t->set) rebind_set(t->set, t->cview);
-    else t->set = alloc_set(t->cview);
+    if (t->set) rebind_rt_set(t->set, t->cview);
+    else t->set = alloc_rt_set(t->cview);
     if (t->dset) rebind_set_s(t->dset, t->dview, sampler_point);
     else t->dset = alloc_set_s(t->dview, sampler_point);
     t->snap = VK_NULL_HANDLE;
@@ -1502,9 +1539,9 @@ static int create_targets(u32 w, u32 h, u32 scale) {
         rt_scale = os;
         for (k = 0; k < RT_SLOTS; k++) {
             if (!rts[k].created) continue;
-            rebind_set(rts[k].set, rts[k].cview);
+            rebind_rt_set(rts[k].set, rts[k].cview);
             rebind_set_s(rts[k].dset, rts[k].dview, sampler_point);
-            if (rts[k].snap) rebind_set(rts[k].sset, rts[k].sview);
+            if (rts[k].snap) rebind_rt_set(rts[k].sset, rts[k].sview);
             if (rts[k].fimg) rebind_set_s(rts[k].fset, rts[k].fview, sampler_point);
         }
         scale_failed = scale;
@@ -1726,6 +1763,8 @@ static int vk_init(void) {
     sci.minFilter = VK_FILTER_NEAREST;
     VKCHK(vkCreateSampler(dev, &sci, NULL, &sampler_point));
     VKCHK(make_linear_sampler(&sampler, ps2_cfg.anisotropy));
+    sampler_aniso = ps2_cfg.anisotropy;
+    VKCHK(make_linear_sampler(&sampler_flat, 0));
     {   VkSamplerCreateInfo ms;
         memset(&ms, 0, sizeof(ms));
         ms.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -2275,8 +2314,8 @@ static VkDescriptorSet target_snapshot(VkCommandBuffer cmd, vk_target *t) {
             t->snap = VK_NULL_HANDLE;
             return 0;
         }
-        if (t->sset) rebind_set(t->sset, t->sview);
-        else t->sset = alloc_set(t->sview);
+        if (t->sset) rebind_rt_set(t->sset, t->sview);
+        else t->sset = alloc_rt_set(t->sview);
         t->slayout = VK_IMAGE_LAYOUT_UNDEFINED;
         t->snap_valid = 0;
     }
@@ -3360,7 +3399,7 @@ static void draw_and_present(void) {
         if (r == VK_SUBOPTIMAL_KHR) {
             /* the image is ours and the semaphore will be signalled: use it,
                and rebuild the swapchain before the next acquire */
-            swap_dirty = 1;
+            if (swapchain_needs_rebuild()) swap_dirty = 1;
         } else if (r == VK_ERROR_OUT_OF_DATE_KHR) {
             vkDeviceWaitIdle(dev);
             if (create_swapchain() != 0) goto finished;
@@ -3416,7 +3455,9 @@ static void draw_and_present(void) {
     pi.pImageIndices = &image_index;
     r = vkQueuePresentKHR(queue, &pi);
     if (timing) { u64 now=vk_mono_ns(); times[VS_PRESENT]=now-mark; }
-    if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) swap_dirty = 1;
+    if (r == VK_ERROR_OUT_OF_DATE_KHR
+        || (r == VK_SUBOPTIMAL_KHR && swapchain_needs_rebuild()))
+        swap_dirty = 1;
     stat_frames++;
 finished:
     if (timing) {
