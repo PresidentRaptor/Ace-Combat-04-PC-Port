@@ -533,6 +533,20 @@ int main(int argc, char **argv) {
     ps2_settings_load();
     ps2_video_hidden(want_hidden);
     if (want_video && ps2_video_init(PS2_GAME_TITLE, 640, 448) != 0) {
+        if (!want_hidden) {
+            /* A player would otherwise be left with the game running
+               invisibly in the background, sound and all. */
+            ps2_log("error: the graphics could not be started; exiting "
+                    "(the vk: lines above say why)");
+#ifdef _WIN32
+            MessageBoxA(NULL,
+                "Ace Combat 04 could not start its graphics (Vulkan).\n\n"
+                "Update your graphics driver and try again. If it still fails, "
+                "run DIAGNOSTICS.bat and attach diagnostics.log to your report.",
+                PS2_GAME_TITLE, MB_OK | MB_ICONERROR);
+#endif
+            return 1;
+        }
         ps2_log("warning: no video output; running headless");
         want_video = 0;
     }
