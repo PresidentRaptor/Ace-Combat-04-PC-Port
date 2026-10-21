@@ -1,7 +1,7 @@
-Ace Combat 04: Shattered Skies - PC Port 2.2.2 Beta
+Ace Combat 04: Shattered Skies - PC Port 2.2.3 Beta
 =================================================
 
-Run Ace-Combat-04-PC-Port-2.2.2-beta-Setup.exe on Windows 10/11 x64.
+Run Ace-Combat-04-PC-Port-2.2.3-beta-Setup.exe on Windows 10/11 x64.
 Select your own uncompressed USA game ISO (SLUS-20152) and an empty
 destination folder. Setup copies the ISO as game.iso, creates the runtime
 memory image from the verified executable inside it, and adds a desktop

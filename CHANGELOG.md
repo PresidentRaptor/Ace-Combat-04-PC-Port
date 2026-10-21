@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.2.3 Beta
+
+[Release and installer](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.3-beta)
+
+- The renderer checks every GPU (Vulkan 1.3, dynamic rendering, synchronization2, dual-source
+  blending, swapchain, a queue that can draw to the window), prefers a usable discrete one and
+  falls back to any usable one; each GPU is logged. `PS2_GPU=<n>` forces one (#6).
+- A failed graphics start shows an error and exits instead of running headless (#6).
+
 ## 2.2.2 Beta
 
 [Release and installer](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/releases/tag/v2.2.2-beta)

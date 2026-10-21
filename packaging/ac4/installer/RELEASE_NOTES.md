@@ -1,11 +1,11 @@
-# Ace Combat 04 PC Port 2.2.2 Beta
+# Ace Combat 04 PC Port 2.2.3 Beta
 
-This public beta fixes graphical problems with anisotropic filtering and a likely
-cause of picture and audio stutter, both reported on AMD graphics cards. Download
-**Ace-Combat-04-PC-Port-2.2.2-beta-Setup.exe** and select your unmodified USA ISO
-(SLUS-20152). Setup verifies the executable inside the disc, creates the game
-folder, imports the ISO and local memory image, and offers a desktop shortcut.
-No ISO or extracted game assets are included in the download.
+This public beta fixes startup on PCs where the game window appeared and then
+vanished while the game kept running in the background, seen on a laptop with
+AMD graphics. Download **Ace-Combat-04-PC-Port-2.2.3-beta-Setup.exe** and select
+your unmodified USA ISO (SLUS-20152). Setup verifies the executable inside the
+disc, creates the game folder, imports the ISO and local memory image, and offers
+a desktop shortcut. No ISO or extracted game assets are included in the download.
 
 ## Requirements and installation
 
@@ -20,18 +20,22 @@ No ISO or extracted game assets are included in the download.
 The installer is unsigned. SHA256SUMS.txt identifies the exact uploaded build;
 it does not provide a publisher signature.
 
-## Changes since 2.2.1 Beta
+## Changes since 2.2.2 Beta
 
-- Anisotropic filtering no longer garbles or smears textures on some GPUs
-  ([#4](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/issues/4)). The
-  final picture is no longer anisotropically filtered. With the setting off, the
-  picture is unchanged.
-- The display swapchain is rebuilt only when the window size changes. Drivers that
-  report it as suboptimal on every frame no longer stall the game each frame, a
-  likely cause of picture and audio stutter on AMD
+- On PCs with two GPUs (such as laptops), the game now checks each GPU and uses
+  one that can actually run it and draw to the window, instead of giving up when
+  the preferred one cannot
+  ([#6](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/issues/6)).
+  The log lists every GPU and why any was skipped.
+- If the graphics still cannot start, the game shows an error message and closes,
+  instead of running invisibly in the background with sound.
+
+## Earlier in 2.2.2 Beta
+
+- Anisotropic filtering fixes
+  ([#4](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/issues/4)) and
+  no more per-frame swapchain rebuilds, a likely cause of stutter on AMD
   ([#5](https://github.com/PresidentRaptor/Ace-Combat-04-PC-Port/issues/5)).
-  Rebuilds are now recorded in the log.
-- Both fixes were tested on an NVIDIA GPU; confirmation on AMD hardware is pending.
 
 ## Included fixes and defaults
 
