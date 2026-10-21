@@ -1556,6 +1556,38 @@ static int create_targets(u32 w, u32 h, u32 scale) {
     return 0;
 }
 
+/* NULL when the device can run the renderer, else the reason it cannot. */
+static const char *device_unusable(VkPhysicalDevice d, const VkPhysicalDeviceProperties *pr) {
+    VkPhysicalDeviceVulkan13Features f13;
+    VkPhysicalDeviceFeatures2 f2;
+    VkQueueFamilyProperties qp[16];
+    VkExtensionProperties ext[256];
+    u32 nq = 16, ne = 256, i;
+    int present = 0, swap = 0;
+    if (pr->apiVersion < VK_API_VERSION_1_3) return "driver offers Vulkan below 1.3";
+    memset(&f13, 0, sizeof f13);
+    f13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    memset(&f2, 0, sizeof f2);
+    f2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    f2.pNext = &f13;
+    vkGetPhysicalDeviceFeatures2(d, &f2);
+    if (!f13.dynamicRendering || !f13.synchronization2)
+        return "no dynamic rendering or synchronization2";
+    if (!f2.features.dualSrcBlend) return "no dual-source blending";
+    if (vkEnumerateDeviceExtensionProperties(d, NULL, &ne, ext) < 0) ne = 0;
+    for (i = 0; i < ne; i++)
+        if (!strcmp(ext[i].extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) swap = 1;
+    if (!swap) return "no swapchain support";
+    vkGetPhysicalDeviceQueueFamilyProperties(d, &nq, qp);
+    for (i = 0; i < nq && !present; i++) {
+        VkBool32 ok = VK_FALSE;
+        vkGetPhysicalDeviceSurfaceSupportKHR(d, i, surface, &ok);
+        present = (qp[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && ok;
+    }
+    if (!present) return "cannot draw to this window";
+    return NULL;
+}
+
 static int vk_init(void) {
     VkApplicationInfo app;
     VkInstanceCreateInfo ici;
@@ -1565,6 +1597,7 @@ static int vk_init(void) {
     VkPhysicalDeviceFeatures2 f2;
     VkPhysicalDevice devs[16];
     u32 ndev = 16, nq;
+    int phys_discrete = 0, want_gpu;
     VkQueueFamilyProperties qprops[16];
     const char *const *sdl_exts;
     Uint32 nsdl = 0;
@@ -1605,16 +1638,37 @@ static int vk_init(void) {
     }
 
     VKCHK(vkEnumeratePhysicalDevices(inst, &ndev, devs));
+    /* Take a discrete GPU that meets every requirement, else any other that
+       does.  A laptop's discrete GPU may lack Vulkan 1.3 or be unable to
+       present to the window; the integrated one must then be used rather
+       than giving up. */
     phys = VK_NULL_HANDLE;
+    {   const char *e = getenv("PS2_GPU");   /* force GPU n of the list below */
+        want_gpu = e && *e ? atoi(e) : -1; }
     for (u32 i = 0; i < ndev; i++) {
         VkPhysicalDeviceProperties pr;
+        const char *why;
+        int discrete;
         vkGetPhysicalDeviceProperties(devs[i], &pr);
-        if (pr.apiVersion < VK_API_VERSION_1_3) continue;
-        if (phys == VK_NULL_HANDLE
-            || pr.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+        why = device_unusable(devs[i], &pr);
+        discrete = pr.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+        ps2_log("vk: GPU %u: %s (API %u.%u, %s)%s%s", i, pr.deviceName,
+                VK_VERSION_MAJOR(pr.apiVersion), VK_VERSION_MINOR(pr.apiVersion),
+                discrete ? "discrete" : "not discrete",
+                why ? " -- unusable: " : "", why ? why : "");
+        if (why) continue;
+        if (want_gpu >= 0 && (int)i != want_gpu) continue;
+        if (phys == VK_NULL_HANDLE || (discrete && !phys_discrete)) {
             phys = devs[i];
+            phys_discrete = discrete;
+        }
     }
-    if (!phys) { ps2_log("vk: no Vulkan 1.3 device"); return -1; }
+    if (!phys) {
+        ps2_log("vk: no GPU meets the requirements (Vulkan 1.3, dynamic rendering, "
+                "synchronization2, dual-source blending, a queue that can draw to "
+                "the window); update the graphics driver");
+        return -1;
+    }
     {
         VkPhysicalDeviceProperties pr;
         vkGetPhysicalDeviceProperties(phys, &pr);
